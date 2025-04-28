@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fungi_fortress"
+version = "0.1.0" # You can change this
+description = "A roguelike game of fungal survival."
+readme = "README.md" # Optional: if you have a README
+requires-python = ">=3.8"
+
+# Optional: Specify where setuptools can find your package
+[tool.setuptools.packages.find]
+where = ["."] # Look for packages in the root directory 

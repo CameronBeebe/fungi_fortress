@@ -1,0 +1,20 @@
+# This project relies on the standard Python 'curses' library.
+#
+# On Linux and macOS, 'curses' is typically included with the Python installation
+# or managed by the system's package manager (e.g., ncurses).
+# Ensure you have the necessary development headers if compiling Python from source
+# (e.g., libncursesw5-dev on Debian/Ubuntu).
+#
+# On Windows, the 'curses' module is not included. You need to install 'windows-curses'.
+# The following line uses environment markers to install it only on Windows:
+
+windows-curses; sys_platform == "win32"
+noise # For procedural map generation
+
+# Add other Python package dependencies here if needed in the future, e.g.:
+# numpy >= 1.20
+# some-other-package == 1.2.3
+
+# Development Dependencies
+pytest>=7.0 # For running tests
+mypy>=1.0   # For static type checking 
