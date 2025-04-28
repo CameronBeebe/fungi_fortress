@@ -1,6 +1,6 @@
 # game_state.py
 import random
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Tuple, Optional, Any, TypedDict
 
 # Update constants import to relative
 from .constants import MAP_WIDTH, MAP_HEIGHT, STARTING_RESOURCES, STARTING_SPECIAL_ITEMS, STARTING_PLAYER_STATS
@@ -9,13 +9,27 @@ from .constants import MAP_WIDTH, MAP_HEIGHT, STARTING_RESOURCES, STARTING_SPECI
 from .task_manager import TaskManager
 from .missions import generate_mission
 from .map_generation import generate_map, generate_mycelial_network
-from .characters import Dwarf, NPC, Animal # TaskManager already imported separately
+from .characters import Dwarf, NPC, Animal, Oracle
 from .player import Player
 from .inventory import Inventory # Renamed from items to inventory
 from .tiles import Tile, ENTITY_REGISTRY
 from .entities import GameEntity
 
 MapGrid = List[List[Tile]]
+
+# --- Event Structure Definition ---
+class GameEvent(TypedDict):
+    type: str         # e.g., "interaction", "combat", "mission_update", "dwarf_task_complete"
+    tick: int         # Game tick when the event occurred
+    details: Dict[str, Any] # Event-specific data
+
+# Example detail structures (optional, but good practice):
+class InteractionEventDetails(TypedDict):
+    actor_id: str | int # ID of the character performing the interaction (e.g., "player", dwarf.id)
+    target_id: str | int # ID or name of the entity/character being interacted with
+    target_type: str   # Type of the target (e.g., "Oracle", "Structure", "Dwarf")
+    location: Tuple[int, int]
+    outcome: Optional[Any] # Result of the interaction, if any (e.g., quest ID, dialogue result)
 
 class GameState:
     """Manages all the state information for the Fungi Fortress game.
@@ -52,6 +66,8 @@ class GameState:
         debug_log (List[str]): A list of recent debug messages.
         task_manager (TaskManager): Manages tasks assigned to dwarves.
         buildings (Dict[str, Dict]): Definitions of buildable structures.
+        event_queue (List[GameEvent]): A list of game events.
+        show_oracle_dialog (bool): True if the Oracle dialogue window should be displayed.
     """
     def __init__(self) -> None:
         """Initializes the game state.
@@ -69,6 +85,7 @@ class GameState:
         self.show_inventory = False
         self.in_shop = False
         self.show_legend = False
+        self.show_oracle_dialog = False
         self.shop_confirm = False
         self.selected_spell = None
         self.spore_exposure_threshold = 20  # Threshold for path illumination
@@ -126,10 +143,18 @@ class GameState:
             "Dwarven Sporeforge": {"resources": {"stone": 15, "wood": 5}, "special_items": {}, "ticks": 15}
         }
 
+        # --- Initialize Event Queue ---
+        self.event_queue = []
+
         self.add_debug_message(f"Map initialized: {len(self.main_map)}x{len(self.main_map[0]) if self.main_map else 0}")
         self.add_debug_message(f"Dwarves spawned: {len(self.dwarves)}")
         self.add_debug_message(f"Fungi locations cached: {len(self.magic_fungi_locations)}")
         self.add_debug_message(f"Mission initialized: description={self.mission.get('description', 'None')}, objectives={self.mission.get('objectives', [])}")
+
+        # --- Spawn Initial Oracle (Depth 0 only) ---
+        if self.depth == 0:
+            self._spawn_initial_oracle("Whispering Fungus")
+        # --- End Oracle Spawn ---
 
     def add_debug_message(self, msg: str) -> None:
         """Adds a message to the debug log, keeping only the most recent 5.
@@ -261,3 +286,58 @@ class GameState:
             return abs(coords[0] - self.nexus_site[0]) + abs(coords[1] - self.nexus_site[1])
             
         return 0  # Default if no nexus or network
+
+    # --- New Event Queue Methods ---
+    def add_event(self, event_type: str, details: Dict[str, Any]) -> None:
+        """Adds a structured event to the game's event queue.
+
+        Args:
+            event_type (str): The type of event (e.g., 'interaction').
+            details (Dict[str, Any]): A dictionary containing event-specific data.
+                                       It's recommended this matches a defined TypedDict structure.
+        """
+        event: GameEvent = {
+            "type": event_type,
+            "tick": self.tick,
+            "details": details
+        }
+        self.event_queue.append(event)
+        # Optional: Add a debug message when events are added
+        # self.add_debug_message(f"Event added: {event_type} at tick {self.tick}")
+
+    def consume_events(self) -> List[GameEvent]:
+        """Retrieves all current events and clears the queue.
+
+        Returns:
+            List[GameEvent]: The list of events that were in the queue.
+        """
+        events = self.event_queue
+        self.event_queue = []
+        return events
+    # --- End New Event Queue Methods ---
+
+    # --- Helper to spawn initial Oracle ---
+    def _spawn_initial_oracle(self, name: str) -> None:
+        """Finds a random walkable tile and spawns the initial Oracle.
+        
+        Args:
+            name (str): The name for the Oracle.
+        """
+        possible_locations: List[Tuple[int, int]] = []
+        dwarf_pos = (self.dwarves[0].x, self.dwarves[0].y) if self.dwarves else None
+        
+        for y in range(MAP_HEIGHT):
+            for x in range(MAP_WIDTH):
+                tile = self.get_tile(x, y)
+                # Check if walkable and not where the dwarf spawns
+                if tile and tile.walkable and (x, y) != dwarf_pos:
+                    possible_locations.append((x, y))
+        
+        if possible_locations:
+            ox, oy = random.choice(possible_locations)
+            oracle = Oracle(name, ox, oy)
+            self.characters.append(oracle)
+            self.add_debug_message(f"Oracle '{name}' spawned at ({ox}, {oy}).")
+        else:
+            self.add_debug_message(f"Warning: Could not find suitable location to spawn Oracle '{name}'.")
+    # --- End Helper --- 

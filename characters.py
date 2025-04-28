@@ -1,7 +1,12 @@
 # characters.py
 import random
 from .lore import lore_base
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+# Conditional import for Task type hint if Task is defined later in the file
+if TYPE_CHECKING:
+    # If Task is defined in this file, no need for separate import inside TYPE_CHECKING
+    pass # Assuming Task is defined below
 
 class Dwarf:
     """Represents a dwarf character controlled by the game logic.
@@ -31,11 +36,13 @@ class Dwarf:
         self.path: list[tuple[int, int]] = []
         self.target_x: int | None = None
         self.target_y: int | None = None
-        self.task: Task | None = None
+        # Ensure Task type hint is valid - if Task is defined later, use 'Task' as string
+        self.task: 'Task' | None = None
         self.health: int = 100
         self.task_ticks: int = 0
         self.mining_skill: int = random.randint(1, 3)
-        self.task_queue: list[Task] = []
+        # Ensure Task type hint is valid
+        self.task_queue: list['Task'] = []
 
 class Animal:
     """Represents a simple animal entity on the map.
@@ -73,8 +80,31 @@ class NPC:
         self.x: int = x
         self.y: int = y
         self.alive: bool = True
-        self.data: dict[str, Any] = lore_base["characters"].get(name, {})
+        # Ensure lore_base is correctly accessed and typed
+        self.data: dict[str, Any] = lore_base.get("characters", {}).get(name, {}) # Safer access
 
+# --- New Oracle Class ---
+class Oracle(NPC):
+    """Represents an Oracle character, a special type of NPC.
+
+    Oracles are intended to be interaction points for LLM-driven dialogue,
+    events, and potentially quest generation. They inherit base NPC properties
+    but are specifically identified for triggering LLM logic.
+
+    Attributes:
+        Inherits all attributes from NPC.
+        interaction_state (dict): Stores data about the player's interaction
+                                  history or state with this Oracle. (Optional future use)
+    """
+    def __init__(self, name: str, x: int, y: int) -> None:
+        """Initializes an Oracle character."""
+        super().__init__(name, x, y)
+        # Add any Oracle-specific attributes here if needed in the future
+        # For example, tracking interaction state:
+        # self.interaction_state: dict[str, Any] = {}
+        # For now, it's just a type distinction.
+
+# --- Task Class ---
 class Task:
     """Represents a task that can be assigned to a dwarf.
 

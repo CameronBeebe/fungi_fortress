@@ -94,6 +94,16 @@ lore_base: Dict[str, Any] = {
             "description": "A dried hyphae core storing mycelial network memories.",
             "location": "Mycelial Nexus",
             "magic_properties": "Capable of growing a new Nexus"
+        },
+        "Spore Pouch": {
+            "description": "A sturdy pouch woven from giant puffball fibers, ideal for carrying spores.",
+            "location": "Mission Reward",
+            "magic_properties": "Allows carrying more spore types? (Gameplay effect TBD)"
+        },
+        "Map Fragment": {
+            "description": "A torn piece of parchment showing a section of the tunnels.",
+            "location": "Various",
+            "magic_properties": "Reveals part of the map when used? (Gameplay effect TBD)"
         }
     },
     "magic": {

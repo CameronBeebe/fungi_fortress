@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Dict, List, Tuple, Optional, cast
 from .constants import MAP_WIDTH, MAP_HEIGHT, ANIMAL_MOVE_CHANCE, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS
 
 # Use relative imports for modules within the fungi_fortress package
-from .characters import Task, Dwarf, NPC, Animal # Added Dwarf, NPC, Animal if needed here
+from .characters import Task, Dwarf, NPC, Animal, Oracle # Added Oracle
 from .missions import check_mission_completion, complete_mission
 from .map_generation import generate_map, generate_mycelial_network # Ensure these are imported
 # from .map_generation import generate_map, expose_to_spores # expose_to_spores moved from magic?
@@ -15,9 +15,12 @@ from .entities import ResourceNode, Structure, Sublevel, GameEntity # Added Game
 from .events import check_events
 # from .magic import cast_spell # Import only if cast_spell is used directly in this file
 
+# --- LLM Interface Import --- 
+from . import llm_interface # Assuming llm_interface.py is in the same directory
+
 # Import Entity types for type hinting using relative paths
 if TYPE_CHECKING:
-    from .game_state import GameState
+    from .game_state import GameState, GameEvent # Added GameEvent
     from .player import Player # Added for type hints
     # Tile already imported
     # Structure, Sublevel already imported
@@ -270,44 +273,41 @@ class GameLogic:
         self.game_state.add_debug_message(f"Entered {sub_level_name}.")
 
     def update(self):
-        """Advances the game state by one tick.
+        """Performs a single game tick update.
 
-        Executes all per-tick logic, including character actions, task processing,
-        event checks, and environmental updates, unless the game is paused or
-        in a blocking UI state (inventory, shop, legend).
-
-        Order of Operations:
-        1. Return early if game is paused or in a blocking UI state.
-        2. Increment `game_state.tick`.
-        3. Call `check_events`.
-        4. Decrement timers for temporary tile effects (highlight, flash, pulse).
-        5. Process animal movement (randomly on surface map).
-        6. Resolve character/animal stacking by spreading them to adjacent empty tiles.
-        7. Assign tasks from `game_state.task_manager` to idle dwarves:
-           - Finds path using `a_star`.
-           - Sets dwarf state to 'moving' or appropriate work/fight/fish state.
-           - Assigns task details (target, resource coords, ticks) to dwarf.
-           - Removes assigned task from manager or queues for busy dwarves.
-           - Marks unreachable tasks for removal.
-        8. Update each dwarf based on their state:
-           - 'moving': Follow path, transition state upon reaching destination.
-                     Special handling for 'enter' tasks to call `_trigger_sublevel_entry`.
-           - 'working'/'fighting'/'fishing': Decrement `task_ticks`. On completion:
-               - Apply task effects (gain resources, change tiles, build structures/bridges,
-                 kill animals/NPCs, trigger spore exposure, illuminate paths).
-               - Reset dwarf state to 'idle' or assign next task from queue.
-           - 'idle': Check task queue for new assignments.
-        9. (Placeholder) Trigger periodic spore spread.
-        10. (Placeholder) Check mission completion.
+        Increments tick, checks events, updates tiles, handles AI, manages tasks,
+        and checks mission status.
+        Also processes events through the LLM interface.
         """
-        if self.game_state.paused or self.game_state.show_inventory or self.game_state.in_shop or self.game_state.show_legend:
+        if self.game_state.paused:
             return
 
         self.game_state.tick += 1
 
+        # --- Process Events via LLM Interface (at start of tick?) ---
+        game_events: List[GameEvent] = self.game_state.consume_events()
+        all_llm_actions: List[Dict[str, Any]] = []
+        if game_events:
+            self.game_state.add_debug_message(f"Tick {self.game_state.tick}: Processing {len(game_events)} events.")
+            for event in game_events:
+                llm_actions = llm_interface.handle_game_event(event)
+                if llm_actions:
+                    all_llm_actions.extend(llm_actions)
+        
+        # --- Process LLM Actions (Placeholder) ---
+        if all_llm_actions:
+            self.game_state.add_debug_message(f"Tick {self.game_state.tick}: Received {len(all_llm_actions)} actions from LLM.")
+            # TODO: Implement logic to handle different action_types 
+            # (e.g., spawn character, add message, update quest, modify tile)
+            for action in all_llm_actions:
+                 print(f"[GameLogic] TODO: Process LLM action: {action}") # Placeholder print
+                 pass # Add actual action processing here
+        # --- End LLM Event/Action Processing ---
+
+        # Check standard game events (e.g., random encounters, environment changes)
         check_events(self.game_state)
 
-        # Update tile effects
+        # Update highlighted tiles (decrement duration)
         current_map: List[List[Tile]] = self.game_state.map
         for row in current_map:
             for tile in row:
@@ -407,46 +407,107 @@ class GameLogic:
                     dwarf.state = 'moving'
                     dwarf.path = path
                     self.game_state.add_debug_message(f"D{dwarf.id} moving to ({task.x}, {task.y}) with path length {len(path)}")
-                else: # Already at location
-                    # Set state based on task type
-                    if task.type in ['mine', 'chop', 'build', 'build_bridge']:
-                        dwarf.state = 'working'
-                    elif task.type in ['hunt', 'fight']:
-                        dwarf.state = 'fighting'
-                    elif task.type == 'fish':
-                        dwarf.state = 'fishing'
-                    elif task.type == 'enter': # Should be handled in 'moving' state completion, but set state here just in case
-                        dwarf.state = 'moving' # Still technically 'moving' to the entry point tile
+                    # Assign task details for moving state
+                    dwarf.target_x, dwarf.target_y = task.x, task.y
+                    dwarf.task = task
+                    dwarf.resource_x, dwarf.resource_y = task.resource_x, task.resource_y
+                    dwarf.task_ticks = 0 # No ticks needed for just moving
+
+                else: # Already at location (path is [] or None but dwarf is at task.x, task.y)
+                    self.game_state.add_debug_message(f"D{dwarf.id} already at interaction point ({task.x}, {task.y}) for task type: {task.type}") # DEBUG
+                    
+                    # --- Handle TALK task immediately if already adjacent ---
+                    if task.type == 'talk':
+                        target_x: Optional[int] = task.resource_x
+                        target_y: Optional[int] = task.resource_y
+                        can_talk = False
+                        if target_x is not None and target_y is not None:
+                            target_npc: Optional[NPC] = None
+                            for npc in self.game_state.characters:
+                                if npc.x == target_x and npc.y == target_y and npc.alive:
+                                    if isinstance(npc, Oracle) or "Whispering Fungus" in npc.name:
+                                        target_npc = npc
+                                        break
+                            if target_npc:
+                                # Trigger dialogue immediately
+                                self.game_state.show_oracle_dialog = True
+                                self.game_state.paused = True
+                                self.game_state.add_debug_message(f"D{dwarf.id} starting talk with {target_npc.name} (already adjacent).")
+                                can_talk = True
+                            else:
+                                self.game_state.add_debug_message(f"D{dwarf.id} cannot talk: Target NPC {target_x},{target_y} not Oracle/moved.")
+                        else:
+                             self.game_state.add_debug_message(f"D{dwarf.id} cannot talk: Task missing target coordinates.")
+                        
+                        # Regardless of success, the task is done here.
+                        dwarf.state = 'idle' # Set dwarf idle
+                        dwarf.path = []
+                        dwarf.task = None # Clear task from dwarf
+                        # Task will be removed from manager below
+                    
+                    # --- Handle ENTER task if already adjacent --- (existing logic seems okay but let's ensure state)
+                    elif task.type == 'enter':
+                        dwarf.state = 'moving' # Set to moving so path completion logic triggers entry
+                        dwarf.path = [] # Ensure path is empty
+                        dwarf.task = task # Assign task details
+                        dwarf.target_x, dwarf.target_y = task.x, task.y
+                        dwarf.resource_x, dwarf.resource_y = task.resource_x, task.resource_y
+                        dwarf.task_ticks = 1 # Minimal ticks
+                        self.game_state.add_debug_message(f"D{dwarf.id} already adjacent for 'enter' task, setting state to trigger entry.")
+
+                    # --- Handle OTHER tasks if already adjacent ---
                     else:
-                        dwarf.state = 'idle' # Fallback
-                    dwarf.path = []
-                    self.game_state.add_debug_message(f"D{dwarf.id} already at ({task.x}, {task.y}), starting {task.type}")
+                        # Set state based on task type for working/fighting/fishing
+                        if task.type in ['mine', 'chop', 'build', 'build_bridge']:
+                            dwarf.state = 'working'
+                        elif task.type in ['hunt', 'fight']:
+                            dwarf.state = 'fighting'
+                        elif task.type == 'fish':
+                            dwarf.state = 'fishing'
+                        else:
+                            dwarf.state = 'idle' # Fallback for unknown types
+                        dwarf.path = []
+                        dwarf.task = task # Assign task details
+                        dwarf.target_x, dwarf.target_y = task.x, task.y
+                        dwarf.resource_x, dwarf.resource_y = task.resource_x, task.resource_y
+                        self.game_state.add_debug_message(f"D{dwarf.id} already at ({task.x}, {task.y}), starting {task.type}")
+                        
+                        # Set initial task ticks (Copied from below, needs consolidation later)
+                        if task.type in ['fish', 'hunt', 'fight']:
+                            dwarf.task_ticks = FISHING_TICKS
+                        elif task.type == 'build' and task.building and task.building in self.game_state.buildings:
+                            dwarf.task_ticks = self.game_state.buildings[task.building]['ticks']
+                        elif task.type == 'build_bridge':
+                            dwarf.task_ticks = BASE_UNDERGROUND_MINING_TICKS 
+                        elif task.type in ['mine', 'chop']:
+                             resource_tile_for_ticks = self.game_state.get_tile(task.resource_x, task.resource_y) if task.resource_x is not None else None
+                             base_ticks = getattr(resource_tile_for_ticks.entity, 'hardness', BASE_UNDERGROUND_MINING_TICKS) if resource_tile_for_ticks else BASE_UNDERGROUND_MINING_TICKS
+                             dwarf.task_ticks = base_ticks
+                        # Note: 'enter' and 'talk' ticks handled separately or are instant.
+                        elif task.type not in ['enter', 'talk']:
+                            dwarf.task_ticks = 0 # Default for other/unknown tasks
 
-                # Assign task details
-                dwarf.target_x, dwarf.target_y = task.x, task.y
-                dwarf.task = task
-                dwarf.resource_x, dwarf.resource_y = task.resource_x, task.resource_y
+                # --- Common Logic for Assigned Tasks (Moving or Already There) ---
+                # Only assign task details IF NOT handled by 'talk' instant completion above
+                if not (task.type == 'talk' and not dwarf.path): # Check if dwarf is already adjacent AND task is talk
+                    # Assign task details if the dwarf state wasn't set to idle by instant talk
+                    dwarf.target_x, dwarf.target_y = task.x, task.y
+                    # Ensure task is still assigned if dwarf is moving or starting work/fight/fish
+                    if dwarf.state != 'idle': 
+                        dwarf.task = task
+                    dwarf.resource_x, dwarf.resource_y = task.resource_x, task.resource_y
+                    
+                    # Set initial task ticks if not moving (ticks handled in the 'else' block above for non-talk tasks)
+                    if dwarf.state != 'moving' and task.type not in ['talk', 'enter']:
+                        # Ticks already set in the 'else: # Already at location' block
+                        pass 
+                    elif dwarf.state == 'moving': # Moving state has 0 ticks
+                        dwarf.task_ticks = 0
 
-                # Set initial task ticks
-                if task.type in ['fish', 'hunt', 'fight']:
-                    dwarf.task_ticks = FISHING_TICKS
-                elif task.type == 'build' and task.building and task.building in self.game_state.buildings:
-                    dwarf.task_ticks = self.game_state.buildings[task.building]['ticks']
-                elif task.type == 'build_bridge':
-                    dwarf.task_ticks = BASE_UNDERGROUND_MINING_TICKS # Assuming this constant is appropriate
-                elif task.type in ['mine', 'chop']: # Base ticks for mining/chopping (adjusted by skill later)
-                     # Use a base value, actual time depends on skill check during update
-                     resource_tile_for_ticks = self.game_state.get_tile(task.resource_x, task.resource_y) if task.resource_x is not None else None
-                     base_ticks = getattr(resource_tile_for_ticks.entity, 'hardness', BASE_UNDERGROUND_MINING_TICKS) if resource_tile_for_ticks else BASE_UNDERGROUND_MINING_TICKS
-                     dwarf.task_ticks = base_ticks
-                elif task.type == 'enter':
-                    dwarf.task_ticks = 1 # Entering is instantaneous once adjacent
-                else:
-                    dwarf.task_ticks = 0 # Default/unknown task
-
+                # Mark task for removal and remove dwarf from idle list
                 tasks_to_remove.append(task)
-                idle_dwarves.remove(dwarf) # Remove from idle list for this tick
-                self.game_state.add_debug_message(f"Assigned {task.type} task to D{dwarf.id} at ({task.x}, {task.y})")
+                idle_dwarves.remove(dwarf) 
+                self.game_state.add_debug_message(f"Assigned {task.type} task to D{dwarf.id} targeting ({task.resource_x},{task.resource_y}) via ({task.x}, {task.y})")
 
             # If no IDLE dwarf can reach it, check if ANY dwarf can reach it to queue
             elif not idle_dwarves: # Only queue if no idle dwarves are left
@@ -529,9 +590,40 @@ class GameLogic:
                         # If we reached here after attempting entry, something went wrong or continue wasn't hit
                         self.game_state.add_debug_message(f"DEBUG: Post-entry attempt for D{dwarf.id}. State: {dwarf.state}") # DEBUG
 
+                    # --- Handle 'talk' task completion (IMMEDIATELY upon arrival) ---
+                    elif current_task and current_task.type == 'talk':
+                        target_x: Optional[int] = current_task.resource_x
+                        target_y: Optional[int] = current_task.resource_y
+                        if target_x is not None and target_y is not None:
+                            target_npc: Optional[NPC] = None
+                            for npc in self.game_state.characters:
+                                if npc.x == target_x and npc.y == target_y and npc.alive:
+                                    if isinstance(npc, Oracle) or "Whispering Fungus" in npc.name:
+                                        target_npc = npc
+                                        break
+                            if target_npc:
+                                # Trigger dialogue immediately
+                                self.game_state.show_oracle_dialog = True
+                                self.game_state.paused = True
+                                self.game_state.add_debug_message(f"D{dwarf.id} started talking to {target_npc.name}.")
+                                # Task is complete, set dwarf idle
+                                dwarf.state = 'idle'
+                                dwarf.task = None
+                                continue # Skip other state transitions
+                            else:
+                                self.game_state.add_debug_message(f"D{dwarf.id} arrived to talk, but target NPC {target_x},{target_y} was not Oracle/moved.")
+                                dwarf.state = 'idle' # Become idle if target invalid
+                                dwarf.task = None
+                        else:
+                            self.game_state.add_debug_message("Warning: Talk task missing target coordinates upon arrival.")
+                            dwarf.state = 'idle' # Become idle if task invalid
+                            dwarf.task = None
+                        # Make sure we don't fall through to the next state check
+                        continue 
+
                     # --- Transition to other states from moving ---
                     else:
-                        self.game_state.add_debug_message(f"DEBUG: Task was not 'enter' or no task. Determining next state.") # DEBUG
+                        self.game_state.add_debug_message(f"DEBUG: Task was not 'enter', 'talk' or no task. Determining next state.") # DEBUG
                         next_state: str = 'idle' # Default
                         if current_task:
                             if current_task.type in ['mine', 'chop', 'build', 'build_bridge']:
@@ -772,7 +864,6 @@ class GameLogic:
                              else:
                                   self.game_state.add_debug_message(f"Warning: Fight task missing target coordinates.")
 
-
                         # --- Reset Dwarf State After Task Completion ---
                         dwarf.state = 'idle'
                         dwarf.path = []
@@ -851,14 +942,19 @@ class GameLogic:
         # Example: Trigger every 100 ticks
         # if self.game_state.tick % 100 == 0:
         #     expose_to_spores(self.game_state, intensity=1)
-        pass
+        if self.game_state.tick % 50 == 0: # Trigger spore spread every 50 ticks
+            # Use a base intensity, potentially modified by game factors later
+            expose_to_spores(self.game_state, intensity=1)
 
         # --- Mission Update Logic (Placeholder) ---
         # Example: Check every 50 ticks
         # if self.game_state.tick % 50 == 0:
         #     if check_mission_completion(self.game_state, self.game_state.mission):
         #          complete_mission(self.game_state, self.game_state.mission)
-        pass
+        if not self.game_state.mission_complete:
+            if check_mission_completion(self.game_state, self.game_state.mission):
+                complete_mission(self.game_state, self.game_state.mission)
+                self.game_state.mission_complete = True
 
     def find_adjacent_tile(self, x: int, y: int) -> Optional[Tuple[int, int]]:
         """Finds a random, walkable, and unoccupied adjacent tile.

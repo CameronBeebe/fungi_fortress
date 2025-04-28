@@ -1,12 +1,12 @@
 import curses
 import random
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 # Update constants import to relative
 from .constants import MAP_WIDTH, MAP_HEIGHT, MAX_TASKS, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS, SPELL_HOTKEYS
 
 # Use relative imports for sibling modules
-from .characters import Task, Dwarf, NPC, Animal
+from .characters import Task, Dwarf, NPC, Animal, Oracle
 from .map_generation import generate_map, generate_mycelial_network
 from .missions import generate_mission # Commented out in original, keep commented
 from .player import Player
@@ -16,7 +16,7 @@ from .tiles import Tile, ENTITY_REGISTRY
 from .entities import ResourceNode, Structure, Sublevel, GameEntity
 
 if TYPE_CHECKING:
-    from .game_state import GameState
+    from .game_state import GameState, InteractionEventDetails
 
 class InputHandler:
     """Processes user input based on the current game state.
@@ -99,6 +99,14 @@ class InputHandler:
             if key in [ord('i'), ord('q')]:
                 self.game_state.show_inventory = False
                 return True
+
+        if self.game_state.show_oracle_dialog:
+            if key in [ord('t'), ord('q')]:
+                self.game_state.show_oracle_dialog = False
+                self.game_state.paused = False
+                self.game_state.add_debug_message("Exited Oracle dialogue.")
+                return True
+            return True
 
         if self.game_state.in_shop:
             # --- Shop Input Handling ---
@@ -522,8 +530,31 @@ class InputHandler:
             in_sub_level = any(sub_data.get("active", False) for sub_name, sub_data in self.game_state.sub_levels.items())
 
             if not in_sub_level:
-                # --- Check if target is a Sublevel and assign 'enter' task ---
-                if isinstance(entity, Sublevel):
+                # --- Check for adjacent Oracle FIRST --- 
+                target_char = None
+                cx, cy = self.game_state.cursor_x, self.game_state.cursor_y
+                for char in self.game_state.characters:
+                    if isinstance(char, Oracle) and abs(char.x - cx) <= 1 and abs(char.y - cy) <= 1 and char.alive:
+                        target_char = char
+                        break
+                
+                if target_char: # Found an adjacent Oracle
+                    # --- Oracle Interaction: Trigger Event --- 
+                    details: InteractionEventDetails = {
+                        "actor_id": "player",
+                        "target_id": target_char.name, 
+                        "target_type": "Oracle",
+                        "location": (target_char.x, target_char.y), # Use Oracle's location
+                        "outcome": None # Placeholder for now
+                    }
+                    self.game_state.add_event("interaction", details)
+                    self.game_state.add_debug_message(f"Initiated interaction with Oracle {target_char.name}.")
+                    # NOTE: Returning True here prevents further 'e' checks (Sublevel/Structure) in this turn
+                    return True 
+                
+                # --- If no Oracle, proceed with original checks --- 
+                elif isinstance(entity, Sublevel):
+                    # ... (original sublevel 'enter' task assignment logic) ...
                     sub_level_name = entity.name
                     entry_x, entry_y = self.game_state.cursor_x, self.game_state.cursor_y
                     dwarf = self.game_state.dwarves[0] if self.game_state.dwarves else None
@@ -532,45 +563,30 @@ class InputHandler:
                         self.game_state.add_debug_message("No dwarf available to enter.")
                         return True
 
-                    # Find adjacent walkable tile for the dwarf to move to
                     path = a_star(self.game_state.map, (dwarf.x, dwarf.y), (entry_x, entry_y), adjacent=True)
 
-                    if path is not None: # Path exists (or dwarf is already adjacent)
-                        # Determine adjacent tile for task creation
-                        adjacent_x, adjacent_y = dwarf.x, dwarf.y # Default if already adjacent
+                    if path is not None:
+                        adjacent_x, adjacent_y = dwarf.x, dwarf.y
                         if len(path) > 0:
                             adjacent_x, adjacent_y = path[-1]
-
-                            # Create and add the 'enter' task
-                            task = Task(adjacent_x, adjacent_y, 'enter', entry_x, entry_y)
-                            if self.game_state.task_manager.add_task(task):
-                                self.game_state.add_debug_message(f"Task assigned: Dwarf entering {entity.name} at ({entry_x}, {entry_y}) via ({adjacent_x}, {adjacent_y})")
-                            else:
-                                self.game_state.add_debug_message(f"Failed to add 'enter' task (manager full?)")
+                        
+                        task = Task(adjacent_x, adjacent_y, 'enter', entry_x, entry_y)
+                        if self.game_state.task_manager.add_task(task):
+                            self.game_state.add_debug_message(f"Task assigned: Dwarf entering {entity.name} at ({entry_x}, {entry_y}) via ({adjacent_x}, {adjacent_y})")
                         else:
-                            self.game_state.add_debug_message(f"Cannot reach entrance of {entity.name} at ({entry_x}, {entry_y}).")
+                            self.game_state.add_debug_message(f"Failed to add 'enter' task (manager full?)")
+                    else:
+                        self.game_state.add_debug_message(f"Cannot reach entrance of {entity.name} at ({entry_x}, {entry_y}).")
 
-                # --- Handle other interactions (non-sublevel) ---
-                # This part remains unchanged, calling tile.interact for structures etc.
                 elif isinstance(entity, Structure) or entity.interactive:
-                     # Generate map IF it doesn't exist yet (Moved from Sublevel check)
-                     # This seems misplaced now - map generation should probably happen
-                     # right before entering, triggered by the 'enter' task completion.
-                     # Let's comment this out for now and handle it in game_logic.
-                     # if isinstance(entity, Sublevel) and entity.name not in self.game_state.sub_levels:
-                     #     # ... map generation logic ...
-                     #     pass
-
-                     # Original interaction logic for non-sublevels
-                     tile_at_cursor.interact(self.game_state)
+                    # ... (original structure interaction logic) ...
+                    tile_at_cursor.interact(self.game_state)
                 else:
-                    # If it's not a Sublevel and not otherwise interactive
                     self.game_state.add_debug_message(f"Nothing to interact with: {entity.name}")
 
             elif in_sub_level:
+                # ... (original exit logic) ...
                 # --- Existing Exit Logic ---
-                # Generic exit logic - assumes 'e' from anywhere inside exits
-                # This could be refined to require being near an exit marker
                 active_sub_level_name = None
                 for sub_name, sub_data in self.game_state.sub_levels.items():
                     if sub_data.get("active", False):
@@ -581,7 +597,6 @@ class InputHandler:
                     self.game_state.sub_levels[active_sub_level_name]["active"] = False
                     self.game_state.map = self.game_state.main_map
                     
-                    # Restore main map's mycelial network
                     if self.game_state.nexus_site:
                         self.game_state.mycelial_network = generate_mycelial_network(
                             self.game_state.main_map,
@@ -589,41 +604,71 @@ class InputHandler:
                             self.game_state.magic_fungi_locations
                         )
                     else:
-                        self.game_state.mycelial_network = {} # Fallback if no nexus
+                        self.game_state.mycelial_network = {}
                         self.game_state.add_debug_message("Warning: Nexus site missing on main map, cannot restore network.")
                     self.game_state.network_distances = self.game_state.calculate_network_distances()
                     
-                    # Return to where player entered FROM, or nexus site as fallback
                     if self.game_state.entry_x is not None and self.game_state.entry_y is not None:
                         return_x, return_y = self.game_state.entry_x, self.game_state.entry_y
                     elif self.game_state.nexus_site:
                          return_x, return_y = self.game_state.nexus_site
                          self.game_state.add_debug_message("Warning: No entry point saved, returning to Nexus site.")
                     else:
-                        # Absolute fallback if no entry point and no nexus
                         return_x, return_y = MAP_WIDTH // 2, MAP_HEIGHT // 2
                         self.game_state.add_debug_message("Warning: No entry point or Nexus site, returning to center.")
                         
                     self.game_state.cursor_x, self.game_state.cursor_y = return_x, return_y
-                    # Move dwarves back near the entry point
                     for dwarf in self.game_state.dwarves:
-                        # Attempt to place near return point, but check bounds/walkability (simple offset for now)
                         dwarf.x = max(0, min(MAP_WIDTH - 1, return_x + random.randint(-1, 1)))
                         dwarf.y = max(0, min(MAP_HEIGHT - 1, return_y + random.randint(-1, 1)))
-                        # TODO: Add walkability check and find closest walkable if needed
                     self.game_state.player.update_state("location", "Main Level")
                     self.game_state.add_debug_message(f"Returned to main level from {active_sub_level_name}")
                 else:
-                     # Should not happen if in_sub_level is True, but good to handle
                      self.game_state.add_debug_message("Error: In sub-level but couldn't determine which one.")
         elif key == ord('t'):
+            # Assign a 'talk' task targeting an Oracle/NPC at the cursor location
+            dwarf = self.game_state.dwarves[0] if self.game_state.dwarves else None
+            if not dwarf:
+                self.game_state.add_debug_message("Cannot talk without a dwarf.")
+                return True
+
+            cursor_x, cursor_y = self.game_state.cursor_x, self.game_state.cursor_y
+            target_npc: Optional[NPC] = None
+
+            # Find NPC (specifically Oracle or Whispering Fungus) at the cursor location
             for npc in self.game_state.characters:
-                if abs(npc.x - self.game_state.cursor_x) <= 1 and abs(npc.y - self.game_state.cursor_y) <= 1 and npc.alive:
-                    self.game_state.add_debug_message(f"Talking to {npc.name}: 'Greetings, traveler!'")
-                    if npc.name == "Vyx the Corruptor":
-                        npc.alive = False
-                        self.game_state.add_debug_message("Vyx defeated!")
-                    break
+                if npc.x == cursor_x and npc.y == cursor_y and npc.alive:
+                    if isinstance(npc, Oracle) or "Whispering Fungus" in npc.name:
+                        target_npc = npc
+                        break
+            
+            if target_npc:
+                # Found the Oracle/target NPC at the cursor
+                target_x, target_y = target_npc.x, target_npc.y
+                task_type = 'talk'
+                
+                # Find path to an adjacent tile
+                path = a_star(self.game_state.map, (dwarf.x, dwarf.y), (target_x, target_y), adjacent=True)
+
+                if path is not None: # Path exists or dwarf is already adjacent
+                    # Determine adjacent tile for task creation
+                    adjacent_x, adjacent_y = dwarf.x, dwarf.y # Default if already adjacent
+                    if len(path) > 0:
+                        adjacent_x, adjacent_y = path[-1]
+
+                    # Create and add the task
+                    # Store Oracle's location in resource_x/y
+                    task = Task(adjacent_x, adjacent_y, task_type, target_x, target_y)
+                    if self.game_state.task_manager.add_task(task):
+                        self.game_state.add_debug_message(f"Talk task assigned for {target_npc.name} at ({target_x}, {target_y}) via ({adjacent_x}, {adjacent_y})")
+                    else:
+                        self.game_state.add_debug_message(f"Failed to add talk task (manager full?)")
+                else:
+                    # No path found
+                    self.game_state.add_debug_message(f"No adjacent walkable path to {target_npc.name} at ({target_x}, {target_y})")
+            else:
+                # No suitable NPC found at the cursor
+                self.game_state.add_debug_message("No one to talk to at cursor location.")
         elif key == ord('d'): # Enter Shop / Prepare for Descent
             # Calculate default carry state FIRST, excluding gold
             max_carry_weight = self.game_state.player.max_carry_weight

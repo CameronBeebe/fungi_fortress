@@ -658,6 +658,67 @@ class Renderer:
             self.render()
             curses.doupdate()
 
+    def show_oracle_dialog_screen(self):
+        """Displays the Oracle dialogue overlay window.
+
+        Creates a new window centered on the screen, draws a border, title,
+        and displays the dialogue content. Includes instructions on how to close it.
+        Handles cleanup and redraw if the dialogue state changes.
+        """
+        dialog_h, dialog_w = 20, 60 # Adjust size as needed
+        dialog_y = (self.max_y - dialog_h) // 2
+        dialog_x = (self.max_x - dialog_w) // 2
+        dialog_win = curses.newwin(dialog_h, dialog_w, dialog_y, dialog_x)
+        dialog_win.erase()
+        dialog_win.border()
+        dialog_win.addstr(1, (dialog_w - 15) // 2, "Oracle Dialogue") # Centered title
+
+        row = 3
+        # --- Placeholder Dialogue Content ---
+        # In the future, this will display text from the LLM interaction
+        placeholder_text = [
+            "The Oracle's fungal form pulses gently.",
+            "",
+            "'Greetings, seeker... What knowledge do you wish to unearth?'",
+            "",
+            "(Placeholder - LLM interaction will go here)"
+        ]
+        for line in placeholder_text:
+             if row < dialog_h - 2:
+                 # Simple word wrap (basic implementation)
+                 # A proper implementation might use textwrap.wrap
+                 max_line_width = dialog_w - 4 # Account for border and padding
+                 if len(line) > max_line_width:
+                     words = line.split(' ')
+                     current_line = ""
+                     for word in words:
+                         if len(current_line) + len(word) + 1 <= max_line_width:
+                             current_line += word + " "
+                         else:
+                             if row < dialog_h - 2: dialog_win.addstr(row, 2, current_line.strip()) ; row += 1
+                             current_line = word + " "
+                     if current_line.strip() and row < dialog_h - 2: dialog_win.addstr(row, 2, current_line.strip()) ; row += 1
+                 else:
+                     dialog_win.addstr(row, 2, line); row += 1
+             else:
+                 break # Stop if window is full
+        # --- End Placeholder ---
+        
+        dialog_win.addstr(dialog_h - 2, 2, "Press 't' or 'q' to close")
+        dialog_win.refresh()
+        
+        if not self.game_state.show_oracle_dialog:
+            # Clean up the overlay window
+            dialog_win.erase()
+            dialog_win.refresh()
+            del dialog_win
+            
+            # Force a complete redraw of the underlying screen
+            self.screen.clear() 
+            self.screen.refresh()
+            self.render() # Redraw map, UI, log
+            curses.doupdate()
+
     def _get_mycelial_distance(self, coords):
         """Helper method to get the distance from coordinates to the nexus
         using the pre-calculated distances in GameState.

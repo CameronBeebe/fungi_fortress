@@ -95,7 +95,8 @@ def main(stdscr: curses.window):
         # Update game logic at fixed rate
         elapsed_since_logic = current_time - last_logic_time
         if elapsed_since_logic >= target_logic_time:
-            if not (game_state.paused or game_state.show_inventory or game_state.in_shop or game_state.show_legend):
+            # Skip logic update if paused or any overlay is active
+            if not (game_state.paused or game_state.show_inventory or game_state.in_shop or game_state.show_legend or game_state.show_oracle_dialog):
                 game_logic.update()
                 needs_render = True
             last_logic_time = current_time - (elapsed_since_logic % target_logic_time)  # Maintain fixed timestep
@@ -110,6 +111,8 @@ def main(stdscr: curses.window):
                 renderer.show_shop_screen()
             elif game_state.show_legend:
                 renderer.show_legend_screen()
+            elif game_state.show_oracle_dialog:
+                renderer.show_oracle_dialog_screen()
             else:
                 renderer.render()
             
