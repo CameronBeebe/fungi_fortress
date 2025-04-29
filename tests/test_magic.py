@@ -124,43 +124,61 @@ def test_fungal_bloom_does_not_convert_grass_if_random_fails(mock_game_state, mo
     assert mock_tile.entity == grass # Should remain grass
     mock_game_state.add_debug_message.assert_not_called()
 
-def test_fungal_bloom_converts_fungi_to_magic_fungi_near_water(mock_game_state, mock_entity_registry, mock_tile):
-    """Test fungi converts to magic fungi near water with favorable random chance."""
+
+# --- Fungi to Magic Fungi Conversion Tests ---
+
+def test_fungal_bloom_converts_fungi_with_base_chance(mock_game_state, mock_entity_registry, mock_tile):
+    """Test fungi converts with base probability (10%) when no water/tree is nearby."""
     fungi = mock_entity_registry["fungi"]
     magic_fungi = mock_entity_registry["magic_fungi"]
-    water = mock_entity_registry["water"]
-
     mock_tile.entity = fungi
     mock_game_state.map[(mock_tile.x, mock_tile.y)] = mock_tile
 
-    # Place water nearby
-    water_tile = MagicMock(spec=Tile, entity=water, x=mock_tile.x + 1, y=mock_tile.y)
-    mock_game_state.map[(water_tile.x, water_tile.y)] = water_tile
-
-    # Ensure random check passes (random.random() < 0.4)
-    with patch('random.random', return_value=0.2):
+    # Ensure random check passes for base probability (random.random() < 0.10)
+    with patch('random.random', return_value=0.05):
         fungal_bloom_effect(mock_tile, mock_game_state)
 
     assert mock_tile.entity == magic_fungi
     assert (mock_tile.x, mock_tile.y) in mock_game_state.magic_fungi_locations
-    mock_game_state.add_debug_message.assert_called_with(f"Fungal Bloom: Created magic fungi at ({mock_tile.x}, {mock_tile.y})")
+    mock_game_state.add_debug_message.assert_called_with(f"Fungal Bloom: Converted fungi to magic fungi at ({mock_tile.x}, {mock_tile.y}) with prob 0.10")
 
-def test_fungal_bloom_does_not_convert_fungi_if_no_nearby_water(mock_game_state, mock_entity_registry, mock_tile):
-    """Test fungi does not convert to magic fungi if no water is nearby."""
+def test_fungal_bloom_does_not_convert_fungi_with_base_chance_if_random_fails(mock_game_state, mock_entity_registry, mock_tile):
+    """Test fungi does not convert with base probability if random check fails."""
     fungi = mock_entity_registry["fungi"]
     mock_tile.entity = fungi
     mock_game_state.map[(mock_tile.x, mock_tile.y)] = mock_tile
 
-    # Ensure no water nearby (only the target tile exists in the mock map)
-    with patch('random.random', return_value=0.2): # Random would pass if water was present
+    # Ensure random check fails for base probability (random.random() >= 0.10)
+    with patch('random.random', return_value=0.15):
         fungal_bloom_effect(mock_tile, mock_game_state)
 
     assert mock_tile.entity == fungi # Should remain normal fungi
 
-def test_fungal_bloom_does_not_convert_fungi_near_water_if_random_fails(mock_game_state, mock_entity_registry, mock_tile):
-    """Test fungi does not convert near water if random check fails."""
+
+def test_fungal_bloom_converts_fungi_to_magic_fungi_near_water(mock_game_state, mock_entity_registry, mock_tile):
+    """Test fungi converts to magic fungi near water (10% + 30% = 40% chance)."""
     fungi = mock_entity_registry["fungi"]
     magic_fungi = mock_entity_registry["magic_fungi"]
+    water = mock_entity_registry["water"]
+
+    mock_tile.entity = fungi
+    mock_game_state.map[(mock_tile.x, mock_tile.y)] = mock_tile
+
+    # Place water nearby (within 2 tiles)
+    water_tile = MagicMock(spec=Tile, entity=water, x=mock_tile.x + 1, y=mock_tile.y)
+    mock_game_state.map[(water_tile.x, water_tile.y)] = water_tile
+
+    # Ensure random check passes (random.random() < 0.40)
+    with patch('random.random', return_value=0.35):
+        fungal_bloom_effect(mock_tile, mock_game_state)
+
+    assert mock_tile.entity == magic_fungi
+    assert (mock_tile.x, mock_tile.y) in mock_game_state.magic_fungi_locations
+    mock_game_state.add_debug_message.assert_called_with(f"Fungal Bloom: Converted fungi to magic fungi at ({mock_tile.x}, {mock_tile.y}) with prob 0.40")
+
+def test_fungal_bloom_does_not_convert_fungi_near_water_if_random_fails(mock_game_state, mock_entity_registry, mock_tile):
+    """Test fungi does not convert near water if random check fails (>= 0.40)."""
+    fungi = mock_entity_registry["fungi"]
     water = mock_entity_registry["water"]
 
     mock_tile.entity = fungi
@@ -170,11 +188,102 @@ def test_fungal_bloom_does_not_convert_fungi_near_water_if_random_fails(mock_gam
     water_tile = MagicMock(spec=Tile, entity=water, x=mock_tile.x + 1, y=mock_tile.y)
     mock_game_state.map[(water_tile.x, water_tile.y)] = water_tile
 
-    # Ensure random check fails (random.random() >= 0.4)
-    with patch('random.random', return_value=0.5):
+    # Ensure random check fails (random.random() >= 0.40)
+    with patch('random.random', return_value=0.45):
         fungal_bloom_effect(mock_tile, mock_game_state)
 
     assert mock_tile.entity == fungi # Should remain normal fungi
+
+
+def test_fungal_bloom_converts_fungi_to_magic_fungi_near_tree(mock_game_state, mock_entity_registry, mock_tile):
+    """Test fungi converts to magic fungi near a tree (10% + 20% = 30% chance)."""
+    fungi = mock_entity_registry["fungi"]
+    magic_fungi = mock_entity_registry["magic_fungi"]
+    tree = mock_entity_registry["tree"]
+
+    mock_tile.entity = fungi
+    mock_game_state.map[(mock_tile.x, mock_tile.y)] = mock_tile
+
+    # Place tree nearby
+    tree_tile = MagicMock(spec=Tile, entity=tree, x=mock_tile.x + 1, y=mock_tile.y)
+    mock_game_state.map[(tree_tile.x, tree_tile.y)] = tree_tile
+
+    # Ensure random check passes (random.random() < 0.30)
+    with patch('random.random', return_value=0.25):
+        fungal_bloom_effect(mock_tile, mock_game_state)
+
+    assert mock_tile.entity == magic_fungi
+    assert (mock_tile.x, mock_tile.y) in mock_game_state.magic_fungi_locations
+    mock_game_state.add_debug_message.assert_called_with(f"Fungal Bloom: Converted fungi to magic fungi at ({mock_tile.x}, {mock_tile.y}) with prob 0.30")
+
+
+def test_fungal_bloom_does_not_convert_fungi_near_tree_if_random_fails(mock_game_state, mock_entity_registry, mock_tile):
+    """Test fungi does not convert near tree if random check fails (>= 0.30)."""
+    fungi = mock_entity_registry["fungi"]
+    tree = mock_entity_registry["tree"]
+
+    mock_tile.entity = fungi
+    mock_game_state.map[(mock_tile.x, mock_tile.y)] = mock_tile
+
+    # Place tree nearby
+    tree_tile = MagicMock(spec=Tile, entity=tree, x=mock_tile.x + 1, y=mock_tile.y)
+    mock_game_state.map[(tree_tile.x, tree_tile.y)] = tree_tile
+
+    # Ensure random check fails (random.random() >= 0.30)
+    with patch('random.random', return_value=0.35):
+        fungal_bloom_effect(mock_tile, mock_game_state)
+
+    assert mock_tile.entity == fungi # Should remain normal fungi
+
+
+def test_fungal_bloom_converts_fungi_to_magic_fungi_near_water_and_tree(mock_game_state, mock_entity_registry, mock_tile):
+    """Test fungi converts near water AND tree (10% + 30% + 20% = 60% chance)."""
+    fungi = mock_entity_registry["fungi"]
+    magic_fungi = mock_entity_registry["magic_fungi"]
+    water = mock_entity_registry["water"]
+    tree = mock_entity_registry["tree"]
+
+    mock_tile.entity = fungi
+    mock_game_state.map[(mock_tile.x, mock_tile.y)] = mock_tile
+
+    # Place water and tree nearby
+    water_tile = MagicMock(spec=Tile, entity=water, x=mock_tile.x + 1, y=mock_tile.y)
+    mock_game_state.map[(water_tile.x, water_tile.y)] = water_tile
+    tree_tile = MagicMock(spec=Tile, entity=tree, x=mock_tile.x - 1, y=mock_tile.y) # Different location
+    mock_game_state.map[(tree_tile.x, tree_tile.y)] = tree_tile
+
+    # Ensure random check passes (random.random() < 0.60)
+    with patch('random.random', return_value=0.55):
+        fungal_bloom_effect(mock_tile, mock_game_state)
+
+    assert mock_tile.entity == magic_fungi
+    assert (mock_tile.x, mock_tile.y) in mock_game_state.magic_fungi_locations
+    mock_game_state.add_debug_message.assert_called_with(f"Fungal Bloom: Converted fungi to magic fungi at ({mock_tile.x}, {mock_tile.y}) with prob 0.60")
+
+
+def test_fungal_bloom_does_not_convert_fungi_near_water_and_tree_if_random_fails(mock_game_state, mock_entity_registry, mock_tile):
+    """Test fungi does not convert near water and tree if random fails (>= 0.60)."""
+    fungi = mock_entity_registry["fungi"]
+    water = mock_entity_registry["water"]
+    tree = mock_entity_registry["tree"]
+
+    mock_tile.entity = fungi
+    mock_game_state.map[(mock_tile.x, mock_tile.y)] = mock_tile
+
+    # Place water and tree nearby
+    water_tile = MagicMock(spec=Tile, entity=water, x=mock_tile.x + 1, y=mock_tile.y)
+    mock_game_state.map[(water_tile.x, water_tile.y)] = water_tile
+    tree_tile = MagicMock(spec=Tile, entity=tree, x=mock_tile.x - 1, y=mock_tile.y)
+    mock_game_state.map[(tree_tile.x, tree_tile.y)] = tree_tile
+
+    # Ensure random check fails (random.random() >= 0.60)
+    with patch('random.random', return_value=0.65):
+        fungal_bloom_effect(mock_tile, mock_game_state)
+
+    assert mock_tile.entity == fungi # Should remain normal fungi
+
+
+# --- Other Fungal Bloom Tests ---
 
 def test_fungal_bloom_does_not_convert_occupied_tile(mock_game_state, mock_entity_registry, mock_tile):
     """Test grass/floor does not convert to fungi if occupied by a dwarf."""

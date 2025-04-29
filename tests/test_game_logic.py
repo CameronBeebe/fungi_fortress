@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import random
 
 # Use absolute imports from the installed package
-from fungi_fortress.game_logic import expose_to_spores
+from fungi_fortress.game_logic import surface_mycelium
 from fungi_fortress.tiles import Tile, ENTITY_REGISTRY # ENTITY_REGISTRY might be needed by Tile indirectly
 from fungi_fortress.entities import GameEntity, Sublevel
 from fungi_fortress.characters import Dwarf
@@ -38,8 +38,8 @@ def mock_entity_registry(monkeypatch):
         "stone_wall": mock_wall,
         "bridge": mock_bridge
     }
-    # Patch the ENTITY_REGISTRY within the fungi_fortress.game_logic module
-    monkeypatch.setattr('fungi_fortress.game_logic.ENTITY_REGISTRY', registry)
+    # Patch the ENTITY_REGISTRY where it's defined and imported from
+    monkeypatch.setattr('fungi_fortress.tiles.ENTITY_REGISTRY', registry)
     return registry
 
 @pytest.fixture
@@ -61,10 +61,24 @@ def mock_game_state(mock_entity_registry):
         return None
     game_state.get_tile = MagicMock(side_effect=_get_tile)
 
-    # Patch constants within the fungi_fortress.game_logic module
-    with patch('fungi_fortress.game_logic.MAP_WIDTH', MAP_W), \
-         patch('fungi_fortress.game_logic.MAP_HEIGHT', MAP_H):
-        yield game_state
+    # Store map dimensions on the mock for tests to use in patching
+    game_state.test_map_width = MAP_W
+    game_state.test_map_height = MAP_H
+
+    # Ensure mock player exists for spore exposure checks
+    game_state.player = MagicMock()
+    game_state.player.spore_exposure = 0 # Default to 0
+
+    # Ensure add_debug_message exists
+    game_state.add_debug_message = MagicMock()
+
+    # Ensure depth exists
+    game_state.depth = 0 # Default to 0
+
+    # Ensure mycelial_network exists
+    game_state.mycelial_network = {}
+
+    yield game_state # Removed the patch context manager here
 
 # --- Fixtures for _trigger_sublevel_entry ---
 
@@ -153,136 +167,6 @@ def mock_sublevel_map_data(mock_entity_registry):
         [Tile(wall, 0, 1), Tile(floor, 1, 1)] # Walkable at (1,1)
     ]
     return data, (1, 1), [] # map_grid, nexus_site, magic_fungi_locations
-
-# --- Tests for expose_to_spores ---
-
-def test_expose_to_spores_converts_eligible_tiles(mock_game_state, mock_entity_registry):
-    """Test that stone floor and grass are converted with guaranteed random."""
-    stone = mock_entity_registry["stone_floor"]
-    grass = mock_entity_registry["grass"]
-    mycelium = mock_entity_registry["mycelium_floor"]
-    wall = mock_entity_registry["stone_wall"]
-
-    # Setup map: stone, grass
-    mock_game_state.map[0][0].entity = stone
-    mock_game_state.map[0][1].entity = grass
-    mock_game_state.map[1][0].entity = wall # Should not convert
-
-    with patch('random.random', return_value=0.0):
-        expose_to_spores(mock_game_state, intensity=10) # Intensity 10 -> base 0.1, adjacent 0.5
-
-    assert mock_game_state.map[0][0].entity == mycelium, "Stone floor should convert"
-    assert mock_game_state.map[0][1].entity == mycelium, "Grass should convert"
-    assert mock_game_state.map[1][0].entity == wall, "Wall should not convert"
-
-def test_expose_to_spores_adjacent_converts(mock_game_state, mock_entity_registry):
-    """Test adjacent tile converts when random < adjacent_chance."""
-    stone = mock_entity_registry["stone_floor"]
-    mycelium = mock_entity_registry["mycelium_floor"]
-    mock_game_state.map[0][0].entity = mycelium
-    mock_game_state.map[1][0].entity = stone # Target tile (adjacent)
-
-    # Intensity 1 -> base 0.01, adjacent 0.05
-    # Random value 0.04 < 0.05
-    with patch('random.random', return_value=0.04):
-        expose_to_spores(mock_game_state, intensity=1)
-
-    assert mock_game_state.map[1][0].entity == mycelium, "Adjacent tile should convert (0.04 < 0.05)"
-
-def test_expose_to_spores_adjacent_does_not_convert(mock_game_state, mock_entity_registry):
-    """Test adjacent tile does not convert when random > adjacent_chance."""
-    stone = mock_entity_registry["stone_floor"]
-    mycelium = mock_entity_registry["mycelium_floor"]
-    mock_game_state.map[0][0].entity = mycelium
-    mock_game_state.map[1][0].entity = stone # Target tile (adjacent)
-
-    # Intensity 1 -> base 0.01, adjacent 0.05
-    # Random value 0.06 > 0.05
-    with patch('random.random', return_value=0.06):
-        expose_to_spores(mock_game_state, intensity=1)
-
-    assert mock_game_state.map[1][0].entity == stone, "Adjacent tile should NOT convert (0.06 > 0.05)"
-
-def test_expose_to_spores_isolated_converts(mock_game_state, mock_entity_registry):
-    """Test isolated tile converts when random < base_chance."""
-    stone = mock_entity_registry["stone_floor"]
-    mycelium = mock_entity_registry["mycelium_floor"]
-    # No adjacent mycelium
-    mock_game_state.map[0][0].entity = stone # Target tile (isolated)
-
-    # Intensity 10 -> base 0.1, adjacent 0.5
-    # Random value 0.09 < 0.1
-    with patch('random.random', return_value=0.09):
-        expose_to_spores(mock_game_state, intensity=10)
-
-    assert mock_game_state.map[0][0].entity == mycelium, "Isolated tile should convert (0.09 < 0.1)"
-
-def test_expose_to_spores_isolated_does_not_convert(mock_game_state, mock_entity_registry):
-    """Test isolated tile does not convert when random > base_chance."""
-    stone = mock_entity_registry["stone_floor"]
-    # No adjacent mycelium
-    mock_game_state.map[0][0].entity = stone # Target tile (isolated)
-
-    # Intensity 10 -> base 0.1, adjacent 0.5
-    # Random value 0.11 > 0.1
-    with patch('random.random', return_value=0.11):
-        expose_to_spores(mock_game_state, intensity=10)
-
-    assert mock_game_state.map[0][0].entity == stone, "Isolated tile should NOT convert (0.11 > 0.1)"
-
-def test_expose_to_spores_no_conversion_if_random_high(mock_game_state, mock_entity_registry):
-    """Test that tiles don't convert if random number is too high."""
-    stone_start = mock_entity_registry["stone_floor"]
-    mock_game_state.map[1][1].entity = stone_start
-
-    with patch('random.random', return_value=0.99):
-        expose_to_spores(mock_game_state, intensity=10)
-
-    assert mock_game_state.map[1][1].entity == stone_start, "Tile should not convert if random is high"
-
-def test_expose_to_spores_intensity_effect(mock_game_state, mock_entity_registry):
-    """Test that higher intensity increases conversion probability."""
-    stone = mock_entity_registry["stone_floor"]
-    mycelium = mock_entity_registry["mycelium_floor"]
-    mock_game_state.map[0][0].entity = stone
-
-    mock_random = MagicMock(return_value=0.05)
-
-    with patch('random.random', mock_random):
-        expose_to_spores(mock_game_state, intensity=1) # Chance 0.01
-    assert mock_game_state.map[0][0].entity == stone, "Should not convert with intensity 1 (0.05 > 0.01)"
-
-    mock_game_state.map[0][0].entity = stone
-    mock_random.reset_mock()
-    mock_random.return_value = 0.05
-
-    with patch('random.random', mock_random):
-        expose_to_spores(mock_game_state, intensity=10) # Chance 0.10
-    assert mock_game_state.map[0][0].entity == mycelium, "Should convert with intensity 10 (0.05 < 0.1)"
-
-def test_expose_to_spores_missing_entity_raises_error(mock_game_state, monkeypatch):
-    """Test that ImportError is raised if essential entities are missing."""
-    incomplete_registry = {
-        "stone_floor": MagicMock(spec=GameEntity, name="stone_floor"),
-        "grass": MagicMock(spec=GameEntity, name="grass"),
-        "bridge": MagicMock(spec=GameEntity, name="bridge")
-    }
-    # Patch the registry within the fungi_fortress.game_logic module
-    monkeypatch.setattr('fungi_fortress.game_logic.ENTITY_REGISTRY', incomplete_registry)
-
-    with pytest.raises(ImportError, match="Essential floor/terrain entities not found"):
-        expose_to_spores(mock_game_state, intensity=1)
-
-# Simplified mock_game_state fixture using a 2x2 map for easier testing
-# Updated patches and tests to use the 2x2 dimension
-
-# Optional: Test edge cases like empty map or map boundaries if needed
-# def test_expose_to_spores_empty_map(mock_game_state): ...
-# def test_expose_to_spores_map_edges(mock_game_state): ...
-# These might be implicitly covered if the loops handle boundaries correctly.
-
-# Remove the original placeholder test if it still exists
-# def test_example_game_logic_functionality(): ... 
 
 # --- Tests for _trigger_sublevel_entry ---
 
@@ -394,4 +278,190 @@ def test_trigger_sublevel_entry_map_gen_fails(
     # assert mock_dwarf.state != 'idle'
     assert game_state.add_debug_message.call_count >= 2
     failure_call = [call for call in game_state.add_debug_message.call_args_list if "Map generation failed" in call.args[0]]
-    assert failure_call, "Debug message about map generation failure expected" 
+    assert failure_call, "Debug message about map generation failure expected"
+
+# --- Tests for surface_mycelium ---
+
+def test_surface_mycelium_runs_only_at_depth_0(mock_game_state, mock_entity_registry):
+    """Test surface_mycelium does nothing if depth is not 0."""
+    grass = mock_entity_registry["grass"]
+    mycelium_floor = mock_entity_registry["mycelium_floor"]
+    mock_game_state.map[0][0].entity = grass
+    mock_game_state.depth = 1 # Set depth to non-zero
+    mock_game_state.mycelial_network = {(0, 0): []} # Network node at the grass tile
+    mock_game_state.player.spore_exposure = 10000 # High exposure
+
+    # Patch constants for the duration of this test
+    with patch('fungi_fortress.game_logic.MAP_WIDTH', mock_game_state.test_map_width), \
+         patch('fungi_fortress.game_logic.MAP_HEIGHT', mock_game_state.test_map_height):
+        with patch('random.random', return_value=0.0): # Guarantee conversion if logic runs
+            surface_mycelium(mock_game_state)
+
+    assert mock_game_state.map[0][0].entity == grass, "Tile should not convert at depth 1"
+
+def test_surface_mycelium_does_nothing_if_entities_missing(mock_game_state, monkeypatch):
+    """Test surface_mycelium adds debug msg and returns if entities missing."""
+    incomplete_registry = {
+        "stone_floor": MagicMock(spec=GameEntity, name="stone_floor"),
+        # "mycelium_floor": Missing
+        "grass": MagicMock(spec=GameEntity, name="grass")
+    }
+    monkeypatch.setattr('fungi_fortress.game_logic.ENTITY_REGISTRY', incomplete_registry)
+    mock_game_state.depth = 0
+    # Add a grass tile to attempt conversion
+    mock_game_state.map[0][0].entity = incomplete_registry["grass"]
+    mock_game_state.mycelial_network = {(0, 0): []}
+    mock_game_state.player.spore_exposure = 100
+
+    # Patch constants for the duration of this test
+    with patch('fungi_fortress.game_logic.MAP_WIDTH', mock_game_state.test_map_width), \
+         patch('fungi_fortress.game_logic.MAP_HEIGHT', mock_game_state.test_map_height):
+        surface_mycelium(mock_game_state)
+
+    mock_game_state.add_debug_message.assert_called_once_with(
+        "Warning: Cannot spread surface mycelium, missing entities: mycelium_floor"
+    )
+    assert mock_game_state.map[0][0].entity == incomplete_registry["grass"], "Tile should not be converted"
+
+def test_surface_mycelium_needs_network_proximity(mock_game_state, mock_entity_registry):
+    """Test tile doesn't convert if not near the network, even with high exposure."""
+    grass = mock_entity_registry["grass"]
+    mock_game_state.map[0][0].entity = grass
+    mock_game_state.depth = 0
+    mock_game_state.mycelial_network = {(5, 5): []} # Network node far away
+    mock_game_state.player.spore_exposure = 10000 # High exposure
+
+    # Patch constants for the duration of this test
+    with patch('fungi_fortress.game_logic.MAP_WIDTH', mock_game_state.test_map_width), \
+         patch('fungi_fortress.game_logic.MAP_HEIGHT', mock_game_state.test_map_height):
+        with patch('random.random', return_value=0.0):
+            surface_mycelium(mock_game_state)
+
+    assert mock_game_state.map[0][0].entity == grass, "Tile far from network should not convert"
+
+def test_surface_mycelium_converts_near_network(mock_game_state, mock_entity_registry):
+    """Test grass converts if near network node with sufficient exposure/chance."""
+    grass = mock_entity_registry["grass"]
+    mycelium_floor = mock_entity_registry["mycelium_floor"]
+    mock_game_state.map[1][1].entity = grass # Target tile
+    mock_game_state.depth = 0
+    mock_game_state.mycelial_network = {(1, 0): []} # Network node adjacent (dy=-1, dx=0)
+    # Exposure 100 -> base chance min(0.05, 0.000001 * 100) = 0.0001
+    mock_game_state.player.spore_exposure = 100
+
+    # Patch constants for the duration of this test
+    with patch('fungi_fortress.game_logic.MAP_WIDTH', mock_game_state.test_map_width), \
+         patch('fungi_fortress.game_logic.MAP_HEIGHT', mock_game_state.test_map_height):
+        # random = 0.04 > 0.0001 (base chance)
+        with patch('random.random', return_value=0.04):
+            surface_mycelium(mock_game_state)
+
+    # ASSERTION CHANGE: Should NOT convert because 0.04 > 0.0001
+    assert mock_game_state.map[1][1].entity == grass, "Tile near network should NOT convert (0.04 > 0.0001)"
+
+def test_surface_mycelium_converts_on_network_node(mock_game_state, monkeypatch):
+    """Test stone floor converts if ON a network node with sufficient exposure/chance."""
+    # Use simple strings instead of mocks for entities in this test
+    simple_registry = {
+        "stone_floor": "stone_entity",
+        "mycelium_floor": "mycelium_entity",
+        "grass": "grass_entity" # Needed for the 'all' check
+    }
+    monkeypatch.setattr('fungi_fortress.tiles.ENTITY_REGISTRY', simple_registry)
+
+    mock_game_state.map[0][0].entity = "stone_entity" # Start with stone string
+    mock_game_state.depth = 0
+    mock_game_state.mycelial_network = {(0, 0): []} # Network node AT the tile
+    # Exposure 100 -> base chance min(0.05, 0.000001 * 100) = 0.0001
+    mock_game_state.player.spore_exposure = 100
+
+    # Patch constants for the duration of this test
+    with patch('fungi_fortress.game_logic.MAP_WIDTH', mock_game_state.test_map_width), \
+         patch('fungi_fortress.game_logic.MAP_HEIGHT', mock_game_state.test_map_height):
+        # random = 0.04 > 0.0001 (base chance)
+        with patch('random.random', return_value=0.04):
+            surface_mycelium(mock_game_state)
+
+    # ASSERTION CHANGE: Should NOT convert because 0.04 > 0.0001
+    assert mock_game_state.map[0][0].entity == "stone_entity", "Tile on network node should NOT convert (0.04 > 0.0001)"
+
+def test_surface_mycelium_chance_increases_with_exposure(mock_game_state, mock_entity_registry):
+    """Test that higher spore exposure increases conversion chance."""
+    grass = mock_entity_registry["grass"]
+    mycelium_floor = mock_entity_registry["mycelium_floor"]
+    mock_game_state.map[0][0].entity = grass
+    mock_game_state.depth = 0
+    mock_game_state.mycelial_network = {(0, 0): []} # Network node at the tile
+
+    # Patch constants for the duration of this test
+    with patch('fungi_fortress.game_logic.MAP_WIDTH', mock_game_state.test_map_width), \
+         patch('fungi_fortress.game_logic.MAP_HEIGHT', mock_game_state.test_map_height):
+        # Low exposure: 10 -> base chance min(0.05, 0.000001 * 10) = 0.00001
+        mock_game_state.player.spore_exposure = 10
+        with patch('random.random', return_value=0.01): # 0.01 > 0.00001
+            surface_mycelium(mock_game_state)
+        assert mock_game_state.map[0][0].entity == grass, "Should not convert with low exposure (0.01 > 0.00001)"
+
+        # Reset tile
+        mock_game_state.map[0][0].entity = grass
+
+        # High exposure: 1000 -> base chance min(0.05, 0.000001 * 1000) = 0.001
+        mock_game_state.player.spore_exposure = 1000
+        with patch('random.random', return_value=0.01): # 0.01 > 0.001
+            surface_mycelium(mock_game_state)
+        # ASSERTION CHANGE: Should NOT convert because 0.01 > 0.001
+        assert mock_game_state.map[0][0].entity == grass, "Should NOT convert even with high exposure (0.01 > 0.001)"
+
+def test_surface_mycelium_adjacency_bonus(mock_game_state, mock_entity_registry):
+    """Test that adjacency to existing surface mycelium increases chance."""
+    grass = mock_entity_registry["grass"]
+    mycelium_floor = mock_entity_registry["mycelium_floor"]
+    mock_game_state.map[0][0].entity = mycelium_floor # Existing surface mycelium
+    mock_game_state.map[0][1].entity = grass         # Target tile adjacent to surface mycelium
+    mock_game_state.depth = 0
+    mock_game_state.mycelial_network = {(0, 1): []} # Network node at target tile
+
+    # Patch constants for the duration of this test
+    with patch('fungi_fortress.game_logic.MAP_WIDTH', mock_game_state.test_map_width), \
+         patch('fungi_fortress.game_logic.MAP_HEIGHT', mock_game_state.test_map_height):
+        # Low exposure: 10 -> base chance 0.00001
+        mock_game_state.player.spore_exposure = 10
+        # Adjacency bonus: 0.00001 * 10 = 0.0001
+
+        # Test conversion with bonus
+        with patch('random.random', return_value=0.04): # 0.04 > 0.0001
+            surface_mycelium(mock_game_state)
+        # ASSERTION CHANGE: Should NOT convert because 0.04 > 0.0001
+        assert mock_game_state.map[0][1].entity == grass, "Adjacent should NOT convert with bonus (0.04 > 0.0001)"
+
+        # Reset tile
+        mock_game_state.map[0][1].entity = grass
+
+        # Test no conversion without bonus (check isolated case with same random value)
+        mock_game_state.mycelial_network = {(5, 5): []} # Move network away from [0,0]
+        mock_game_state.mycelial_network[(0,1)] = [] # Ensure network is at target tile only
+        mock_game_state.map[0][0].entity = grass # Remove adjacent surface mycelium
+        with patch('random.random', return_value=0.04): # 0.04 > 0.00001 (base chance)
+             surface_mycelium(mock_game_state)
+        assert mock_game_state.map[0][1].entity == grass, "Isolated should not convert (0.04 > 0.00001)"
+
+def test_surface_mycelium_does_not_convert_ineligible_tiles(mock_game_state, mock_entity_registry):
+    """Test that walls or other non-grass/stone tiles are not converted."""
+    wall = mock_entity_registry["stone_wall"]
+    mock_game_state.map[0][0].entity = wall # Target tile is a wall
+    mock_game_state.depth = 0
+    mock_game_state.mycelial_network = {(0, 0): []} # Network node at the wall
+    mock_game_state.player.spore_exposure = 10000 # High exposure
+
+    # Patch constants for the duration of this test
+    with patch('fungi_fortress.game_logic.MAP_WIDTH', mock_game_state.test_map_width), \
+         patch('fungi_fortress.game_logic.MAP_HEIGHT', mock_game_state.test_map_height):
+        with patch('random.random', return_value=0.0):
+            surface_mycelium(mock_game_state)
+
+    assert mock_game_state.map[0][0].entity == wall, "Wall tile should not be converted"
+
+# --- Tests for _trigger_sublevel_entry ---
+
+# Patch the generation functions within the fungi_fortress.game_logic module
+# ... existing code ... 

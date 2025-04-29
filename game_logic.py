@@ -25,68 +25,68 @@ if TYPE_CHECKING:
     # Tile already imported
     # Structure, Sublevel already imported
 
-# --- Moved from map_generation.py ---
-def expose_to_spores(game_state: 'GameState', intensity: int):
-    """Randomly converts some floor tiles to mycelium based on intensity.
+def surface_mycelium(game_state: 'GameState'):
+    """Spreads mycelium floor tiles on the surface based on underground network proximity and player spore exposure.
 
-    Checks eligible tiles (stone floor, grass) on the current map.
-    The chance of conversion increases significantly if a tile is adjacent
-    to existing mycelium floor.
-
-    Args:
-        game_state (GameState): The current game state, used to access the map and entities.
-        intensity (int): A factor influencing the base probability of spore spread.
-                         Higher intensity increases the spread chance.
+    Only runs on the surface map (depth 0).
+    Eligible tiles (grass, stone floor) can be converted if they are adjacent
+    to a tile directly above an underground mycelial network node.
+    The base chance increases with player spore exposure and is boosted
+    if adjacent to existing surface mycelium floor.
     """
-    # Assume ENTITY_REGISTRY is populated correctly elsewhere (e.g., in tiles.py)
-    # We access it directly; if keys are missing, it should raise an error early.
-    mycelium_floor: Optional[GameEntity] = ENTITY_REGISTRY.get("mycelium_floor") # Use .get() for safety, check below
-    stone_floor: Optional[GameEntity] = ENTITY_REGISTRY.get("stone_floor")
-    grass: Optional[GameEntity] = ENTITY_REGISTRY.get("grass")
-    bridge: Optional[GameEntity] = ENTITY_REGISTRY.get("bridge") # Assuming bridge exists
+    # Only run on the surface map
+    if game_state.depth != 0:
+        return
 
-    # Check if essential entities were loaded
-    if not all([mycelium_floor, stone_floor, grass, bridge]):
-        # Collect names of missing entities for a more informative error message
-        missing = []
-        if not mycelium_floor: missing.append("mycelium_floor")
-        if not stone_floor: missing.append("stone_floor")
-        if not grass: missing.append("grass")
-        if not bridge: missing.append("bridge") # Added bridge check
-        raise ImportError(f"Essential floor/terrain entities not found in ENTITY_REGISTRY: {', '.join(missing)}")
+    mycelium_floor = ENTITY_REGISTRY.get("mycelium_floor")
+    stone_floor = ENTITY_REGISTRY.get("stone_floor")
+    grass = ENTITY_REGISTRY.get("grass")
+    # bridge = ENTITY_REGISTRY.get("bridge") # Add if bridges should also be convertible
 
-    spread_chance: float = 0.01 * intensity # Base chance
+    if not all([mycelium_floor, stone_floor, grass]): # Add bridge if needed
+        missing = [name for name, entity in [("mycelium_floor", mycelium_floor), ("stone_floor", stone_floor), ("grass", grass)] if not entity]
+        game_state.add_debug_message(f"Warning: Cannot spread surface mycelium, missing entities: {', '.join(missing)}")
+        return
 
+    # Base chance influenced by total spore exposure (adjust scaling/cap as needed)
+    base_spread_chance = min(0.05, 0.000001 * game_state.player.spore_exposure) # Reduced chance significantly
+
+    # Iterate through tiles on the current map
     for y in range(MAP_HEIGHT):
         for x in range(MAP_WIDTH):
-            tile: Optional[Tile] = game_state.get_tile(x, y) # Use safe getter
+            tile = game_state.get_tile(x, y)
             if not tile: continue
 
-            # Can only spread to stone floor or grass
-            if tile.entity in [stone_floor, grass]:
-                # Check adjacent tiles for existing mycelium (more likely to spread near existing)
-                adjacent_mycelium: bool = False
+            # Target eligible tiles (grass, stone floor)
+            if tile.entity in [stone_floor, grass]: # Add bridge if needed
+                is_near_network = False
+                # Check if this tile or its neighbours (3x3 area) are directly above a network node
+                # This checks if the (x,y) coordinate exists as a key in the network dict
                 for dy in range(-1, 2):
                     for dx in range(-1, 2):
-                        if dx == 0 and dy == 0: continue
-                        nx, ny = x + dx, y + dy
-                        adj_tile: Optional[Tile] = game_state.get_tile(nx, ny)
-                        if adj_tile and adj_tile.entity == mycelium_floor:
-                                adjacent_mycelium = True
-                                break
-                    if adjacent_mycelium: break
+                        check_x, check_y = x + dx, y + dy
+                        if (check_x, check_y) in game_state.mycelial_network:
+                            is_near_network = True
+                            break
+                    if is_near_network: break
 
-                current_chance: float = spread_chance * 5 if adjacent_mycelium else spread_chance
-                if random.random() < current_chance:
-                    # Replace the entity on the existing Tile object
-                    # We know mycelium_floor is not None due to the check above
-                    tile.entity = cast(GameEntity, mycelium_floor)
-# --- End moved function ---
+                # Only spread if near the underground network
+                if is_near_network:
+                    # Check adjacent tiles for existing surface mycelium (boosts chance)
+                    adjacent_surface_mycelium = False
+                    for dy_adj in range(-1, 2):
+                         for dx_adj in range(-1, 2):
+                             if dx_adj == 0 and dy_adj == 0: continue
+                             adj_tile = game_state.get_tile(x + dx_adj, y + dy_adj)
+                             if adj_tile and adj_tile.entity == mycelium_floor:
+                                 adjacent_surface_mycelium = True
+                                 break
+                         if adjacent_surface_mycelium: break
 
-# --- REMOVED Interaction/Entry Logic Functions (moved to interactions.py) ---
-# def enter_sublevel_logic(...):
-# def interact_mycelial_nexus_logic(...):
-# def interact_dwarven_sporeforge_logic(...):
+                    current_chance = base_spread_chance * 10 if adjacent_surface_mycelium else base_spread_chance # Higher boost adjacent
+                    if random.random() < current_chance:
+                         # We know mycelium_floor is not None due to the check above
+                         tile.entity = cast(GameEntity, mycelium_floor)
 
 class GameLogic:
     """Handles the core game logic updates performed each game tick.
@@ -323,6 +323,9 @@ class GameLogic:
                     tile.pulse_ticks -= 1
                     if tile.pulse_ticks == 0:
                         tile.set_color_override(None) # Corrected: Use set_color_override(None)
+
+        # --- Mycelium Spread Logic (Surface Only) ---
+        surface_mycelium(self.game_state)
 
         # --- Animal Movement ---
         # Only move animals if on surface map (depth 0 and no active sublevel)
@@ -692,7 +695,6 @@ class GameLogic:
                                     if spore_gain > 0:
                                          self.game_state.player.spore_exposure += spore_gain
                                          self.game_state.add_debug_message(f"Gained {spore_gain} spore exposure (total: {self.game_state.player.spore_exposure})")
-                                         expose_to_spores(self.game_state, spore_gain) # Expose area
 
                                     # --- Path Illumination Logic ---
                                     if resource_name == "magic_fungi" and self.game_state.nexus_site:
@@ -944,7 +946,7 @@ class GameLogic:
         #     expose_to_spores(self.game_state, intensity=1)
         if self.game_state.tick % 50 == 0: # Trigger spore spread every 50 ticks
             # Use a base intensity, potentially modified by game factors later
-            expose_to_spores(self.game_state, intensity=1)
+            surface_mycelium(self.game_state)
 
         # --- Mission Update Logic (Placeholder) ---
         # Example: Check every 50 ticks

@@ -68,37 +68,53 @@ def fungal_bloom_effect(tile: 'Tile', game: 'GameState'):
     grass_entity: Optional[GameEntity] = ENTITY_REGISTRY.get("grass")
     stone_floor_entity: Optional[GameEntity] = ENTITY_REGISTRY.get("stone_floor")
     mycelium_floor_entity: Optional[GameEntity] = ENTITY_REGISTRY.get("mycelium_floor")
+    tree_entity: Optional[GameEntity] = ENTITY_REGISTRY.get("tree") # Get tree entity
     # water_entity is checked by name, no need to fetch the object here
 
     # 1. BASIC FUNGI CONVERSION LOGIC
 
-    # Check for water nearby (for magic fungi conversion)
+    # Check for water and trees nearby
     has_nearby_water = False
-    for dx in range(-2, 3):
-        for dy in range(-2, 3):
+    has_nearby_tree = False
+    nearby_radius = 2 # Check within 2 tiles
+
+    for dx in range(-nearby_radius, nearby_radius + 1):
+        for dy in range(-nearby_radius, nearby_radius + 1):
             # Skip the center tile itself
             if dx == 0 and dy == 0:
                 continue
             neighbor_tile = game.get_tile(tile.x + dx, tile.y + dy)
-            # Check if neighbor_tile exists and has an entity before accessing name
-            if neighbor_tile and neighbor_tile.entity and neighbor_tile.entity.name == "water":
-                has_nearby_water = True
+            if neighbor_tile and neighbor_tile.entity:
+                if neighbor_tile.entity.name == "water":
+                    has_nearby_water = True
+                elif neighbor_tile.entity == tree_entity: # Check against the entity object
+                    has_nearby_tree = True
+            # Early exit if both found
+            if has_nearby_water and has_nearby_tree:
                 break
-        if has_nearby_water:
+        if has_nearby_water and has_nearby_tree:
             break
 
-    # Convert fungi to magic fungi if near water
-    # Check if magic_fungi_entity was found in the registry
-    if tile.entity == fungi_entity and has_nearby_water and random.random() < 0.4 and magic_fungi_entity is not None:
-        tile.entity = magic_fungi_entity # Assignment is safe now
-        if hasattr(game, 'magic_fungi_locations'):
-            magic_fungi_loc = (tile.x, tile.y)
-            if magic_fungi_loc not in game.magic_fungi_locations:
-                game.magic_fungi_locations.append(magic_fungi_loc)
-        game.add_debug_message(f"Fungal Bloom: Created magic fungi at ({tile.x}, {tile.y})")
+    # Handle conversion logic
+    if tile.entity == fungi_entity and fungi_entity is not None and magic_fungi_entity is not None:
+        base_prob = 0.10 # Base 10% chance to convert 'f' to 'F'
+        if has_nearby_water:
+            base_prob += 0.30 # Add 30% if near water
+        if has_nearby_tree:
+            base_prob += 0.20 # Add 20% if near tree
+
+        # Ensure probability doesn't exceed a cap (e.g., 90%)
+        conversion_prob = min(base_prob, 0.90)
+
+        if random.random() < conversion_prob:
+            tile.entity = magic_fungi_entity
+            if hasattr(game, 'magic_fungi_locations'):
+                magic_fungi_loc = (tile.x, tile.y)
+                if magic_fungi_loc not in game.magic_fungi_locations:
+                    game.magic_fungi_locations.append(magic_fungi_loc)
+            game.add_debug_message(f"Fungal Bloom: Converted fungi to magic fungi at ({tile.x}, {tile.y}) with prob {conversion_prob:.2f}")
 
     # Convert grass/stone floor/mycelium floor to fungi
-    # Check if fungi_entity was found in the registry
     elif tile.entity in [grass_entity, stone_floor_entity, mycelium_floor_entity] and random.random() < 0.3 and fungi_entity is not None:
         # Ensure tile isn't occupied by a living entity before converting
         # Need to check against actual types here too
