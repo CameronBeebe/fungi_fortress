@@ -29,8 +29,17 @@ A terminal-based strategy/simulation game written in Python using the curses lib
     git clone <repository-url>
     cd fungi-fortress
     ```
-2.  **Ensure requirements are met** (see above, especially for `curses` on Windows).
-3.  **Run the game:**
+2.  **Set up API Key (Optional, for LLM features):**
+    This game can use a Large Language Model (LLM) for certain features. To enable these:
+    *   Locate the file named `oracle_config.ini.example` in the root directory.
+    *   Make a copy of this file and rename it to `oracle_config.ini`.
+    *   Open `oracle_config.ini` in a text editor.
+    *   Replace `YOUR_API_KEY_HERE` with your actual API key from an LLM provider.
+    *   You can also optionally specify a `model_name` and `context_level` if you have specific preferences.
+    *   **Important:** The `oracle_config.ini` file is included in `.gitignore` and should NEVER be committed to version control if it contains a real API key.
+
+3.  **Ensure requirements are met** (see above, especially for `curses` on Windows).
+4.  **Run the game:**
     ```bash
     python main.py
     ```

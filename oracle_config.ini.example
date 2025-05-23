@@ -1,0 +1,16 @@
+[OracleAPI]
+# Obtain an API key from your preferred LLM provider and paste it here.
+# Ensure this file is named oracle_config.ini and is kept private.
+api_key = YOUR_API_KEY_HERE
+
+# Optional: Specify a preferred model name.
+# The game may have a default or override this based on availability.
+# Example: gemini-1.5-flash-latest, gpt-4, claude-3-opus-20240229
+model_name = gemini-1.5-flash-latest
+
+# Optional: Configure the level of context detail provided to the LLM.
+# Options: low, medium, high. The default is medium.
+# - low: Minimal context, potentially faster but less coherent responses.
+# - medium: Balanced context, good for most interactions.
+# - high: Extensive context, potentially slower but more detailed/nuanced responses.
+context_level = medium 

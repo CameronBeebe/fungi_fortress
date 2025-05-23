@@ -70,6 +70,14 @@ def load_oracle_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> Oracl
             parser.read_file(f)
     except FileNotFoundError:
         logger.info(f"Configuration file '{config_file_path}' not found. Oracle LLM features may be unavailable.")
+        example_config_path = os.path.join(PACKAGE_ROOT_DIR, "oracle_config.ini.example")
+        if os.path.exists(example_config_path):
+            print(f"INFO: Configuration file '{config_file_name}' not found.")
+            print(f"To enable LLM features, please copy '{example_config_path}' to '{config_file_path}' and add your API key.")
+            print("See README.md for more details.")
+        else:
+            print(f"INFO: Configuration file '{config_file_name}' not found and no example configuration was found.")
+            print("LLM features will be disabled. See README.md for manual configuration instructions if you wish to use them.")
         return OracleConfig() 
 
     api_key: Optional[str] = None
