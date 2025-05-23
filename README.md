@@ -21,6 +21,10 @@ A terminal-based strategy/simulation game written in Python using the curses lib
         pip install windows-curses
         ```
         *(Note: This project is primarily developed/tested on Unix-like systems. Windows compatibility via `windows-curses` may vary.)*
+*   **groq:** Current LLM integration testing using the X.AI API (used by the Oracle for LLM features) with groq.
+    ```bash
+    pip install groq
+    ```
 
 ## How to Run
 

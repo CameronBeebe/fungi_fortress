@@ -669,6 +669,7 @@ class Renderer:
         The content of the window changes based on game_state.oracle_interaction_state:
         - "AWAITING_OFFERING": Shows offering cost and prompts Y/N.
         - "SHOWING_CANNED_RESPONSE": Shows pre-defined dialogue.
+        - "SHOWING_CANNED_RESPONSE_FINAL_NO_API": Shows the final "come back later" message if no API key.
         - "AWAITING_PROMPT": (Phase 2) Shows chat history and input prompt.
         - "AWAITING_LLM_RESPONSE": (Phase 2) Shows "Oracle is contemplating..."
         - "SHOWING_LLM_RESPONSE": (Phase 2) Shows LLM's narrative response.

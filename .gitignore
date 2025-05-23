@@ -90,4 +90,6 @@ oracle_config.ini
 
 # Log files
 *.log
+debug.log
+oracle_interactions.log
 logs/ 
