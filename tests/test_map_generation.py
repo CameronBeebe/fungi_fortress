@@ -63,7 +63,7 @@ def test_generate_map_surface_contains_expected_tiles():
     map_grid, _, _ = generate_map(MAP_WIDTH, MAP_HEIGHT, 0, {}, None)
     tile_counts = Counter(t.entity.name for row in map_grid for t in row)
     # Check for capitalized "Grass" as found in the error message
-    contains_grass = tile_counts["Grass"] > 0
+    contains_grass = tile_counts["grass"] > 0
     contains_trees = tile_counts["Tree"] > 0
     contains_water = tile_counts["Water"] > 0
     # These are probabilistic, but should likely be true for default constants

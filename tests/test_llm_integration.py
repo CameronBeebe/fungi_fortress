@@ -17,7 +17,7 @@ from fungi_fortress.constants import MAP_WIDTH, MAP_HEIGHT
 
 # Mock ENTITY_REGISTRY for tests if necessary
 # Mock some basic entities needed for tests
-# ENTITY_REGISTRY["grass"] = GameEntity("grass", ".", 2, True, False, True, "Grass")
+ENTITY_REGISTRY["grass"] = GameEntity("grass", ".", 2, True, False, True, "Grass")
 # ENTITY_REGISTRY["stone_floor"] = GameEntity("stone_floor", ".", 7, True, False, True, "Stone Floor")
 
 
@@ -39,8 +39,18 @@ def game_state_fixture() -> GameState:
             gs.dwarves = [Dwarf(1, 1, 0)] # Ensure at least one dwarf exists
             gs.characters = [] # Start with no characters unless added by test
             gs.event_queue = [] # Ensure empty event queue
-            gs.tick = 0
-            gs.depth = 0 # Ensure starting at surface for relevant tests
+            gs.tick = 100
+            gs.depth = 5
+            gs.player_resources = {"wood": 10, "stone": 5}
+            gs.mission = {"description": "Test Mission Alpha", "objectives": ["Do something"], "rewards": [], "requirements": {}, "required_npcs": []}
+            gs.oracle_llm_interaction_history = [
+                {"player": "P_query_1", "oracle": "O_response_1"},
+                {"player": "P_query_2", "oracle": "O_response_2"},
+                {"player": "P_query_3", "oracle": "O_response_3"},
+                {"player": "P_query_4", "oracle": "O_response_4"},
+                {"player": "P_query_5", "oracle": "O_response_5"},
+                {"player": "P_query_6", "oracle": "O_response_6"},
+            ]
             # Ensure map is the dummy map
             gs.map = dummy_map 
             gs.main_map = dummy_map
@@ -135,5 +145,109 @@ def test_game_logic_consumes_events_and_calls_interface(mock_handle_event, game_
          # Check if both messages were called
          calls = [call(generic_processing_message), call(expected_log_message)]
          mock_add_debug_message.assert_has_calls(calls, any_order=True)
+
+@pytest.mark.parametrize(
+    "context_level, expected_history_len, expect_mission, expect_resources",
+    [
+        ("low", 1, False, False),
+        ("medium", 3, True, False),
+        ("high", 5, True, True),
+    ]
+)
+@patch('fungi_fortress.llm_interface._call_llm_api')
+def test_llm_prompt_context_levels(
+    mock_call_llm_api: MagicMock,
+    game_state_fixture: GameState,
+    context_level: str,
+    expected_history_len: int,
+    expect_mission: bool,
+    expect_resources: bool
+):
+    """Tests that the LLM prompt is constructed correctly based on context_level."""
+    gs = game_state_fixture
+    gs.oracle_config.context_level = context_level
+
+    test_player_query = "What is the meaning of this mushroom?"
+    event_data: GameEvent = {
+        "type": "ORACLE_QUERY",
+        "tick": gs.tick,
+        "details": {"query_text": test_player_query, "oracle_name": "Great Oracle"}
+    }
+
+    # Ensure game state has a mission and resources for high/medium checks if needed
+    if not expect_mission:
+        gs.mission = None # Explicitly set to None for low context if it shouldn't be there
+    
+    # Modify history for test predictability if expected_history_len is 0 (though current low is 1)
+    # For this test, we assume oracle_llm_interaction_history is already populated in fixture
+    # and slicing will handle it. If expected_history_len could be 0:
+    # if expected_history_len == 0:
+    #     gs.oracle_llm_interaction_history = []
+
+    # Configure the mock to return a valid string response
+    mock_call_llm_api.return_value = "The Oracle says... nothing much."
+
+    llm_interface.handle_game_event(event_data, gs)
+
+    mock_call_llm_api.assert_called_once()
+    actual_prompt = mock_call_llm_api.call_args[0][0] # prompt is the first positional arg
+
+    # Check for player query
+    assert f"Player Query: {test_player_query}" in actual_prompt
+
+    # Check for basic game context
+    assert f"Tick: {gs.tick}" in actual_prompt
+    assert f"Player depth: {gs.depth}" in actual_prompt
+
+    # Check for mission
+    if expect_mission and gs.mission:
+        assert f"Mission: {gs.mission['description']}" in actual_prompt
+    else:
+        assert "Mission:" not in actual_prompt # Or check for a more specific absence if context string changes
+
+    # Check for player resources
+    if expect_resources:
+        assert f"Player resources: {gs.player_resources}" in actual_prompt
+    else:
+        assert "Player resources:" not in actual_prompt
+    
+    # Check interaction history length
+    # More specific counting:
+    # Count the "Player Query:" line separately
+    player_query_line_present = 1 if f"Player Query: {test_player_query}" in actual_prompt else 0
+    
+    # Count "Player: " from history (note the space for specificity against "Player Query")
+    # To isolate history, we can roughly split the prompt
+    history_segment = actual_prompt.split("Interaction History:\n")[1].split("\n\nPlayer Query:")[0]
+    history_player_mentions = history_segment.count("Player: ") # Note space
+    history_oracle_mentions = history_segment.count("Oracle: ") # Note space
+
+    player_mentions_calculated = player_query_line_present + history_player_mentions
+    oracle_mentions_calculated = history_oracle_mentions
+
+    try:
+        assert player_mentions_calculated == expected_history_len + 1
+    except AssertionError as e:
+        print(f"Prompt for {context_level} (player_mentions failed):\n--BEGIN PROMPT--\n{actual_prompt}\n--END PROMPT--")
+        print(f"Analysis for {context_level}:")
+        print(f"  player_query_line_present = {player_query_line_present}")
+        print(f"  history_player_mentions = {history_player_mentions}")
+        print(f"  player_mentions_calculated = {player_mentions_calculated}")
+        print(f"  expected_history_len = {expected_history_len}")
+        print(f"  expected total player_mentions = {expected_history_len + 1}")
+        raise e
+    try:
+        assert oracle_mentions_calculated == expected_history_len
+    except AssertionError as e:
+        print(f"Prompt for {context_level} (oracle_mentions failed):\n--BEGIN PROMPT--\n{actual_prompt}\n--END PROMPT--")
+        print(f"Analysis for {context_level}:")
+        print(f"  history_oracle_mentions = {history_oracle_mentions}")
+        print(f"  oracle_mentions_calculated = {oracle_mentions_calculated}")
+        print(f"  expected_history_len = {expected_history_len}")
+        raise e
+
+    if expected_history_len == 0: # Though current low is 1
+        assert "No interaction history provided for this query." in actual_prompt
+
 
 # Ensure no if __name__ == "__main__" block here for pytest files normally 

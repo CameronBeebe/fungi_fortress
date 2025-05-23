@@ -700,74 +700,144 @@ class Renderer:
             dialog_win.border() # Draw a border
 
             # Content drawing starts from inside the border (y=1, x=1)
-            content_y, content_x = 1, 1
+            content_y_start_for_dialogue = 1 # Initial y for drawing title etc.
+            content_x = 1 # Initial x for drawing all content within border
             max_content_w = dialog_w - 2 # Account for border
-            max_content_h = dialog_h - 2
-
-            state = self.game_state.oracle_interaction_state
-            current_dialogue_lines = self.game_state.oracle_current_dialogue
             
             # Display the name of the Oracle if known
             oracle_name_display = "Oracle" # Default
             if self.game_state.active_oracle_entity_id:
-                # Attempt to find the Oracle to display its actual name
-                # This is a simplified lookup; in a more complex system, the Oracle object might be directly stored.
-                # For now, active_oracle_entity_id is assumed to be the name.
                 oracle_name_display = str(self.game_state.active_oracle_entity_id)
             
-            dialog_win.addstr(content_y, content_x, f"--- {oracle_name_display} ---", curses.A_BOLD)
-            content_y += 2 # Move down for dialogue content
+            dialog_win.addstr(content_y_start_for_dialogue, content_x, f"--- {oracle_name_display} ---", curses.A_BOLD)
+            content_y_start_for_dialogue += 2 # Move below the title and a blank line for actual dialogue content
 
-            # Display current dialogue lines
-            for i, line in enumerate(current_dialogue_lines):
-                if content_y + i < max_content_h + 1: # Ensure it fits
-                    # Wrap text if too long for the dialog width
-                    wrapped_lines = self._wrap_text_for_dialog(line, max_content_w)
-                    for wrapped_line in wrapped_lines:
-                        if content_y < max_content_h + 1:
-                            dialog_win.addstr(content_y, content_x, wrapped_line)
-                            content_y += 1
-                        else:
-                            break # Stop if no more space in dialog box
-                    if content_y >= max_content_h + 1: # Check again after wrapping
-                        break 
-                else:
-                    break # Stop if no more space
+            # Calculate available height for the scrollable dialogue text
+            # Prompt area is at dialog_h - 2. Content area ends at dialog_h - 3.
+            # Content starts at content_y_start_for_dialogue.
+            max_content_h = (dialog_h - 3) - content_y_start_for_dialogue + 1 
+            if max_content_h < 1: max_content_h = 1 # Ensure at least 1 line if window is tiny
+
+            state = self.game_state.oracle_interaction_state
+            current_dialogue_entries = self.game_state.oracle_current_dialogue
             
-            # Add state-specific prompts or information at the bottom
-            prompt_y = dialog_h - 3 # Few lines from bottom for prompts
+            # --- Prepare all dialogue lines by wrapping them ---
+            all_wrapped_lines = []
+            for entry in current_dialogue_entries:
+                # Each entry in oracle_current_dialogue might be a single string or already a list of lines
+                # For simplicity, ensure we treat it as a single block of text to be wrapped.
+                # If entries are pre-split for other reasons, this might need adjustment.
+                # For now, assume each item in current_dialogue_entries is one "paragraph" or message.
+                if isinstance(entry, str):
+                    wrapped_entry_lines = self._wrap_text_for_dialog(entry, max_content_w)
+                    all_wrapped_lines.extend(wrapped_entry_lines)
+                elif isinstance(entry, list): # If it's already a list of lines (e.g. from canned responses)
+                    for sub_line in entry:
+                         wrapped_sub_lines = self._wrap_text_for_dialog(sub_line, max_content_w)
+                         all_wrapped_lines.extend(wrapped_sub_lines)
+                else: # Should not happen
+                    all_wrapped_lines.append(f"(Invalid dialogue entry: {type(entry)})")
+
+
+            # --- Paging Logic ---
+            page_start_index = self.game_state.oracle_dialogue_page_start_index
+            total_lines = len(all_wrapped_lines)
+            # Ensure page_start_index is valid
+            if page_start_index >= total_lines and total_lines > 0:
+                page_start_index = total_lines - 1 
+            if page_start_index < 0: # Should not happen if input handler is correct
+                page_start_index = 0
+            self.game_state.oracle_dialogue_page_start_index = page_start_index # Update game_state if corrected
+            
+            lines_to_display_on_page = all_wrapped_lines[page_start_index : page_start_index + max_content_h]
+
+            current_draw_y = content_y_start_for_dialogue
+            for line_text in lines_to_display_on_page:
+                if current_draw_y <= (dialog_h - 3): # Ensure we don't write over border or prompt area
+                    try:
+                        dialog_win.addstr(current_draw_y, content_x, line_text)
+                    except curses.error: 
+                        pass 
+                    current_draw_y += 1
+
+            # --- Prompt and Paging Info Area ---
+            prompt_y = dialog_h - 2 # Line for prompts/paging info
+
+            paging_info_parts = []
+            if page_start_index > 0:
+                paging_info_parts.append("[PgUp]")
+            if page_start_index + max_content_h < total_lines:
+                paging_info_parts.append("[PgDn]")
+            
+            paging_display_str = " ".join(paging_info_parts)
+
 
             if state == "AWAITING_OFFERING":
-                # Offering text is already in current_dialogue_lines from input_handler
+                # Offering text (which is usually short) is part of current_dialogue_entries and handled above.
                 # Display player's current relevant resources for offering
-                # This part might need adjustment based on how resources are displayed or what is relevant
-                inventory_status_y = content_y + 1
-                if inventory_status_y < prompt_y -1:
-                    dialog_win.addstr(inventory_status_y, content_x, "Your current holdings:")
-                    res_y_offset = 1
-                    for res, needed in self.game_state.oracle_offering_cost.items():
-                        if inventory_status_y + res_y_offset < prompt_y -1:
-                            current_amount = self.game_state.inventory.resources.get(res, 0)
-                            dialog_win.addstr(inventory_status_y + res_y_offset, content_x + 2, f"- {res.replace('_', ' ').capitalize()}: {current_amount} (Need {needed})")
-                            res_y_offset +=1
-                        else: break
-                dialog_win.addstr(prompt_y, content_x, "Accept offering? (Y/N)")
-            elif state == "SHOWING_CANNED_RESPONSE":
-                dialog_win.addstr(prompt_y, content_x, "(Press 'T', 'Q', or Enter to close)")
-            elif state == "AWAITING_PROMPT": # Phase 2 placeholder
-                dialog_win.addstr(prompt_y, content_x, "Type your query, press Enter when ready.")
-                # Display self.game_state.oracle_prompt_buffer (Phase 2)
-                input_field_y = prompt_y -1 
-                if input_field_y > content_y:
-                     dialog_win.addstr(input_field_y, content_x, f"> {self.game_state.oracle_prompt_buffer}_") # Simple cursor
-            elif state == "AWAITING_LLM_RESPONSE": # Phase 2 placeholder
-                dialog_win.addstr(prompt_y, content_x, "The Oracle is contemplating... please wait.")
-            elif state == "SHOWING_LLM_RESPONSE": # Phase 2 placeholder
-                 dialog_win.addstr(prompt_y, content_x, "(Press Enter to continue, 'Q' to exit)")
+                # This part needs to be drawn *after* the main dialogue, respecting its paged height.
+                # The `current_draw_y` variable now holds the y position *after* the last dialogue line was drawn.
+
+                resource_lines_to_show = []
+                for res, needed in self.game_state.oracle_offering_cost.items():
+                    current_amount = self.game_state.inventory.resources.get(res, 0)
+                    resource_lines_to_show.append(f"  - {res.replace('_', ' ').capitalize()}: {current_amount} (Need {needed})")
+
+                # Check if there's enough vertical space for "Your current holdings:" + resource lines + prompt
+                # prompt_y is dialog_h - 2. Resources must fit between current_draw_y and prompt_y -1.
+                resource_area_start_y = current_draw_y 
+                
+                required_lines_for_resources = 1 + len(resource_lines_to_show) # "Holdings:" + each resource line
+                if (prompt_y - 1) - resource_area_start_y + 1 >= required_lines_for_resources:
+                    dialog_win.addstr(resource_area_start_y, content_x, "Your current holdings:")
+                    resource_area_start_y +=1
+                    for r_line in resource_lines_to_show:
+                        dialog_win.addstr(resource_area_start_y, content_x + 1, r_line) # Indent resource lines
+                        resource_area_start_y +=1
+                
+                final_prompt_text = "Accept offering? (Y/N)"
+                if paging_display_str: # Add paging if offering dialogue itself is paged (unlikely but possible)
+                    final_prompt_text = f"{paging_display_str} {final_prompt_text}"
+                dialog_win.addstr(prompt_y, content_x, final_prompt_text)
+
+            elif state == "SHOWING_CANNED_RESPONSE" or state == "SHOWING_LLM_RESPONSE":
+                base_prompt = "(Enter to continue, 'q' to exit)"
+                if paging_display_str:
+                    dialog_win.addstr(prompt_y, content_x, f"{paging_display_str} {base_prompt}")
+                else: # If no paging needed, simplify the prompt for single page views
+                    dialog_win.addstr(prompt_y, content_x, base_prompt)
             
-            # Add a general exit prompt if not covered by specific state
-            if state not in ["SHOWING_CANNED_RESPONSE", "AWAITING_OFFERING", "SHOWING_LLM_RESPONSE"]:
-                 dialog_win.addstr(dialog_h - 2, content_x, "(Press 'Q' to exit dialog)")
+            elif state == "SHOWING_CANNED_RESPONSE_FINAL_NO_API":
+                # Specific prompt for the final stage of the no-API key canned response
+                final_no_api_prompt = "('q' to depart)" # Changed Q to q previously, ensure consistency
+                if paging_display_str: # Unlikely to have paging here, but good to be thorough
+                    dialog_win.addstr(prompt_y, content_x, f"{paging_display_str} {final_no_api_prompt}")
+                else:
+                    dialog_win.addstr(prompt_y, content_x, final_no_api_prompt)
+
+            elif state == "AWAITING_PROMPT":
+                # Paging info (for dialogue history)
+                if paging_display_str:
+                     dialog_win.addstr(prompt_y, content_x, paging_display_str)
+
+                # Input field for player's query
+                input_field_y = dialog_h - 3 # One line above the main prompt/paging line
+                if input_field_y > content_y : # Ensure it doesn't overlap with dialogue history
+                    dialog_win.addstr(input_field_y, content_x, f"> {self.game_state.oracle_prompt_buffer}_")
+                elif input_field_y == content_y: # If history fills right up to it
+                     dialog_win.addstr(input_field_y, content_x, f"> {self.game_state.oracle_prompt_buffer}_")
+
+                # General instruction for prompt state (might be redundant if paging info is present)
+                if not paging_display_str: # Only show if no paging buttons are there
+                    dialog_win.addstr(prompt_y, content_x, "Type query, Enter when ready.")
+
+            elif state == "AWAITING_LLM_RESPONSE":
+                dialog_win.addstr(prompt_y, content_x, "The Oracle is contemplating... (q to cancel)")
+            
+            # General exit prompt if not explicitly handled and no paging (less relevant now with paging info)
+            if not paging_display_str and state not in ["SHOWING_CANNED_RESPONSE", "AWAITING_OFFERING", "SHOWING_LLM_RESPONSE", "AWAITING_PROMPT", "AWAITING_LLM_RESPONSE", "SHOWING_CANNED_RESPONSE_FINAL_NO_API"]:
+                 dialog_win.addstr(prompt_y, content_x, "(Press 'q' to exit dialog)")
+
 
             dialog_win.refresh()
 

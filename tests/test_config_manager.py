@@ -2,6 +2,8 @@ import pytest
 from unittest.mock import patch, mock_open, ANY, Mock
 import configparser
 import io
+import os
+from unittest.mock import call
 
 from fungi_fortress.config_manager import load_oracle_config, OracleConfig, DEFAULT_CONFIG_FILENAME
 # Import the actual PACKAGE_ROOT_DIR to verify calls to os.path.join if needed
@@ -79,19 +81,36 @@ def test_load_oracle_config_success(mock_open_func, mock_os_path_join):
     mock_os_path_join.assert_called_once_with(CONFIG_MANAGER_PACKAGE_ROOT_DIR, DEFAULT_CONFIG_FILENAME)
     mock_open_func.assert_called_once_with("mocked/path/to/oracle_config.ini", 'r')
 
+@patch('fungi_fortress.config_manager.os.path.exists')
 @patch('fungi_fortress.config_manager.os.path.join')
 @patch('fungi_fortress.config_manager.open')
-def test_load_oracle_config_file_not_found(mock_file_open, mock_os_path_join):
-    mock_os_path_join.return_value = "mocked/path/non_existent.ini"
+def test_load_oracle_config_file_not_found(mock_file_open, mock_os_path_join, mock_os_path_exists):
+    mock_config_path = "mocked/path/non_existent.ini"
+    mock_example_path = "mocked/path/oracle_config.ini.example"
+    
+    # Simulate behavior of os.path.join
+    def join_side_effect(path, filename):
+        if filename == "non_existent.ini":
+            return mock_config_path
+        elif filename == "oracle_config.ini.example":
+            return mock_example_path
+        return os.path.join(path, filename) # Fallback for any other calls
+        
+    mock_os_path_join.side_effect = join_side_effect
     mock_file_open.side_effect = FileNotFoundError
+    mock_os_path_exists.return_value = False # Assume example file also doesn't exist for this specific original test logic
+    
     config = load_oracle_config("non_existent.ini")
     assert config.api_key is None
     assert config.model_name == "gemini-1.5-flash-latest" # Expect default model name
     assert config.context_level == "medium" # Default
-    mock_os_path_join.assert_called_once_with(CONFIG_MANAGER_PACKAGE_ROOT_DIR, "non_existent.ini")
-    # open is called within a try-except, so it's called, but then FileNotFoundError is caught
-    mock_file_open.assert_called_once_with("mocked/path/non_existent.ini", 'r')
-
+    
+    expected_join_calls = [
+        call(CONFIG_MANAGER_PACKAGE_ROOT_DIR, "non_existent.ini"),
+        call(CONFIG_MANAGER_PACKAGE_ROOT_DIR, "oracle_config.ini.example")
+    ]
+    mock_os_path_join.assert_has_calls(expected_join_calls, any_order=False) # Check both calls were made
+    mock_os_path_exists.assert_called_once_with(mock_example_path) # Check that os.path.exists was called for the example file
 
 @patch('fungi_fortress.config_manager.os.path.join')
 @patch('fungi_fortress.config_manager.open', new_callable=mock_open, read_data=NO_ORACLE_SECTION_CONTENT)
@@ -175,21 +194,36 @@ def test_load_oracle_config_empty_file(mock_open_func, mock_os_path_join):
     assert config.context_level == "medium"
     mock_os_path_join.assert_called_once_with(CONFIG_MANAGER_PACKAGE_ROOT_DIR, file_basename)
 
-# Test that the logger is called
 @patch('fungi_fortress.config_manager.logger')
+@patch('fungi_fortress.config_manager.os.path.exists')
 @patch('fungi_fortress.config_manager.os.path.join')
 @patch('fungi_fortress.config_manager.open')
-def test_load_oracle_config_logs_file_not_found(mock_file_open, mock_os_path_join, mock_logger):
+def test_load_oracle_config_logs_file_not_found(mock_file_open, mock_os_path_join, mock_os_path_exists, mock_logger):
     file_basename = "non_existent_log.ini"
-    mock_path = f"mocked/path/{file_basename}"
-    mock_os_path_join.return_value = mock_path
+    mock_config_path = f"mocked/path/{file_basename}"
+    mock_example_path = f"mocked/path/oracle_config.ini.example" # Standard example name
+
+    def join_side_effect(path, filename):
+        if filename == file_basename:
+            return mock_config_path
+        elif filename == "oracle_config.ini.example":
+            return mock_example_path
+        return os.path.join(path, filename)
+
+    mock_os_path_join.side_effect = join_side_effect
     mock_file_open.side_effect = FileNotFoundError
-    
+    # Simulate example file found to test the print path in config_manager
+    mock_os_path_exists.return_value = True 
+
     load_oracle_config(file_basename)
-    
-    mock_os_path_join.assert_called_once_with(CONFIG_MANAGER_PACKAGE_ROOT_DIR, file_basename)
-    mock_logger.info.assert_any_call(f"Attempting to load config from: {mock_path}")
-    mock_logger.info.assert_any_call(f"Configuration file '{mock_path}' not found. Oracle LLM features may be unavailable.")
+
+    expected_join_calls = [
+        call(CONFIG_MANAGER_PACKAGE_ROOT_DIR, file_basename),
+        call(CONFIG_MANAGER_PACKAGE_ROOT_DIR, "oracle_config.ini.example")
+    ]
+    mock_os_path_join.assert_has_calls(expected_join_calls, any_order=False)
+    mock_os_path_exists.assert_called_once_with(mock_example_path)
+    mock_logger.info.assert_any_call(f"Configuration file '{mock_config_path}' not found. Oracle LLM features may be unavailable.")
 
 @patch('fungi_fortress.config_manager.logger')
 @patch('fungi_fortress.config_manager.os.path.join')

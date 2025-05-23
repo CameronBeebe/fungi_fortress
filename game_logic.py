@@ -335,27 +335,41 @@ class GameLogic:
                     y = max(0, min(MAP_HEIGHT - 1, y))
 
                     # Ensure tile is walkable or find nearby walkable
+                    original_x, original_y = details.get('x'), details.get('y') # Store original for message
                     tile = self.game_state.get_tile(x,y)
-                    if not tile or not tile.walkable:
+                    initial_spawn_valid = tile and tile.walkable
+
+                    if not initial_spawn_valid:
                         found_walkable = False
                         for r_s in range(1, 4): # Search radius
                             for dx_s in range(-r_s, r_s + 1):
                                 for dy_s in range(-r_s, r_s + 1):
-                                    if abs(dx_s) != r_s and abs(dy_s) != r_s: continue
+                                    if abs(dx_s) != r_s and abs(dy_s) != r_s: continue # Only check perimeter of square
                                     nx_s, ny_s = x + dx_s, y + dy_s
                                     if 0 <= nx_s < MAP_WIDTH and 0 <= ny_s < MAP_HEIGHT:
                                         adj_tile = self.game_state.get_tile(nx_s, ny_s)
                                         if adj_tile and adj_tile.walkable:
                                             x, y = nx_s, ny_s
                                             found_walkable = True
+                                            self.game_state.add_debug_message(f"LLM spawn: Original ({original_x},{original_y}) unwalkable. Found nearby at ({x},{y}).")
                                             break
                                 if found_walkable: break
                             if found_walkable: break
+                        
                         if not found_walkable:
-                            self.game_state.add_debug_message(f"Could not find walkable spot for LLM spawn near ({details.get('x')}, {details.get('y')}). Spawning at cursor.")
-                            x = self.game_state.cursor_x # Fallback
-                            y = self.game_state.cursor_y # Fallback
-
+                            # Fallback to cursor position
+                            cursor_tile = self.game_state.get_tile(self.game_state.cursor_x, self.game_state.cursor_y)
+                            if cursor_tile and cursor_tile.walkable:
+                                x, y = self.game_state.cursor_x, self.game_state.cursor_y
+                                self.game_state.add_debug_message(f"Could not find walkable spot for LLM spawn near ({original_x}, {original_y}). Spawning at cursor ({x},{y}).")
+                            else:
+                                # All fallbacks failed, inform player through oracle dialogue
+                                self.game_state.add_debug_message(f"Critical spawn fail: Could not find any walkable spot for LLM spawn near ({original_x},{original_y}) or at cursor. Action aborted.")
+                                self.game_state.oracle_current_dialogue.append(f"(The Oracle's vision for a {char_type} at ({original_x},{original_y}) was obscured, and it could not manifest.)")
+                                # Skip creating this character
+                                continue # Continue to the next action in all_llm_actions
+                    
+                    # If we've reached here, x and y are valid spawn points (either original, nearby, or cursor)
 
                     if char_type == "Oracle": # Should Oracles be spawnable by LLM? Maybe only other NPCs/Creatures
                         new_char = Oracle(name=name, x=x, y=y)
@@ -371,25 +385,35 @@ class GameLogic:
 
                 elif action_type == "add_oracle_dialogue":
                     dialogue_text = details.get("text", "The Oracle says nothing.")
-                    # is_llm_response = details.get("is_llm_response", False) # Flag for renderer
-                    # Append to current dialogue. Renderer will handle display.
                     self.game_state.oracle_current_dialogue.append(dialogue_text)
-                    # If it's an LLM response, it might also imply the Oracle is no longer "thinking"
+                    # Reset page index if this is a direct LLM response, as it's new content the user should see from the start.
                     if details.get("is_llm_response"):
+                        self.game_state.oracle_dialogue_page_start_index = 0
                         if self.game_state.oracle_interaction_state == "AWAITING_LLM_RESPONSE":
-                           self.game_state.oracle_interaction_state = "AWAITING_PROMPT" # Ready for next input
+                           self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
                 
                 elif action_type == "set_oracle_state":
                     new_state = details.get("state")
                     if new_state:
+                        old_state = self.game_state.oracle_interaction_state
                         self.game_state.oracle_interaction_state = new_state
                         self.game_state.add_debug_message(f"Oracle state set to: {new_state}")
+                        
+                        # If state changes and new introductory dialogue is added, reset page index
+                        reset_page_for_new_dialogue = False
                         if new_state == "AWAITING_PROMPT" and not self.game_state.oracle_current_dialogue:
-                            # If transitioning to prompt and no dialogue, add a generic prompt line
                              self.game_state.oracle_current_dialogue.append("The Oracle awaits your words...")
-                        elif new_state == "AWAITING_LLM_RESPONSE":
-                            self.game_state.oracle_current_dialogue.append("The Oracle contemplates your query...")
-
+                             reset_page_for_new_dialogue = True
+                        elif new_state == "AWAITING_LLM_RESPONSE" and old_state != "AWAITING_LLM_RESPONSE":
+                            # Typically, "Oracle is contemplating..." is added when player sends query.
+                            # If we are explicitly setting this state and it wasn't already this state,
+                            # and new dialogue might be added.
+                            if not any("Oracle contemplates" in line for line in self.game_state.oracle_current_dialogue[-2:]):
+                                self.game_state.oracle_current_dialogue.append("The Oracle contemplates your query...")
+                                reset_page_for_new_dialogue = True
+                        
+                        if reset_page_for_new_dialogue:
+                            self.game_state.oracle_dialogue_page_start_index = 0
 
                 # Add more action handlers here as needed (e.g., update_quest, give_item)
                 else:

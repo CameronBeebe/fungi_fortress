@@ -90,6 +90,11 @@ lore_base: Dict[str, Any] = {
                     "Though its connection to the cosmic mycelium is faint, it imparts a simple truth:",
                     "Patience and perseverance uncover hidden paths in the deep."
                 ],
+                "greeting_offering_no_llm_final": [
+                    "The Oracle strains, but the cosmic echoes are too faint today.",
+                    "Its connection to the deeper truths is obscured.",
+                    "Return when the veils between worlds are thinner, and perhaps clarity will be granted."
+                ],
                 "no_offering_made": [
                     "The Fungus remains still, its whispers too faint to discern without a sign of respect.",
                     "A worthy offering might amplify its voice."

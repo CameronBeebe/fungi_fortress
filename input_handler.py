@@ -108,6 +108,33 @@ class InputHandler:
             current_oracle = self._get_active_oracle()
             oracle_name = current_oracle.name if current_oracle else "The Oracle"
 
+            # --- Paging Input (handled across multiple states) ---
+            # Define max_content_h roughly as it's calculated in renderer for paging logic
+            # This is an approximation; ideally, this comes from a shared constant or renderer directly.
+            dialog_h_approx = 15 # As used in renderer
+            # Approximation: title (1) + space (1) + oracle_name_line (1) + space (1) + prompt_area (1) + borders (2) = 7. Content = 15 - 7 = 8
+            # More simply: dialog_h - 5 as derived for renderer's max_content_h
+            lines_per_page = dialog_h_approx - 5 
+            if lines_per_page < 1: lines_per_page = 1
+
+            page_changed = False
+            if key == curses.KEY_NPAGE: # Page Down
+                # Need to know total wrapped lines to avoid over-scrolling.
+                # This is complex without re-wrapping text here. For now, assume renderer handles boundary.
+                # A simpler approach for input: just increment/decrement and let renderer cap it.
+                self.game_state.oracle_dialogue_page_start_index += lines_per_page
+                # Renderer will cap this if it goes too far. We might want to get total_lines from somewhere.
+                page_changed = True
+            elif key == curses.KEY_PPAGE: # Page Up
+                self.game_state.oracle_dialogue_page_start_index -= lines_per_page
+                if self.game_state.oracle_dialogue_page_start_index < 0:
+                    self.game_state.oracle_dialogue_page_start_index = 0
+                page_changed = True
+            
+            if page_changed:
+                # If page changed, we consume the input and no other action for this key press occurs in the dialog
+                return True
+
             # General close keys, checked first
             if key == ord('q'): # 'q' always closes
                 self.game_state.show_oracle_dialog = False
@@ -118,6 +145,7 @@ class InputHandler:
                     self.game_state.oracle_current_dialogue = []
                     self.game_state.oracle_prompt_buffer = ""
                     self.game_state.active_oracle_entity_id = None
+                self.game_state.oracle_no_api_second_stage_pending = False # Reset this flag on any 'q' close
                 self.game_state.add_debug_message(f"Oracle dialog closed via 'q'.")
                 return True
 
@@ -133,6 +161,8 @@ class InputHandler:
                             self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
                             self.game_state.oracle_current_dialogue = ["The Oracle acknowledges your offering.", "It awaits your query..."]
                             self.game_state.oracle_prompt_buffer = ""
+                            self.game_state.oracle_dialogue_page_start_index = 0 # Reset page
+                            self.game_state.oracle_no_api_second_stage_pending = False # Ensure reset
                         else:
                             # API key not valid/placeholder, or LLM disabled - show canned response
                             self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
@@ -140,28 +170,60 @@ class InputHandler:
                             if not canned_dialogue: # Fallback
                                 canned_dialogue = ["The Oracle acknowledges your offering.", "Its connection to the aether is weak today, but it offers these words:"] + get_canned_response(current_oracle, "generic_fallback")
                             self.game_state.oracle_current_dialogue = canned_dialogue
+                            self.game_state.oracle_dialogue_page_start_index = 0 # Reset page
+                            self.game_state.oracle_no_api_second_stage_pending = True # Start the two-stage no-API response
                     else: # _handle_offering returned False (insufficient resources)
-                        if current_oracle:
-                             # Dialogue for insufficient offering is now set by _handle_offering itself
-                             pass # Ensure _handle_offering sets the dialog for insufficient resources
+                        # _handle_offering itself sets dialogue for failure
+                        self.game_state.oracle_dialogue_page_start_index = 0 # Reset page
+                        self.game_state.oracle_no_api_second_stage_pending = False # Ensure reset
                         # Stays in AWAITING_OFFERING or _handle_offering might change state
                 elif key == ord('n'):
                     self.game_state.add_debug_message("Declined Oracle's offering.")
                     if current_oracle:
                         self.game_state.oracle_current_dialogue = get_canned_response(current_oracle, "no_offering_made")
+                        self.game_state.oracle_dialogue_page_start_index = 0 # Reset page
                     self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
+                    self.game_state.oracle_no_api_second_stage_pending = False # Not a two-stage scenario here
                 return True 
             
             elif self.game_state.oracle_interaction_state == "SHOWING_CANNED_RESPONSE":
-                if key in [curses.KEY_ENTER, 10, 13, ord(' '), ord('t')]: # Exit with Enter, Space, or 't'
+                if key in [curses.KEY_ENTER, 10, 13]: # Explicitly check for Enter keys
+                    if self.game_state.oracle_no_api_second_stage_pending and current_oracle:
+                        # Load the second part of the no-API response
+                        final_canned_dialogue = get_canned_response(current_oracle, "greeting_offering_no_llm_final")
+                        if not final_canned_dialogue: # Fallback if the new key is missing
+                            final_canned_dialogue = ["The Oracle sighs. The connection cannot be maintained.", "Seek it again later."]
+                        self.game_state.oracle_current_dialogue = final_canned_dialogue
+                        self.game_state.oracle_dialogue_page_start_index = 0
+                        self.game_state.oracle_no_api_second_stage_pending = False # Second stage shown
+                        self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE_FINAL_NO_API" # New state for specific prompt
+                        return True # Handled, stay in dialog
+                    else:
+                        # Close dialog (either second Enter after no-API, or other canned responses not part of the two-stage no-API flow)
+                        self.game_state.show_oracle_dialog = False
+                        self.game_state.paused = False
+                        self.game_state.oracle_interaction_state = "IDLE"
+                        self.game_state.oracle_current_dialogue = []
+                        self.game_state.oracle_prompt_buffer = ""
+                        self.game_state.active_oracle_entity_id = None
+                        self.game_state.oracle_no_api_second_stage_pending = False # Ensure reset
+                        return True
+                # Note: 'q' is handled by the general close key section above.
+                # Other keys are absorbed in SHOWING_CANNED_RESPONSE if not Enter or q.
+                return True 
+
+            elif self.game_state.oracle_interaction_state == "SHOWING_CANNED_RESPONSE_FINAL_NO_API":
+                if key in [curses.KEY_ENTER, 10, 13, ord('q')]: # Enter or q closes
                     self.game_state.show_oracle_dialog = False
                     self.game_state.paused = False
                     self.game_state.oracle_interaction_state = "IDLE"
                     self.game_state.oracle_current_dialogue = []
                     self.game_state.oracle_prompt_buffer = ""
                     self.game_state.active_oracle_entity_id = None
+                    self.game_state.oracle_no_api_second_stage_pending = False # Ensure reset
+                    self.game_state.add_debug_message("Oracle dialog (final no-API) closed.")
                     return True
-                return True 
+                return True # Absorb other keys
 
             elif self.game_state.oracle_interaction_state == "AWAITING_PROMPT":
                 if key == curses.KEY_ENTER or key == 10 or key == 13: # Enter pressed
@@ -171,6 +233,11 @@ class InputHandler:
                         
                         # Add player query to dialogue history immediately for display
                         self.game_state.oracle_current_dialogue.append(f"> {query_text}")
+                        # Appending to dialogue means the current page might now be too far, 
+                        # but usually users want to see the latest. 
+                        # A more sophisticated paging would keep the view stable or jump to end.
+                        # For now, no explicit page reset here, new text is added at the end.
+                        # The renderer will show it if it fits on the current page or subsequent pages.
 
                         # Create and add ORACLE_QUERY event
                         event_details = {
@@ -186,7 +253,7 @@ class InputHandler:
                     else:
                         # Empty prompt submitted, perhaps show a message or just do nothing
                         self.game_state.oracle_current_dialogue.append("(You remain silent before the Oracle.)")
-                        # Optionally, could revert to AWAITING_PROMPT or close dialog
+                        # Similar to above, new text added. Page index not explicitly reset.
                 elif key == curses.KEY_BACKSPACE or key == 127 or key == 8: # Handle backspace
                     self.game_state.oracle_prompt_buffer = self.game_state.oracle_prompt_buffer[:-1]
                 elif 32 <= key <= 126: # Printable ASCII characters

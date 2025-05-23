@@ -128,14 +128,44 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
 
         # Game Context (Simplified for now, expand as needed)
         # TODO: Selectively add more game state details for better LLM context
-        context = f"Current game tick: {game_state.tick}. Player is at depth: {game_state.depth}. "
-        if game_state.mission:
-             context += f"Current mission: {game_state.mission.get('description', 'Unclear')}. "
-        
-        # Interaction History (last few exchanges)
-        history_context = "\\n".join([f"Player: {h['player']}\\nOracle: {h['oracle']}" for h in game_state.oracle_llm_interaction_history[-3:]]) # Last 3 exchanges
+        context = ""
+        history_context = ""
+        history_slice = 0
 
-        prompt = f"{system_message}\\n\\nGame Context: {context}\\n\\nInteraction History:\\n{history_context}\\n\\nPlayer Query: {player_query}\""
+        if game_state.oracle_config:
+            level = game_state.oracle_config.context_level
+            if level == "low":
+                context = f"Tick: {game_state.tick}. Player depth: {game_state.depth}. "
+                # Minimal history, e.g., last 1 exchange or specific event
+                history_slice = 1 
+            elif level == "high":
+                context = f"Tick: {game_state.tick}. Player depth: {game_state.depth}. "
+                if game_state.mission:
+                    context += f"Mission: {game_state.mission.get('description', 'Unclear')}. "
+                context += f"Player resources: {game_state.player_resources}. "
+                # Potentially add: game_state.get_visible_entities_summary() etc.
+                # Potentially add: game_state.recent_significant_events_summary()
+                history_slice = 5
+            else: # Medium or default
+                context = f"Tick: {game_state.tick}. Player depth: {game_state.depth}. "
+                if game_state.mission:
+                    context += f"Mission: {game_state.mission.get('description', 'Unclear')}. "
+                history_slice = 3
+        else: # Should not happen if called via ORACLE_QUERY due to earlier check, but as a fallback
+            context = f"Tick: {game_state.tick}. Player depth: {game_state.depth}. "
+            history_slice = 3
+
+        # Interaction History
+        if history_slice > 0:
+            history_context = "\n".join([
+                f"Player: {h['player']}\nOracle: {h['oracle']}" 
+                for h in game_state.oracle_llm_interaction_history[-history_slice:]
+            ])
+        else:
+            history_context = "No interaction history provided for this query."
+
+
+        prompt = f"{system_message}\n\nGame Context: {context}\n\nInteraction History:\n{history_context}\n\nPlayer Query: {player_query}\""
 
         # 2. Send prompt to LLM API
         api_key = game_state.oracle_config.api_key

@@ -80,6 +80,8 @@ class GameState:
         oracle_offering_cost (Dict[str, int]): Cost to activate LLM interaction with an Oracle.
         active_oracle_entity_id (Optional[Any]): ID or reference to the currently interacting Oracle.
         oracle_llm_interaction_history (List[Dict[str, str]]): History of prompts/responses with LLM for current session.
+        oracle_dialogue_page_start_index (int): The starting line index for the current page of Oracle dialogue.
+        oracle_no_api_second_stage_pending (bool): True if the Oracle is showing the first part of a no-API canned response, awaiting Enter for the second part.
     """
     def __init__(self, oracle_config: OracleConfig) -> None:
         """Initializes the game state.
@@ -129,6 +131,8 @@ class GameState:
         self.oracle_offering_cost: Dict[str, int] = {"magic_fungi": 5, "gold": 10} # Example cost
         self.active_oracle_entity_id: Optional[Any] = None # Could be Oracle's name or a unique ID
         self.oracle_llm_interaction_history: List[Dict[str,str]] = []
+        self.oracle_dialogue_page_start_index: int = 0
+        self.oracle_no_api_second_stage_pending: bool = False
 
         self.selected_spell = None
         self.spore_exposure_threshold = 20  # Threshold for path illumination
