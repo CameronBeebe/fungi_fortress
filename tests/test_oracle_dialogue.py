@@ -154,8 +154,8 @@ def test_input_close_dialog_t():
     gs.paused = True
     gs.active_oracle_entity_id = oracle.name # Set active oracle
 
-    # Simulate 't' press
-    input_handler.handle_input(ord('t'))
+    # Simulate 'q' press to close (was 't')
+    input_handler.handle_input(ord('q'))
     
     # Check dialog is closed and game unpaused
     assert not gs.show_oracle_dialog
@@ -360,7 +360,7 @@ def test_oracle_interaction_successful_offering():
 
     assert gs.oracle_interaction_state == "AWAITING_PROMPT"
     # Dialogue set by InputHandler directly after successful offering
-    assert gs.oracle_current_dialogue == ["The Oracle acknowledges your offering.", "It awaits your query... (LLM interaction pending implementation)"]
+    assert gs.oracle_current_dialogue == ["The Oracle acknowledges your offering.", "It awaits your query..."]
     assert gs.inventory.resources.get("magic_fungi", 0) == initial_magic_fungi - gs.oracle_offering_cost.get("magic_fungi", 0)
     assert gs.inventory.resources.get("gold", 0) == initial_gold - gs.oracle_offering_cost.get("gold", 0)
     # assert (oracle.id, "offering_made") in InteractionEventDetails.handled_interactions # Re-evaluate InteractionEventDetails later
@@ -427,8 +427,8 @@ def test_oracle_interaction_insufficient_offering():
     #    else: # This else branch is taken
     #        if current_oracle: self.game_state.oracle_current_dialogue = get_canned_response(current_oracle, "no_offering_made")
     
-    assert gs.oracle_interaction_state == "AWAITING_OFFERING" # Stays in this state
-    assert gs.oracle_current_dialogue == get_canned_response(oracle, "no_offering_made")
+    assert gs.oracle_interaction_state == "SHOWING_CANNED_RESPONSE" # Changed from AWAITING_OFFERING
+    assert gs.oracle_current_dialogue == get_canned_response(oracle, "insufficient_offering")
 
     assert gs.inventory.resources.get("magic_fungi", 0) == initial_magic_fungi # Unchanged
     assert gs.inventory.resources.get("gold", 0) == initial_gold # Unchanged
@@ -478,7 +478,7 @@ def test_oracle_interaction_successful_offering_refined(mock_get_active_oracle):
 
     assert gs.oracle_interaction_state == "AWAITING_PROMPT"
     # Dialogue set by InputHandler directly after successful offering
-    assert gs.oracle_current_dialogue == ["The Oracle acknowledges your offering.", "It awaits your query... (LLM interaction pending implementation)"]
+    assert gs.oracle_current_dialogue == ["The Oracle acknowledges your offering.", "It awaits your query..."]
     
     # Check that offering cost was deducted (using gs.oracle_offering_cost)
     expected_magic_fungi = 10 - gs.oracle_offering_cost.get("magic_fungi", 0)

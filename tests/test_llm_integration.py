@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 # Use absolute imports for tests relative to the project root
 from fungi_fortress.characters import Oracle, NPC, Task, Dwarf
@@ -96,9 +96,9 @@ def test_game_logic_consumes_events_and_calls_interface(mock_handle_event, game_
     
     # Add a dummy event to the queue
     dummy_event: GameEvent = {
-        "type": "interaction",
+        "type": "ORACLE_QUERY",
         "tick": 0,
-        "details": {"target_type": "Oracle", "target_id": "Test Oracle"}
+        "details": {"query_text": "Test query", "oracle_name": "Test Oracle"}
     }
     gs.event_queue.append(dummy_event)
     
@@ -113,20 +113,27 @@ def test_game_logic_consumes_events_and_calls_interface(mock_handle_event, game_
     # Assert the event queue is now empty
     assert len(gs.event_queue) == 0
     
-    # Assert the mock handler was called once with the dummy event
-    mock_handle_event.assert_called_once_with(dummy_event)
+    # Assert the mock handler was called once with the dummy event and game_state
+    mock_handle_event.assert_called_once_with(dummy_event, gs)
     
     # Test case where LLM returns actions (optional)
     mock_handle_event.reset_mock()
-    dummy_event_2: GameEvent = {"type": "test", "tick": 1, "details": {}}
+    dummy_event_2: GameEvent = {"type": "ORACLE_QUERY", "tick": 1, "details": {"query_text": "Another query"}}
     dummy_action = {"action_type": "add_message", "details": {"text": "LLM says hi!"}}
     gs.event_queue.append(dummy_event_2)
     mock_handle_event.return_value = [dummy_action]
     
-    # We need to check the print output or add a way to track processed actions
-    # For now, just assert the call happened
-    with patch('builtins.print') as mock_print:
+    # Patch GameState.add_debug_message to check for the processed action message
+    with patch.object(gs, 'add_debug_message') as mock_add_debug_message:
          game_logic.update()
-         mock_handle_event.assert_called_once_with(dummy_event_2)
-         # Check if the placeholder print for action processing was called
-         mock_print.assert_any_call(f"[GameLogic] TODO: Process LLM action: {dummy_action}") 
+         mock_handle_event.assert_called_once_with(dummy_event_2, gs)
+         # Check if the specific message for the processed action was logged
+         expected_log_message = f"LLM: {dummy_action['details']['text']}"
+         # Also check the generic processing message
+         generic_processing_message = f"[GameLogic] Processing Action: {dummy_action['action_type']} - Details: {dummy_action['details']}"
+         
+         # Check if both messages were called
+         calls = [call(generic_processing_message), call(expected_log_message)]
+         mock_add_debug_message.assert_has_calls(calls, any_order=True)
+
+# Ensure no if __name__ == "__main__" block here for pytest files normally 

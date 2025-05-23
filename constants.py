@@ -23,10 +23,10 @@ STARTING_RESOURCES = {
     "food": 2,
     "wood": 10,
     "stone": 5,
-    "gold": 0,
+    "gold": 20,
     "crystals": 0,
     "fungi": 5,
-    "magic_fungi": 0
+    "magic_fungi": 10
 }
 STARTING_SPECIAL_ITEMS: Dict[str, int] = {
     "Sclerotium": 1,

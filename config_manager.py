@@ -2,6 +2,7 @@ import configparser
 from typing import Optional, Dict, List # Added Dict, List for future use if needed here
 import os
 import logging # Import logging
+from dataclasses import dataclass
 
 # Get a logger instance (it will inherit the config from main.py if run after main's setup)
 # Or, if this module is imported before main's basicConfig, it might log to console by default.
@@ -21,19 +22,25 @@ PACKAGE_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG_FILENAME = "oracle_config.ini"
 # --- End Path configuration ---
 
+@dataclass
 class OracleConfig:
-    """Holds the configuration for Oracle LLM interactions.
+    """Configuration for Oracle LLM interactions."""
+    api_key: Optional[str] = None
+    model_name: str = "gemini-1.5-flash-latest"  # Default model
+    context_level: str = "medium"  # Default context level (low, medium, high)
+    enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
+    offering_item: Optional[str] = None # Specific item Oracle might ask for (optional)
+    offering_amount: int = 0 # Amount of specific item (if any)
+    is_real_api_key_present: bool = False # True if api_key is not None, empty, or a known placeholder
 
-    Attributes:
-        api_key (Optional[str]): The API key for the LLM service.
-        model_name (Optional[str]): The specific model to be used (e.g., 'gpt-4-turbo-preview').
-        context_level (str): The desired level of detail for game context sent to the LLM.
-                             Expected values: 'low', 'medium', 'high'.
-    """
-    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None, context_level: str = "medium"):
-        self.api_key = api_key
-        self.model_name = model_name
-        self.context_level = context_level
+    def __post_init__(self):
+        """Validate and finalize configuration after initialization."""
+        if self.api_key and self.api_key.strip() and self.api_key not in ["YOUR_API_KEY_HERE", "testkey123", "None", ""]:
+            self.is_real_api_key_present = True
+        else:
+            self.is_real_api_key_present = False
+            if self.api_key in ["YOUR_API_KEY_HERE", "testkey123", "None", ""]: # Log if it's a known placeholder or empty
+                 logger.info(f"API key is a placeholder or empty: \'{self.api_key}\'")
 
 def load_oracle_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> OracleConfig:
     """Loads Oracle configuration from the specified .ini file.
@@ -71,9 +78,9 @@ def load_oracle_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> Oracl
 
     if "OracleAPI" in parser:
         api_key = parser["OracleAPI"].get("api_key")
-        if api_key == "YOUR_API_KEY_HERE" or not api_key: # Treat placeholder or empty as no key
+        if not api_key: # Only treat truly empty as no key for loading purposes
             api_key = None
-            logger.info(f"API key not configured or is placeholder in '{config_file_path}'.")
+            logger.info(f"API key not configured or is empty in '{config_file_path}'.")
 
         model_name = parser["OracleAPI"].get("model_name")
         if not model_name: # If model_name is empty in the file

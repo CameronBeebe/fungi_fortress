@@ -1,6 +1,6 @@
 import curses
 import random
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 # Update constants import to relative
 from .constants import MAP_WIDTH, MAP_HEIGHT, MAX_TASKS, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS, SPELL_HOTKEYS
@@ -105,58 +105,104 @@ class InputHandler:
             return True # Absorb other keys when inventory is open
 
         if self.game_state.show_oracle_dialog:
-            # Allow 't' or 'q' to close the dialog regardless of sub-state first
-            if key == ord('t') or key == ord('q'):
+            current_oracle = self._get_active_oracle()
+            oracle_name = current_oracle.name if current_oracle else "The Oracle"
+
+            # General close keys, checked first
+            if key == ord('q'): # 'q' always closes
                 self.game_state.show_oracle_dialog = False
                 self.game_state.paused = False
-                self.game_state.oracle_interaction_state = "IDLE"
-                self.game_state.oracle_current_dialogue = []
-                self.game_state.active_oracle_entity_id = None
-                self.game_state.add_debug_message(f"Oracle dialog closed via '{chr(key)}'.")
+                # Reset states only if not in a state that should persist (e.g. AWAITING_LLM_RESPONSE)
+                if self.game_state.oracle_interaction_state != "AWAITING_LLM_RESPONSE":
+                    self.game_state.oracle_interaction_state = "IDLE"
+                    self.game_state.oracle_current_dialogue = []
+                    self.game_state.oracle_prompt_buffer = ""
+                    self.game_state.active_oracle_entity_id = None
+                self.game_state.add_debug_message(f"Oracle dialog closed via 'q'.")
                 return True
-
-            current_oracle = self._get_active_oracle()
 
             if self.game_state.oracle_interaction_state == "AWAITING_OFFERING":
                 if key == ord('y'):
                     if current_oracle and self._handle_offering(current_oracle):
-                        # Offering successful, transition to prompt state (Phase 2)
-                        # For now, let's show a placeholder message and allow exit
-                        self.game_state.oracle_interaction_state = "AWAITING_PROMPT" # This will be next phase
-                        self.game_state.oracle_current_dialogue = ["The Oracle acknowledges your offering.", "It awaits your query... (LLM interaction pending implementation)"]
-                    else:
-                        # Offering failed (not enough resources or no oracle)
-                        # Message already added by _handle_offering or implicitly by current_oracle being None
-                        # Stay in AWAITING_OFFERING or let renderer show canned response for no_offering_made
+                        # Offering successful, now check API key
+                        has_real_api_key = False # Default to false
+                        if self.game_state.oracle_config:
+                            has_real_api_key = self.game_state.oracle_config.is_real_api_key_present
+
+                        if has_real_api_key:
+                            self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
+                            self.game_state.oracle_current_dialogue = ["The Oracle acknowledges your offering.", "It awaits your query..."]
+                            self.game_state.oracle_prompt_buffer = ""
+                        else:
+                            # API key not valid/placeholder, or LLM disabled - show canned response
+                            self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
+                            canned_dialogue = get_canned_response(current_oracle, "greeting_offering_no_llm")
+                            if not canned_dialogue: # Fallback
+                                canned_dialogue = ["The Oracle acknowledges your offering.", "Its connection to the aether is weak today, but it offers these words:"] + get_canned_response(current_oracle, "generic_fallback")
+                            self.game_state.oracle_current_dialogue = canned_dialogue
+                    else: # _handle_offering returned False (insufficient resources)
                         if current_oracle:
-                             self.game_state.oracle_current_dialogue = get_canned_response(current_oracle, "no_offering_made")
-                        # self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE" # Or revert, or just let current state render appropriate message
+                             # Dialogue for insufficient offering is now set by _handle_offering itself
+                             pass # Ensure _handle_offering sets the dialog for insufficient resources
+                        # Stays in AWAITING_OFFERING or _handle_offering might change state
                 elif key == ord('n'):
                     self.game_state.add_debug_message("Declined Oracle's offering.")
                     if current_oracle:
                         self.game_state.oracle_current_dialogue = get_canned_response(current_oracle, "no_offering_made")
-                    self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE" # Show canned response, then allow exit
-                return True # Absorb other keys in this state
+                    self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
+                return True 
             
             elif self.game_state.oracle_interaction_state == "SHOWING_CANNED_RESPONSE":
-                # If showing canned response, any key (or specific like enter/q/t) could close
-                # For now, 'q' is the main exit, handled above. If other keys should close here:
-                if key in [ord('t'), ord('q'), curses.KEY_ENTER, 10, 13]: # Allow exit with t, q, or Enter
+                if key in [curses.KEY_ENTER, 10, 13, ord(' '), ord('t')]: # Exit with Enter, Space, or 't'
                     self.game_state.show_oracle_dialog = False
                     self.game_state.paused = False
                     self.game_state.oracle_interaction_state = "IDLE"
                     self.game_state.oracle_current_dialogue = []
+                    self.game_state.oracle_prompt_buffer = ""
                     self.game_state.active_oracle_entity_id = None
                     return True
-                return True # Absorb other keys
-            
-            # Placeholder for AWAITING_PROMPT and other future states (Phase 2+)
-            # For now, any key in these states will just be absorbed
-            # elif self.game_state.oracle_interaction_state == "AWAITING_PROMPT":
-            #     # ... handle text input ...
-            #     return True 
+                return True 
 
-            return True # Absorb any unhandled keys while oracle dialog is open
+            elif self.game_state.oracle_interaction_state == "AWAITING_PROMPT":
+                if key == curses.KEY_ENTER or key == 10 or key == 13: # Enter pressed
+                    if self.game_state.oracle_prompt_buffer.strip():
+                        query_text = self.game_state.oracle_prompt_buffer
+                        self.game_state.add_debug_message(f"Player query: {query_text}")
+                        
+                        # Add player query to dialogue history immediately for display
+                        self.game_state.oracle_current_dialogue.append(f"> {query_text}")
+
+                        # Create and add ORACLE_QUERY event
+                        event_details = {
+                            "query_text": query_text,
+                            "oracle_name": oracle_name,
+                             # Add any other relevant details for the LLM context if needed directly from input handler
+                        }
+                        self.game_state.add_event("ORACLE_QUERY", event_details)
+                        
+                        self.game_state.oracle_interaction_state = "AWAITING_LLM_RESPONSE"
+                        # Dialogue like "Oracle is contemplating..." will be added by GameLogic's action handler for set_oracle_state
+                        self.game_state.oracle_prompt_buffer = "" # Clear buffer after sending
+                    else:
+                        # Empty prompt submitted, perhaps show a message or just do nothing
+                        self.game_state.oracle_current_dialogue.append("(You remain silent before the Oracle.)")
+                        # Optionally, could revert to AWAITING_PROMPT or close dialog
+                elif key == curses.KEY_BACKSPACE or key == 127 or key == 8: # Handle backspace
+                    self.game_state.oracle_prompt_buffer = self.game_state.oracle_prompt_buffer[:-1]
+                elif 32 <= key <= 126: # Printable ASCII characters
+                    # Limit prompt length if necessary
+                    if len(self.game_state.oracle_prompt_buffer) < 200: # Example limit
+                        self.game_state.oracle_prompt_buffer += chr(key)
+                # Other keys (arrows, etc.) are ignored in this state
+                return True
+            
+            elif self.game_state.oracle_interaction_state == "AWAITING_LLM_RESPONSE":
+                # Input is generally ignored while waiting for LLM, except perhaps a cancel key (handled by 'q')
+                self.game_state.add_debug_message("Input ignored: Awaiting LLM response.")
+                return True
+
+            # Fallback for any other Oracle states, absorb key
+            return True
 
         if self.game_state.in_shop:
             # --- Shop Input Handling ---
@@ -679,79 +725,100 @@ class InputHandler:
                 else:
                      self.game_state.add_debug_message("Error: In sub-level but couldn't determine which one.")
         elif key == ord('t'): # Talk / Task Interaction / Toggle Dialog
-            # This key now has dual purpose based on context (handled above if dialog is open)
+            # Find adjacent character to talk to
+            talk_target = None
+            adj_pos = [
+                (self.game_state.cursor_x, self.game_state.cursor_y - 1), (self.game_state.cursor_x, self.game_state.cursor_y + 1),
+                (self.game_state.cursor_x - 1, self.game_state.cursor_y), (self.game_state.cursor_x + 1, self.game_state.cursor_y)
+            ]
             
-            target_x, target_y = self.game_state.cursor_x, self.game_state.cursor_y
-            dwarf = self.game_state.dwarves[0] if self.game_state.dwarves else None
-
-            if not dwarf:
-                self.game_state.add_debug_message("No dwarf available to talk.")
-                return True
-
-            target_oracle: Optional[Oracle] = None
-            for char_entity in self.game_state.characters:
-                if isinstance(char_entity, Oracle) and \
-                   char_entity.x == target_x and \
-                   char_entity.y == target_y and \
-                   char_entity.alive:
-                    target_oracle = char_entity
+            # Get the primary dwarf, ensuring dwarves list is not empty
+            player_dwarf = self.game_state.dwarves[0] if self.game_state.dwarves else None
+            
+            # Check if cursor is on an NPC/Oracle
+            target_entity_on_cursor: Optional[Union[NPC, Oracle]] = None
+            for char in self.game_state.characters:
+                if char.x == self.game_state.cursor_x and char.y == self.game_state.cursor_y and isinstance(char, (NPC, Oracle)):
+                    target_entity_on_cursor = char
                     break
             
-            if target_oracle:
-                # Check for adjacency
-                is_adjacent = (abs(dwarf.x - target_oracle.x) <= 1 and \
-                               abs(dwarf.y - target_oracle.y) <= 1 and \
-                               not (dwarf.x == target_oracle.x and dwarf.y == target_oracle.y))
-
+            if target_entity_on_cursor and isinstance(target_entity_on_cursor, (NPC, Oracle)):
+                # Check if player dwarf is adjacent to the target on cursor
+                is_adjacent = False
+                if player_dwarf:
+                    for pos_x, pos_y in adj_pos:
+                        if player_dwarf.x == pos_x and player_dwarf.y == pos_y and \
+                           self.game_state.cursor_x == target_entity_on_cursor.x and \
+                           self.game_state.cursor_y == target_entity_on_cursor.y:
+                             is_adjacent = True
+                             break
+                    # A simpler adjacency check if cursor is on the target and dwarf is next to cursor target
+                    if not is_adjacent and player_dwarf and \
+                       abs(player_dwarf.x - target_entity_on_cursor.x) <=1 and \
+                       abs(player_dwarf.y - target_entity_on_cursor.y) <=1 and \
+                       (player_dwarf.x != target_entity_on_cursor.x or player_dwarf.y != target_entity_on_cursor.y): # Is adjacent
+                           is_adjacent = True
+                
                 if is_adjacent:
-                    # Open dialog directly
-                    self.game_state.active_oracle_entity_id = target_oracle.name
-                    self.game_state.show_oracle_dialog = True
-                    self.game_state.paused = True
-                    self.game_state.oracle_current_dialogue = []
-                    self.game_state.oracle_llm_interaction_history = []
-                    self.game_state.oracle_prompt_buffer = ""
-
-                    api_key_value = self.game_state.oracle_config.api_key if self.game_state.oracle_config else "No OracleConfig object"
-                    self.game_state.add_debug_message(f"InputHandler (adjacent): API key from config = '{api_key_value}'")
-
-                    if self.game_state.oracle_config and self.game_state.oracle_config.api_key:
+                    talk_target = target_entity_on_cursor
+                    if isinstance(talk_target, Oracle):
+                        self.game_state.active_oracle_entity_id = talk_target.name
+                        self.game_state.show_oracle_dialog = True
+                        self.game_state.paused = True
+                        # ALWAYS go to AWAITING_OFFERING first
                         self.game_state.oracle_interaction_state = "AWAITING_OFFERING"
                         offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in self.game_state.oracle_offering_cost.items()])
-                        self.game_state.oracle_current_dialogue.extend([
-                            f"{target_oracle.name} desires an offering to share deeper insights:",
+                        self.game_state.oracle_current_dialogue = [
+                            f"{talk_target.name} desires an offering to share deeper insights:",
                             f"({offering_cost_str}).",
                             "Will you make this offering? (Y/N)"
-                        ])
-                    else:
-                        self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
-                        self.game_state.oracle_current_dialogue = get_canned_response(target_oracle, "no_api_key")
-                    self.game_state.add_debug_message(f"Initiated talk with Oracle (adjacent): {target_oracle.name}")
-                else:
-                    # Not adjacent, create a 'talk' task
-                    path = a_star(self.game_state.map, (dwarf.x, dwarf.y), (target_oracle.x, target_oracle.y), adjacent=True)
-                    if path is not None: # Path can be empty if already adjacent, but we handled that. So path must have items or be None.
-                        if len(path) > 0:
-                            adj_x, adj_y = path[-1] # Adjacent tile to work from
-                            task = Task(adj_x, adj_y, 'talk', resource_x=target_oracle.x, resource_y=target_oracle.y)
-                            if self.game_state.task_manager.add_task(task):
-                                self.game_state.add_debug_message(f"'Talk' task assigned for {target_oracle.name} at ({target_oracle.x}, {target_oracle.y}) via ({adj_x}, {adj_y})")
-                            else:
-                                self.game_state.add_debug_message(f"Failed to add 'talk' task (manager full?) for {target_oracle.name}")
-                        else: # Path is empty, means dwarf is already on an adjacent tile (should have been caught by is_adjacent)
-                              # This case implies a logic flaw if reached, but defensively open dialog.
-                            self.game_state.add_debug_message(f"Warning: Path to adjacent for talk task was empty, but not caught by adjacency check. Opening dialog for {target_oracle.name}.")
-                            self.game_state.active_oracle_entity_id = target_oracle.name
-                            self.game_state.show_oracle_dialog = True # Open dialog as a fallback
-                            # (Simplified dialog setup, can be expanded like above)
-                            self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE" 
-                            self.game_state.oracle_current_dialogue = get_canned_response(target_oracle, "greeting")
+                        ]
+                        self.game_state.add_debug_message(f"Initiated Oracle dialog with {talk_target.name}. Awaiting offering.")
+                    elif isinstance(talk_target, NPC): # Handle other NPCs
+                        # Simple interaction for other NPCs for now
+                        self.game_state.add_debug_message(f"You talk to {talk_target.name}. They grunt noncommittally.")
+                    return True # Input handled
 
-
-                    else:
-                        self.game_state.add_debug_message(f"No path to talk to Oracle {target_oracle.name} at ({target_oracle.x}, {target_oracle.y})")
-            else:
-                self.game_state.add_debug_message("No Oracle at cursor to talk to.")
+            # If not adjacent or no direct target, try to assign a 'talk' task
+            if player_dwarf and target_entity_on_cursor and isinstance(target_entity_on_cursor, (NPC, Oracle)):
+                # Use a_star to find a path to an adjacent tile
+                path_to_target = a_star(self.game_state.map, 
+                                        (player_dwarf.x, player_dwarf.y), 
+                                        (target_entity_on_cursor.x, target_entity_on_cursor.y), 
+                                        adjacent=True)
+                
+                task_assigned_or_msg_sent = False
+                if path_to_target is not None:
+                    if len(path_to_target) > 0:
+                        # Path found, target is the last step in path (adjacent to actual target)
+                        task_x, task_y = path_to_target[-1]
+                        talk_task = Task(x=task_x, y=task_y, type='talk',
+                                         resource_x=target_entity_on_cursor.x,
+                                         resource_y=target_entity_on_cursor.y)
+                        if self.game_state.task_manager.add_task(talk_task):
+                            dwarf_display_name = f"Dwarf {player_dwarf.id}" # Use ID for now
+                            self.game_state.add_debug_message(f"{dwarf_display_name} will go talk to {target_entity_on_cursor.name}.")
+                            # Ensure no dialog is showing while pathing and clear Oracle state
+                            self.game_state.show_oracle_dialog = False
+                            self.game_state.oracle_interaction_state = "IDLE"
+                            self.game_state.active_oracle_entity_id = None
+                            self.game_state.oracle_current_dialogue = []
+                        else:
+                            self.game_state.add_debug_message("Task list is full. Cannot assign talk task.")
+                        task_assigned_or_msg_sent = True
+                    elif len(path_to_target) == 0: # Already adjacent (should have been caught by direct adjacency handling)
+                         # This case should ideally not be reached if direct adjacency handling is robust.
+                         # However, as a fallback, consider if a task should still be made or error.
+                         # For now, assume direct adjacency was missed and log it.
+                         self.game_state.add_debug_message(f"Path to talk to {target_entity_on_cursor.name} was empty, but not handled by direct adjacency.")
+                         # Optionally, could attempt direct dialog opening here if it wasn't, but that might indicate a deeper logic flow issue.
+                         task_assigned_or_msg_sent = True # Treat as handled to avoid 'cannot find path' message
+                
+                if not task_assigned_or_msg_sent: # Path was None or some other issue
+                    self.game_state.add_debug_message(f"Cannot find a path to talk to {target_entity_on_cursor.name}.")
+                return True
+            else: # No specific NPC/Oracle at cursor, or player_dwarf issue
+                 self.game_state.add_debug_message("Nothing to talk to there, or no one to send.")
             return True
         elif key == ord('d'): # Enter Shop / Prepare for Descent
             # Calculate default carry state FIRST, excluding gold
@@ -785,50 +852,43 @@ class InputHandler:
         return True
 
     def _get_active_oracle(self) -> Optional[Oracle]:
-        """Helper to retrieve the active Oracle object from game_state based on its ID/name."""
-        if self.game_state.active_oracle_entity_id is None:
-            return None
-        # Assuming active_oracle_entity_id stores the Oracle's name for now.
-        # If map entities list is used, this might search self.game_state.map or self.game_state.characters
-        # For simplicity, let's assume Oracles are in self.game_state.characters list
-        # This part might need adjustment based on how Oracles are stored and identified.
-        # For now, let's assume we need to find it on the map at its known interaction point,
-        # or if Oracles are stored in a general character list.
-        # Let's refine this if Oracles are spawned dynamically and not always in a fixed list.
-        # A simpler way if the entity object itself can be stored, but ID is safer for serialization.
-        
-        # Search in self.game_state.characters (NPC list which includes Oracles)
-        for char_list in [self.game_state.characters]: # Add other lists if Oracles can be elsewhere
-            for entity in char_list:
-                if isinstance(entity, Oracle) and entity.name == self.game_state.active_oracle_entity_id:
-                    return entity
-        
-        # Fallback: if not in characters list, check entities on map tiles if needed,
-        # but this is less efficient. The talk initiation should ideally give us enough info.
-        # For now, if not found in characters list, assume an issue.
-        self.game_state.add_debug_message(f"Error: Active Oracle '{self.game_state.active_oracle_entity_id}' not found.")
+        if self.game_state.active_oracle_entity_id:
+            # Correctly search for the oracle in game_state.characters
+            for char in self.game_state.characters:
+                if isinstance(char, Oracle) and char.name == self.game_state.active_oracle_entity_id:
+                    return char
         return None
 
     def _handle_offering(self, oracle: Oracle) -> bool:
-        """Checks if player can afford the offering and deducts it if so."""
+        """Checks if player has resources and deducts them if 'Y' is pressed.
+        
+        Returns:
+            bool: True if offering was made successfully, False otherwise (e.g. insufficient items).
+        """
+        # Use game_state.oracle_offering_cost for universal offering
+        required_resources = self.game_state.oracle_offering_cost 
+        
         can_afford = True
-        for resource, amount_needed in self.game_state.oracle_offering_cost.items():
+        for resource, amount_needed in required_resources.items():
+            # Correctly access resource count from inventory
             if self.game_state.inventory.resources.get(resource, 0) < amount_needed:
                 can_afford = False
                 break
         
         if can_afford:
-            for resource, amount_needed in self.game_state.oracle_offering_cost.items():
-                self.game_state.inventory.remove_resource(resource, amount_needed)
-            self.game_state.add_debug_message(f"Made offering to {oracle.name}.")
+            for resource, amount_to_deduct in required_resources.items():
+                self.game_state.inventory.remove_resource(resource, amount_to_deduct)
+            self.game_state.add_debug_message(f"Offering made to {oracle.name}: {required_resources}")
+            # InteractionEventDetails.log_interaction("player", "offering_made", oracle.name, cost=required_resources)
             return True
         else:
-            offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in self.game_state.oracle_offering_cost.items()])
-            self.game_state.oracle_current_dialogue = [
-                "You lack the required offering.",
-                f"(Needs: {offering_cost_str})"
-            ] # This will be displayed by renderer
-            self.game_state.add_debug_message(f"Cannot afford offering for {oracle.name}.")
+            self.game_state.add_debug_message(f"Insufficient resources for offering to {oracle.name}.")
+            # Set dialog for insufficient offering here
+            self.game_state.oracle_current_dialogue = get_canned_response(oracle, "insufficient_offering")
+            if not self.game_state.oracle_current_dialogue: # Fallback
+                self.game_state.oracle_current_dialogue = ["You lack the required items for the offering."]
+            self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE" # Move to show this message
+            # InteractionEventDetails.log_interaction("player", "offering_failed_insufficient", oracle.name)
             return False
 
     # Removed find_adjacent_walkable and find_adjacent_tile

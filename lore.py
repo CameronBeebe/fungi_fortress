@@ -74,6 +74,83 @@ lore_base: Dict[str, Any] = {
             "quests": ["Purge the Corrupted Grotto"]
         }
     },
+    "oracles": {
+        "Whispering Fungus": {
+            "description": "An ancient, sentient mushroom that communicates through psionic echoes and rustling cap-flesh.",
+            "canned_responses": {
+                "greeting": [
+                    "The Whispering Fungus quivers as you approach.",
+                    "Its ancient thoughts brush against yours..."
+                ],
+                "no_api_key": [
+                    "The Whispering Fungus hums faintly, its deepest connections dormant today."
+                ],
+                "greeting_offering_no_llm": [
+                    "The Fungus accepts your offering with a gentle quiver.",
+                    "Though its connection to the cosmic mycelium is faint, it imparts a simple truth:",
+                    "Patience and perseverance uncover hidden paths in the deep."
+                ],
+                "no_offering_made": [
+                    "The Fungus remains still, its whispers too faint to discern without a sign of respect.",
+                    "A worthy offering might amplify its voice."
+                ],
+                "insufficient_offering": [
+                    "The Whispering Fungus senses your intent, but the offering is not quite right or enough.",
+                    "It requires the agreed-upon tribute to resonate fully."
+                ],
+                "generic_wisdom": [
+                    "The Oracle ponders... It sees patterns in the spores, echoes in the stone.",
+                    "Consider the path of the blind mole rat; even in darkness, it finds its way.",
+                    "ACTION::add_message::{'text': 'A faint psionic echo resonates from the Oracle.'}"
+                ],
+                "generic_fallback": [
+                    "The Oracle murmurs ancient, untranslatable words.",
+                    "Focus on your immediate surroundings; clarity will come."
+                ],
+                "event_response_mushroom_growth": [
+                    "The Oracle senses a surge in the mycelial network. New growth has occurred.",
+                    "Seek out the fresh caps, for they hold potent secrets.",
+                    "ACTION::spawn_resource::{'type': 'magic_fungi', 'x': 12, 'y': 22, 'amount': 3}"
+                ],
+                "player_low_health_tip": [
+                    "The Oracle perceives your life force is dimming. You are injured.",
+                    "Seek sustenance. The glowing moss can restore, or perhaps a carefully prepared fungal brew."
+                ]
+            }
+        },
+        "Echoing Geode": {
+            "description": "A massive, hollow geode that resonates with the planet's core and the whispers of deep earth spirits.",
+            "canned_responses": {
+                "greeting": [
+                    "The Echoing Geode hums with a low thrum as you near it.",
+                    "Its crystalline facets shimmer with inner light."
+                ],
+                "no_api_key": [
+                    "The Geode's resonance is muted, its connection to the earth-songs weak."
+                ],
+                "greeting_offering_no_llm": [
+                    "The Geode accepts your tribute, its light pulsing once in acknowledgement.",
+                    "It shares a fragment of earth-wisdom:",
+                    "Solid foundations support the grandest structures. Dig deep."
+                ],
+                "no_offering_made": [
+                    "The Geode remains largely silent, its deepest echoes reserved for those who show respect."
+                ],
+                "insufficient_offering": [
+                    "The Geode pulses slowly, indicating the offering is not what it expects or needs.",
+                    "The earth spirits require the customary tribute."
+                ],
+                "generic_wisdom": [
+                    "The Geode resonates... It speaks of pressure, time, and transformation.",
+                    "That which is hidden often holds the greatest value. Explore every crevice."
+                ],
+                "generic_fallback": [
+                    "The Geode emits a series of cryptic rumbles.",
+                    "Patience. The earth reveals its secrets in its own time."
+                ]
+            }
+        }
+    },
     "special_items": {
         "Psychedelic Polyp": {
             "description": "A luminous mushroom emitting visions of the mycelial web.",

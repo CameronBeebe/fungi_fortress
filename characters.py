@@ -2,6 +2,7 @@
 import random
 from .lore import lore_base
 from typing import Any, TYPE_CHECKING, List, Dict, Union
+from .entities import GameEntity
 
 # Conditional import for Task type hint if Task is defined later in the file
 if TYPE_CHECKING:
@@ -62,7 +63,7 @@ class Animal:
         self.id: int = id
         self.alive: bool = True
 
-class NPC:
+class NPC(GameEntity):
     """Represents a Non-Player Character with potential lore and interaction.
 
     NPCs are typically stationary or have simple behaviors and may hold
@@ -75,13 +76,22 @@ class NPC:
         alive (bool): Whether the NPC is currently alive.
         data (dict): A dictionary containing lore information loaded from lore_base.
     """
-    def __init__(self, name: str, x: int, y: int) -> None:
+    def __init__(self, name: str, x: int, y: int, entity_id: str = None, tile_char: str = 'N', color_pair: int = 7, is_walkable: bool = False, is_transparent: bool = True, light_source: bool = False, description: str = None, data: dict = None) -> None:
+        super().__init__(
+            entity_id if entity_id else name.lower().replace(" ", "_"), 
+            tile_char, 
+            color_pair, 
+            is_walkable, 
+            is_transparent, 
+            light_source, 
+            description if description else name
+        )
         self.name: str = name
         self.x: int = x
         self.y: int = y
         self.alive: bool = True
         # Ensure lore_base is correctly accessed and typed
-        self.data: dict[str, Any] = lore_base.get("characters", {}).get(name, {}) # Safer access
+        self.data: dict[str, Any] = data if data is not None else lore_base.get("characters", {}).get(name, {})
 
 # --- New Oracle Class ---
 class Oracle(NPC):
@@ -93,19 +103,27 @@ class Oracle(NPC):
 
     Attributes:
         Inherits all attributes from NPC.
-        interaction_state (dict): Stores data about the player's interaction
-                                  history or state with this Oracle. (Optional future use)
-        canned_responses (Dict[str, Union[str, List[str]]]): Predefined dialogue options.
+        canned_responses (Dict[str, Union[str, List[str]]]): Predefined dialogue options,
+                                                              loaded from lore_base.
     """
-    def __init__(self, name: str, x: int, y: int) -> None:
+    def __init__(self, name: str, x: int, y: int, entity_id: str = None, tile_char: str = 'O', color_pair: int = 11, description: str = None) -> None:
         """Initializes an Oracle character."""
-        super().__init__(name, x, y)
-        # Add any Oracle-specific attributes here if needed in the future
-        # For example, tracking interaction state:
-        # self.interaction_state: dict[str, Any] = {}
+        super().__init__(
+            name=name, 
+            x=x, 
+            y=y, 
+            entity_id=entity_id if entity_id else name.lower().replace(" ", "_").replace("'", "") + "_oracle",
+            tile_char=tile_char, 
+            color_pair=color_pair, 
+            description=description if description else f"The enigmatic {name}"
+        )
         
-        # Default canned responses. These could be loaded from lore_base or a config file later.
-        self.canned_responses: Dict[str, Union[str, List[str]]] = {
+        # Load canned responses from lore_base, with fallbacks
+        oracle_lore_data = lore_base.get("oracles", {}).get(self.name, {})
+        self.canned_responses: Dict[str, Union[str, List[str]]] = oracle_lore_data.get("canned_responses", {})
+
+        # Default responses if not found in lore or if specific keys are missing
+        default_responses = {
             "greeting": [
                 f"The air around {self.name} shimmers.",
                 "You feel a strange pull towards it...",
@@ -118,7 +136,7 @@ class Oracle(NPC):
             "no_api_key": [
                 f"{self.name} seems to be a conduit to vast knowledge,",
                 "but the connection is currently dormant.",
-                "(The ancient pathways require an API key, configure it in your settings.)"
+                "(The ancient pathways require an API key; configure it in your settings.)"
             ],
             "default_query_response": [
                 "The patterns of fate are ever-shifting.",
@@ -129,6 +147,10 @@ class Oracle(NPC):
                 "The connection falters. Try again later."
             ]
         }
+        # Merge loaded responses with defaults, ensuring all essential keys have a fallback
+        for key, value in default_responses.items():
+            if key not in self.canned_responses:
+                self.canned_responses[key] = value
 
 # --- Task Class ---
 class Task:

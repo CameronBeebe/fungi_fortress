@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from .player import Player # Added for type hints
     # Tile already imported
     # Structure, Sublevel already imported
+    from .config_manager import OracleConfig # For type hint if OracleConfig used directly
 
 def surface_mycelium(game_state: 'GameState'):
     """Spreads mycelium floor tiles on the surface based on underground network proximity and player spore exposure.
@@ -274,7 +275,7 @@ class GameLogic:
         self.game_state.add_debug_message(f"Entered {sub_level_name}.")
 
     def update(self):
-        """Performs a single game tick update.
+        """Main game loop update function called each tick.
 
         Increments tick, checks events, updates tiles, handles AI, manages tasks,
         and checks mission status.
@@ -285,27 +286,119 @@ class GameLogic:
 
         self.game_state.tick += 1
 
-        # --- Process Events via LLM Interface (at start of tick?) ---
-        game_events: List[GameEvent] = self.game_state.consume_events()
+        # --- Event Processing ---
+        # Consume and process all events from the queue
+        # This includes events that might trigger LLM interactions
+        game_events = self.game_state.consume_events()
         all_llm_actions: List[Dict[str, Any]] = []
-        if game_events:
-            self.game_state.add_debug_message(f"Tick {self.game_state.tick}: Processing {len(game_events)} events.")
-            for event in game_events:
-                llm_actions = llm_interface.handle_game_event(event)
-                if llm_actions:
-                    all_llm_actions.extend(llm_actions)
-        
-        # --- Process LLM Actions (Placeholder) ---
-        if all_llm_actions:
-            self.game_state.add_debug_message(f"Tick {self.game_state.tick}: Received {len(all_llm_actions)} actions from LLM.")
-            # TODO: Implement logic to handle different action_types 
-            # (e.g., spawn character, add message, update quest, modify tile)
-            for action in all_llm_actions:
-                 print(f"[GameLogic] TODO: Process LLM action: {action}") # Placeholder print
-                 pass # Add actual action processing here
-        # --- End LLM Event/Action Processing ---
+        for event in game_events:
+            # Pass game_state to handle_game_event
+            # Ensure llm_interface and game_state.oracle_config are available
+            if llm_interface and self.game_state.oracle_config:
+                 # Check if the event is an ORACLE_QUERY, then call llm_interface
+                if event.get("type") == "ORACLE_QUERY":
+                    llm_actions = llm_interface.handle_game_event(event, self.game_state)
+                    if llm_actions:
+                        all_llm_actions.extend(llm_actions)
+            else:
+                # Handle other non-LLM events or log if LLM components are missing
+                if event.get("type") == "ORACLE_QUERY":
+                    self.game_state.add_debug_message("LLM interface or Oracle config missing, cannot process Oracle query.")
+                    # Potentially add a canned response action here if desired
+                    all_llm_actions.append({
+                        "action_type": "add_oracle_dialogue",
+                        "details": {"text": "(The Oracle's connection seems offline.)", "is_llm_response": True}
+                    })
+                    all_llm_actions.append({"action_type": "set_oracle_state", "details": {"state": "AWAITING_PROMPT"}})
 
-        # Check standard game events (e.g., random encounters, environment changes)
+
+        # Process actions returned by the LLM interface or other event handlers
+        if all_llm_actions:
+            for action in all_llm_actions:
+                action_type = action.get("action_type")
+                details = action.get("details", {})
+                self.game_state.add_debug_message(f"[GameLogic] Processing Action: {action_type} - Details: {details}")
+
+                if action_type == "add_message":
+                    message_text = details.get("text", "An unknown event occurred.")
+                    self.game_state.add_debug_message(f"LLM: {message_text}") # Or a different log for player
+                elif action_type == "spawn_character":
+                    # Basic implementation: Add to characters list.
+                    # Needs more robust handling (e.g., checking position, ensuring valid type)
+                    char_type = details.get("type", "NPC") # Default to NPC
+                    name = details.get("name", "Mysterious Figure")
+                    x = details.get("x", self.game_state.cursor_x)
+                    y = details.get("y", self.game_state.cursor_y)
+                    
+                    # Ensure x, y are within map bounds
+                    x = max(0, min(MAP_WIDTH - 1, x))
+                    y = max(0, min(MAP_HEIGHT - 1, y))
+
+                    # Ensure tile is walkable or find nearby walkable
+                    tile = self.game_state.get_tile(x,y)
+                    if not tile or not tile.walkable:
+                        found_walkable = False
+                        for r_s in range(1, 4): # Search radius
+                            for dx_s in range(-r_s, r_s + 1):
+                                for dy_s in range(-r_s, r_s + 1):
+                                    if abs(dx_s) != r_s and abs(dy_s) != r_s: continue
+                                    nx_s, ny_s = x + dx_s, y + dy_s
+                                    if 0 <= nx_s < MAP_WIDTH and 0 <= ny_s < MAP_HEIGHT:
+                                        adj_tile = self.game_state.get_tile(nx_s, ny_s)
+                                        if adj_tile and adj_tile.walkable:
+                                            x, y = nx_s, ny_s
+                                            found_walkable = True
+                                            break
+                                if found_walkable: break
+                            if found_walkable: break
+                        if not found_walkable:
+                            self.game_state.add_debug_message(f"Could not find walkable spot for LLM spawn near ({details.get('x')}, {details.get('y')}). Spawning at cursor.")
+                            x = self.game_state.cursor_x # Fallback
+                            y = self.game_state.cursor_y # Fallback
+
+
+                    if char_type == "Oracle": # Should Oracles be spawnable by LLM? Maybe only other NPCs/Creatures
+                        new_char = Oracle(name=name, x=x, y=y)
+                    elif char_type == "Dwarf": # Probably shouldn't allow LLM to spawn controllable units easily
+                        # For now, let's make it an NPC if "Dwarf" type is given by LLM for safety
+                        new_char = NPC(name=name, x=x, y=y) 
+                        self.game_state.add_debug_message(f"LLM tried to spawn Dwarf, created NPC {name} instead.")
+                    else: # Default to NPC, or could have a registry for LLM-spawnable creatures
+                        new_char = NPC(name=name, x=x, y=y)
+                    
+                    self.game_state.characters.append(new_char)
+                    self.game_state.add_debug_message(f"LLM spawned {char_type} '{name}' at ({x},{y}).")
+
+                elif action_type == "add_oracle_dialogue":
+                    dialogue_text = details.get("text", "The Oracle says nothing.")
+                    # is_llm_response = details.get("is_llm_response", False) # Flag for renderer
+                    # Append to current dialogue. Renderer will handle display.
+                    self.game_state.oracle_current_dialogue.append(dialogue_text)
+                    # If it's an LLM response, it might also imply the Oracle is no longer "thinking"
+                    if details.get("is_llm_response"):
+                        if self.game_state.oracle_interaction_state == "AWAITING_LLM_RESPONSE":
+                           self.game_state.oracle_interaction_state = "AWAITING_PROMPT" # Ready for next input
+                
+                elif action_type == "set_oracle_state":
+                    new_state = details.get("state")
+                    if new_state:
+                        self.game_state.oracle_interaction_state = new_state
+                        self.game_state.add_debug_message(f"Oracle state set to: {new_state}")
+                        if new_state == "AWAITING_PROMPT" and not self.game_state.oracle_current_dialogue:
+                            # If transitioning to prompt and no dialogue, add a generic prompt line
+                             self.game_state.oracle_current_dialogue.append("The Oracle awaits your words...")
+                        elif new_state == "AWAITING_LLM_RESPONSE":
+                            self.game_state.oracle_current_dialogue.append("The Oracle contemplates your query...")
+
+
+                # Add more action handlers here as needed (e.g., update_quest, give_item)
+                else:
+                    self.game_state.add_debug_message(f"Unknown action type from LLM: {action_type}")
+        
+        # --- General Game Updates (after events and LLM actions) ---
+
+        # Check events that might occur based on game state (e.g., ambient events)
+        # This function might add new events to game_state.event_queue for next tick
         check_events(self.game_state)
 
         # Update highlighted tiles (decrement duration)
@@ -433,29 +526,22 @@ class GameLogic:
                                         target_npc = npc
                                         break
                             if target_npc:
-                                # Trigger dialogue immediately - REPLICATE InputHandler LOGIC HERE
+                                # Trigger dialogue: ALWAYS go to AWAITING_OFFERING first
                                 self.game_state.active_oracle_entity_id = target_npc.name
                                 self.game_state.show_oracle_dialog = True
                                 self.game_state.paused = True
-                                self.game_state.oracle_current_dialogue = []
-                                self.game_state.oracle_llm_interaction_history = []
-                                self.game_state.oracle_prompt_buffer = ""
-
-                                if self.game_state.oracle_config and self.game_state.oracle_config.api_key:
-                                    self.game_state.oracle_interaction_state = "AWAITING_OFFERING"
-                                    offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in self.game_state.oracle_offering_cost.items()])
-                                    self.game_state.oracle_current_dialogue.extend([
-                                        f"{target_npc.name} desires an offering to share deeper insights:",
-                                        f"({offering_cost_str}).",
-                                        "Will you make this offering? (Y/N)"
-                                    ])
-                                else:
-                                    self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
-                                    self.game_state.oracle_current_dialogue = get_canned_response(target_npc, "no_api_key")
+                                self.game_state.oracle_interaction_state = "AWAITING_OFFERING"
+                                offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in self.game_state.oracle_offering_cost.items()])
+                                self.game_state.oracle_current_dialogue = [
+                                    f"{target_npc.name} desires an offering to share deeper insights:",
+                                    f"({offering_cost_str}).",
+                                    "Will you make this offering? (Y/N)"
+                                ]
+                                self.game_state.oracle_llm_interaction_history = [] # Clear history here too
+                                self.game_state.oracle_prompt_buffer = "" # Clear buffer
                                 
-                                self.game_state.add_debug_message(f"D{dwarf.id} started talking to {target_npc.name} (task completed).")
+                                self.game_state.add_debug_message(f"D{dwarf.id} started talking to {target_npc.name} (task completed). Awaiting offering.")
                                 
-                                # Task is complete, set dwarf idle
                                 dwarf.state = 'idle'
                                 dwarf.task = None
                                 continue # Skip other state transitions for this dwarf this tick
@@ -628,29 +714,22 @@ class GameLogic:
                                         target_npc = npc_entity # Assign the Oracle instance
                                         break
                             if target_npc:
-                                # Trigger dialogue immediately - REPLICATE InputHandler LOGIC HERE
+                                # Trigger dialogue: ALWAYS go to AWAITING_OFFERING first
                                 self.game_state.active_oracle_entity_id = target_npc.name
                                 self.game_state.show_oracle_dialog = True
                                 self.game_state.paused = True
-                                self.game_state.oracle_current_dialogue = []
-                                self.game_state.oracle_llm_interaction_history = []
-                                self.game_state.oracle_prompt_buffer = ""
-
-                                if self.game_state.oracle_config and self.game_state.oracle_config.api_key:
-                                    self.game_state.oracle_interaction_state = "AWAITING_OFFERING"
-                                    offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in self.game_state.oracle_offering_cost.items()])
-                                    self.game_state.oracle_current_dialogue.extend([
-                                        f"{target_npc.name} desires an offering to share deeper insights:",
-                                        f"({offering_cost_str}).",
-                                        "Will you make this offering? (Y/N)"
-                                    ])
-                                else:
-                                    self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
-                                    self.game_state.oracle_current_dialogue = get_canned_response(target_npc, "no_api_key")
+                                self.game_state.oracle_interaction_state = "AWAITING_OFFERING"
+                                offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in self.game_state.oracle_offering_cost.items()])
+                                self.game_state.oracle_current_dialogue = [
+                                    f"{target_npc.name} desires an offering to share deeper insights:",
+                                    f"({offering_cost_str}).",
+                                    "Will you make this offering? (Y/N)"
+                                ]
+                                self.game_state.oracle_llm_interaction_history = [] # Clear history here too
+                                self.game_state.oracle_prompt_buffer = "" # Clear buffer
                                 
-                                self.game_state.add_debug_message(f"D{dwarf.id} started talking to {target_npc.name} (task completed).")
+                                self.game_state.add_debug_message(f"D{dwarf.id} started talking to {target_npc.name} (task completed). Awaiting offering.")
                                 
-                                # Task is complete, set dwarf idle
                                 dwarf.state = 'idle'
                                 dwarf.task = None
                                 continue # Skip other state transitions for this dwarf this tick
