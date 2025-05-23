@@ -13,34 +13,235 @@ import os # Added for API key environment variable fallback
 from typing import List, Dict, Optional, Any
 import datetime # Added for timestamping logs
 from datetime import timezone # Explicitly import timezone
+import time # Added for retry delays and request tracking
+from pathlib import Path # Added for request tracking file management
 
-from groq import Groq, RateLimitError, APIConnectionError, APIStatusError # Added Groq imports
+# Support for multiple LLM providers
+try:
+    from groq import Groq, RateLimitError, APIConnectionError, APIStatusError
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+    RateLimitError = Exception
+    APIConnectionError = Exception
+    APIStatusError = Exception
+
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
 
 # Import GameEvent and GameState if defined elsewhere for type hinting
 # from .game_state import GameEvent, GameState # Assuming GameEvent is defined there
 # from .config_manager import OracleConfig # For API key access
 
-# Placeholder for an actual LLM API call function
-# In a real scenario, this would involve libraries like 'requests' or a specific LLM provider's SDK
-def _call_llm_api(prompt: str, api_key: str, model_name: Optional[str] = None) -> Optional[str]:
-    """Makes an API call to an LLM using the Groq client for X.AI.
+# --- Request Rate Limiting ---
+REQUEST_TRACKING_FILE = "oracle_request_tracking.json"
 
+def _load_daily_request_count() -> Dict[str, int]:
+    """Load the daily request count from tracking file."""
+    try:
+        if Path(REQUEST_TRACKING_FILE).exists():
+            with open(REQUEST_TRACKING_FILE, 'r') as f:
+                data = json.load(f)
+                today = datetime.date.today().isoformat()
+                # Clean old entries (keep only today)
+                return {today: data.get(today, 0)}
+        return {}
+    except Exception as e:
+        print(f"[Request Tracking] Error loading request count: {e}")
+        return {}
+
+def _save_daily_request_count(request_data: Dict[str, int]):
+    """Save the daily request count to tracking file."""
+    try:
+        with open(REQUEST_TRACKING_FILE, 'w') as f:
+            json.dump(request_data, f)
+    except Exception as e:
+        print(f"[Request Tracking] Error saving request count: {e}")
+
+def _check_and_increment_request_count(daily_limit: int) -> bool:
+    """Check if we're under the daily request limit and increment if so.
+    
+    Returns:
+        bool: True if request is allowed, False if limit exceeded.
+    """
+    today = datetime.date.today().isoformat()
+    request_data = _load_daily_request_count()
+    current_count = request_data.get(today, 0)
+    
+    if current_count >= daily_limit:
+        print(f"[Request Tracking] Daily request limit ({daily_limit}) exceeded. Current count: {current_count}")
+        return False
+    
+    # Increment count
+    request_data[today] = current_count + 1
+    _save_daily_request_count(request_data)
+    print(f"[Request Tracking] Request {current_count + 1}/{daily_limit} for today")
+    return True
+
+def _call_xai_api(prompt: str, api_key: str, model_name: str, max_tokens: int = 500, timeout_seconds: int = 30) -> Optional[str]:
+    """Makes an API call to XAI using their direct API.
+    
+    Args:
+        prompt (str): The complete prompt to send to the LLM.
+        api_key (str): The XAI API key.
+        model_name (str): The specific XAI model to use.
+        max_tokens (int): Maximum tokens in response.
+        timeout_seconds (int): Request timeout in seconds.
+        
+    Returns:
+        Optional[str]: The LLM's response string, or None if an error occurs.
+    """
+    if not REQUESTS_AVAILABLE:
+        return "Error: requests library not available for XAI API calls."
+        
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "messages": [{"role": "user", "content": prompt}],
+            "model": model_name,
+            "max_tokens": max_tokens,
+            "stream": False
+        }
+        
+        response = requests.post(
+            "https://api.x.ai/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=timeout_seconds
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+        elif response.status_code == 429:
+            return f"XAI API Rate Limited: Please wait before making more requests."
+        else:
+            return f"XAI API Error: {response.status_code} - {response.text}"
+            
+    except requests.exceptions.Timeout:
+        return f"XAI API Error: Request timed out after {timeout_seconds} seconds."
+    except requests.exceptions.ConnectionError:
+        return f"XAI API Error: Connection failed."
+    except Exception as e:
+        return f"XAI API Error: {str(e)}"
+
+def _call_openai_compatible_api(prompt: str, api_key: str, model_name: str, base_url: str = None, max_tokens: int = 500, timeout_seconds: int = 30) -> Optional[str]:
+    """Makes an API call using OpenAI-compatible format (works with many providers).
+    
+    Args:
+        prompt (str): The complete prompt to send to the LLM.
+        api_key (str): The API key for the service.
+        model_name (str): The specific model to use.
+        base_url (str): Base URL for the API (defaults to OpenAI).
+        max_tokens (int): Maximum tokens in response.
+        timeout_seconds (int): Request timeout in seconds.
+        
+    Returns:
+        Optional[str]: The LLM's response string, or None if an error occurs.
+    """
+    if not OPENAI_AVAILABLE:
+        return "Error: openai library not available for API calls."
+        
+    try:
+        client = openai.OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=timeout_seconds
+        )
+        
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model=model_name,
+            max_tokens=max_tokens
+        )
+        
+        return response.choices[0].message.content
+        
+    except openai.RateLimitError:
+        return f"OpenAI API Rate Limited: Please wait before making more requests."
+    except openai.APITimeoutError:
+        return f"OpenAI API Error: Request timed out after {timeout_seconds} seconds."
+    except openai.APIConnectionError:
+        return f"OpenAI API Error: Connection failed."
+    except openai.AuthenticationError:
+        return f"OpenAI API Error: Invalid API key or authentication failed."
+    except Exception as e:
+        return f"OpenAI-compatible API Error: {str(e)}"
+
+def _call_groq_api(prompt: str, api_key: str, model_name: str, max_tokens: int = 500, timeout_seconds: int = 30) -> Optional[str]:
+    """Makes an API call to Groq using their SDK.
+    
+    Args:
+        prompt (str): The complete prompt to send to the LLM.
+        api_key (str): The Groq API key.
+        model_name (str): The specific model to use.
+        max_tokens (int): Maximum tokens in response.
+        timeout_seconds (int): Request timeout in seconds.
+        
+    Returns:
+        Optional[str]: The LLM's response string, or None if an error occurs.
+    """
+    if not GROQ_AVAILABLE:
+        return "Error: Groq library not available."
+        
+    try:
+        client = Groq(api_key=api_key, timeout=timeout_seconds)
+        
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model=model_name,
+            max_tokens=max_tokens
+        )
+        
+        return chat_completion.choices[0].message.content
+        
+    except RateLimitError:
+        return f"Groq API Rate Limited: Please wait before making more requests."
+    except Exception as e:
+        # Handle timeouts and connection errors generically since Groq SDK may not have specific exception types
+        error_str = str(e).lower()
+        if "timeout" in error_str:
+            return f"Groq API Error: Request timed out after {timeout_seconds} seconds."
+        elif "connection" in error_str or "network" in error_str:
+            return f"Groq API Error: Connection failed."
+        else:
+            return f"Groq API Error: {str(e)}"
+
+def _detect_provider_and_call_api(prompt: str, api_key: str, model_name: str, provider_hint: str = None, 
+                                  oracle_config = None) -> Optional[str]:
+    """Detects the provider based on model name and makes appropriate API call with safety features.
+    
     Args:
         prompt (str): The complete prompt to send to the LLM.
         api_key (str): The API key for the LLM service.
-        model_name (Optional[str]): The specific model to use.
-
+        model_name (str): The specific model to use.
+        provider_hint (str): Optional hint about which provider to use.
+        oracle_config: Oracle configuration object with safety settings.
+        
     Returns:
         Optional[str]: The LLM's response string, or None if an error occurs.
     """
     print(f"[LLM API Call] Sending prompt (first 100 chars): {prompt[:100]}...")
     print(f"[LLM API Call] Using API Key: {'*' * (len(api_key) - 4) + api_key[-4:] if api_key and len(api_key) > 4 else 'KEY_TOO_SHORT_OR_INVALID'}")
-    print(f"[LLM API Call] Using Model: {model_name if model_name else 'DEFAULT_MODEL_NOT_SPECIFIED_IN_CONFIG'}")
+    print(f"[LLM API Call] Using Model: {model_name}")
+    print(f"[LLM API Call] Provider Hint: {provider_hint}")
 
-    if not api_key or api_key == "YOUR_API_KEY_HERE" or api_key == "testkey123": # Basic check
+    if not api_key or api_key == "YOUR_API_KEY_HERE" or api_key == "testkey123":
         error_msg = "Error: API key is missing, a placeholder, or the test key. Configure oracle_config.ini."
         print(f"[LLM API Call] {error_msg}")
-        # Return a canned response indicating a configuration error
         return f"The Oracle's connection is disrupted. (Error: API Key not configured for LLM. Details: {error_msg})"
 
     if not model_name:
@@ -48,55 +249,93 @@ def _call_llm_api(prompt: str, api_key: str, model_name: Optional[str] = None) -
         print(f"[LLM API Call] {error_msg}")
         return f"The Oracle's connection is unstable. (Error: LLM Model not specified. Details: {error_msg})"
 
+    # Get safety settings from config
+    max_tokens = 500
+    timeout_seconds = 30
+    max_retries = 2
+    retry_delay = 1.0
+    daily_limit = 100
+    
+    if oracle_config:
+        max_tokens = getattr(oracle_config, 'max_tokens', 500)
+        timeout_seconds = getattr(oracle_config, 'timeout_seconds', 30)
+        max_retries = getattr(oracle_config, 'max_retries', 2)
+        retry_delay = getattr(oracle_config, 'retry_delay_seconds', 1.0)
+        daily_limit = getattr(oracle_config, 'daily_request_limit', 100)
+    
+    print(f"[LLM API Call] Safety limits: max_tokens={max_tokens}, timeout={timeout_seconds}s, retries={max_retries}, daily_limit={daily_limit}")
+    
+    # Check daily request limit
+    if not _check_and_increment_request_count(daily_limit):
+        return f"The Oracle has reached its daily interaction limit ({daily_limit} requests). Please try again tomorrow."
+
+    # Determine provider based on model name or hint
+    if provider_hint:
+        provider = provider_hint.lower()
+    elif model_name.startswith(("grok", "grok-")):
+        provider = "xai"
+    elif model_name.startswith(("gpt-", "text-", "davinci", "curie", "babbage", "ada")):
+        provider = "openai"
+    elif model_name.startswith(("claude-", "claude")):
+        provider = "anthropic"
+    elif model_name.startswith(("llama", "mixtral", "gemma")):
+        provider = "groq"  # Groq hosts many open-source models
+    else:
+        # Default to OpenAI-compatible for unknown models
+        provider = "openai"
+    
+    print(f"[LLM API Call] Detected provider: {provider}")
+    
     try:
-        # Initialize the Groq client
-        # It will automatically look for GROQ_API_KEY environment variable if api_key is None,
-        # but we are passing it directly from the config.
-        client = Groq(api_key=api_key)
-
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            model=model_name,
-            # Optional parameters (refer to X.AI/Groq documentation):
-            # temperature=0.7, 
-            # max_tokens=1024,
-            # top_p=1,
-            # stream=False, # Set to True if you want to stream responses
-        )
-        
-        response_content = chat_completion.choices[0].message.content
-        if response_content:
-            # Log the successful response before returning
-            # (We'll add more detailed file logging in the next step)
-            print(f"[LLM API Call] Successfully received response (first 100 chars): {response_content[:100]}...")
-            return response_content
+        if provider == "xai":
+            return _call_with_retries(
+                _call_xai_api, prompt, api_key, model_name, 
+                max_tokens=max_tokens, timeout_seconds=timeout_seconds,
+                max_retries=max_retries, retry_delay=retry_delay
+            )
+        elif provider == "groq":
+            return _call_with_retries(
+                _call_groq_api, prompt, api_key, model_name, 
+                max_tokens=max_tokens, timeout_seconds=timeout_seconds,
+                max_retries=max_retries, retry_delay=retry_delay
+            )
+        elif provider == "anthropic":
+            return _call_with_retries(
+                _call_openai_compatible_api, prompt, api_key, model_name, 
+                "https://api.anthropic.com/v1",
+                max_tokens=max_tokens, timeout_seconds=timeout_seconds,
+                max_retries=max_retries, retry_delay=retry_delay
+            )
+        elif provider == "openai":
+            return _call_with_retries(
+                _call_openai_compatible_api, prompt, api_key, model_name, 
+                "https://api.openai.com/v1",
+                max_tokens=max_tokens, timeout_seconds=timeout_seconds,
+                max_retries=max_retries, retry_delay=retry_delay
+            )
         else:
-            print("[LLM API Call] Error: Received an empty response from the LLM.")
-            return "The Oracle's thoughts are unusually silent. (Error: Empty response from LLM)"
-
-    except RateLimitError as e:
-        print(f"[LLM API Call] RateLimitError: {e}")
-        return f"The Oracle is overwhelmed by cosmic energies. (Error: API rate limit exceeded. Details: {e})"
-    except APIConnectionError as e:
-        print(f"[LLM API Call] APIConnectionError: {e}")
-        return f"The Oracle cannot reach the cosmic echoes. (Error: API connection issue. Details: {e})"
-    except APIStatusError as e:
-        print(f"[LLM API Call] APIStatusError: Status {e.status_code} - {e.message}")
-        error_detail = f"Status {e.status_code} - {e.message}"
-        if e.status_code == 401: # Unauthorized
-             error_detail += " (Check your API key in oracle_config.ini)"
-        elif e.status_code == 404: # Model not found
-             error_detail += f" (Model '{model_name}' might be incorrect or unavailable)"
-        return f"The Oracle's connection is unstable. (Error: API status problem. Details: {error_detail})"
+            return f"Unsupported provider: {provider}"
+            
     except Exception as e:
-        # Catch any other unexpected errors during the API call
         print(f"[LLM API Call] Unexpected error: {e}")
         return f"A mysterious interference disrupts the Oracle. (Error: Unexpected problem during LLM call. Details: {e})"
+
+# Placeholder for an actual LLM API call function
+# In a real scenario, this would involve libraries like 'requests' or a specific LLM provider's SDK
+def _call_llm_api(prompt: str, api_key: str, model_name: Optional[str] = None, provider: str = None, oracle_config = None) -> Optional[str]:
+    """Makes an API call to an LLM using the most appropriate provider.
+
+    Args:
+        prompt (str): The complete prompt to send to the LLM.
+        api_key (str): The API key for the LLM service.
+        model_name (Optional[str]): The specific model to use.
+        provider (str): Optional provider hint (xai, groq, openai, anthropic, etc.).
+        oracle_config: Oracle configuration object with safety settings.
+
+    Returns:
+        Optional[str]: The LLM's response string, or None if an error occurs.
+    """
+    return _detect_provider_and_call_api(prompt, api_key, model_name, provider, oracle_config)
 
 # --- LLM Interaction Logging ---
 ORACLE_LOG_FILE = "oracle_interactions.log"
@@ -254,7 +493,8 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
         error_for_log = None
 
         try:
-            llm_response_text = _call_llm_api(prompt, api_key, model_name)
+            provider_hint = game_state.oracle_config.provider if hasattr(game_state.oracle_config, 'provider') else None
+            llm_response_text = _call_llm_api(prompt, api_key, model_name, provider_hint, game_state.oracle_config)
 
             if llm_response_text:
                 # 3. Parse LLM response
@@ -331,3 +571,53 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
 #         all_llm_actions.extend(llm_actions)
 # 
 # # Process all_llm_actions in game logic... 
+
+def _call_with_retries(api_func, *args, max_retries: int = 2, retry_delay: float = 1.0, **kwargs) -> Optional[str]:
+    """Wrapper to call API functions with retry logic and exponential backoff.
+    
+    Args:
+        api_func: The API function to call
+        *args: Arguments to pass to the API function
+        max_retries: Maximum number of retry attempts
+        retry_delay: Base delay between retries in seconds
+        **kwargs: Keyword arguments to pass to the API function
+        
+    Returns:
+        Optional[str]: The API response or error message
+    """
+    last_error = None
+    
+    for attempt in range(max_retries + 1):  # +1 for initial attempt
+        try:
+            result = api_func(*args, **kwargs)
+            
+            # Check if result indicates a rate limit or temporary error
+            if result and isinstance(result, str):
+                if "Rate Limited" in result or "timed out" in result or "Connection failed" in result:
+                    if attempt < max_retries:
+                        delay = retry_delay * (2 ** attempt)  # Exponential backoff
+                        print(f"[API Retry] Attempt {attempt + 1} failed with: {result[:100]}...")
+                        print(f"[API Retry] Waiting {delay:.1f} seconds before retry {attempt + 2}/{max_retries + 1}")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        print(f"[API Retry] Max retries ({max_retries}) exceeded. Final error: {result[:100]}...")
+                        return result
+            
+            # Success or non-retryable error
+            if attempt > 0:
+                print(f"[API Retry] Success on attempt {attempt + 1}")
+            return result
+            
+        except Exception as e:
+            last_error = str(e)
+            if attempt < max_retries:
+                delay = retry_delay * (2 ** attempt)
+                print(f"[API Retry] Attempt {attempt + 1} raised exception: {last_error}")
+                print(f"[API Retry] Waiting {delay:.1f} seconds before retry {attempt + 2}/{max_retries + 1}")
+                time.sleep(delay)
+            else:
+                print(f"[API Retry] Max retries ({max_retries}) exceeded. Final exception: {last_error}")
+                return f"API Error after {max_retries + 1} attempts: {last_error}"
+    
+    return f"API Error after {max_retries + 1} attempts: {last_error}" 

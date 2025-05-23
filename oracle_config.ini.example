@@ -1,16 +1,53 @@
 [OracleAPI]
-# Obtain an API key from your preferred LLM provider and paste it here.
-# Ensure this file is named oracle_config.ini and is kept private.
+# Your API key for the LLM provider
 api_key = YOUR_API_KEY_HERE
 
-# Optional: Specify a preferred model name.
-# The game may have a default or override this based on availability.
-# Example: gemini-1.5-flash-latest, gpt-4, claude-3-opus-20240229
-model_name = gemini-1.5-flash-latest
+# LLM Provider (auto, xai, groq, openai, anthropic, together, perplexity)
+# auto = automatically detect based on model name
+provider = auto
 
-# Optional: Configure the level of context detail provided to the LLM.
-# Options: low, medium, high. The default is medium.
-# - low: Minimal context, potentially faster but less coherent responses.
-# - medium: Balanced context, good for most interactions.
-# - high: Extensive context, potentially slower but more detailed/nuanced responses.
-context_level = medium 
+# Model to use - depends on your chosen provider:
+#
+# XAI (Grok models):
+#   grok-3, grok-3-beta, grok-2-1212, grok-beta, grok-vision-beta
+#
+# Groq (fast open-source models):
+#   llama-3.3-70b-versatile, llama-3.1-8b-instant, gemma2-9b-it, mixtral-8x7b-32768
+#
+# OpenAI:
+#   gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo
+#
+# Anthropic:
+#   claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022, claude-3-opus-20240229
+model_name = gpt-4o-mini
+
+# Context detail level for game state information (low, medium, high)
+context_level = medium
+
+# === COST CONTROL & SAFETY SETTINGS ===
+# These settings help prevent runaway API costs and ensure reliable operation
+
+# Maximum tokens per response (1-4000, default: 500)
+# Lower values reduce cost but may truncate responses
+max_tokens = 500
+
+# API request timeout in seconds (1-120, default: 30)
+# Prevents hanging requests that could block the game
+timeout_seconds = 30
+
+# Maximum retry attempts on failure (0-5, default: 2)
+# Higher values improve reliability but may increase costs on persistent failures
+max_retries = 2
+
+# Delay between retry attempts in seconds (0.1-10.0, default: 1.0)
+# Uses exponential backoff (delay * 2^attempt)
+retry_delay_seconds = 1.0
+
+# Daily request limit (1-1000, default: 100)
+# Prevents excessive API usage and associated costs
+# Set higher if you play frequently, lower for strict cost control
+daily_request_limit = 100
+
+# Enable detailed request logging (true/false, default: true)
+# Logs all API requests for monitoring usage and debugging
+enable_request_logging = true 

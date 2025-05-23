@@ -20,3 +20,41 @@ groq # For X.AI API
 # Development Dependencies
 pytest>=7.0 # For running tests
 mypy>=1.0   # For static type checking 
+
+# Dependencies for Fungi Fortress
+
+# Core game functionality
+pygame==2.6.1
+
+# Configuration and environment
+configparser
+
+# LLM API integrations
+groq>=0.4.0
+openai>=1.0.0
+requests>=2.25.0
+
+# Type definitions for Pygame (for development)
+pygame-stubs
+
+# Optional: For future compatibility if using @overload decorators
+typing_extensions
+
+# Logging
+logging
+
+# JSON handling for LLM responses
+json
+
+# Date/time handling  
+datetime
+
+# Environment variables (mainly for testing)
+python-dotenv
+
+# For enhanced data structures
+dataclasses
+
+# File and path operations
+os
+pathlib 

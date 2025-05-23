@@ -102,7 +102,7 @@ def test_load_oracle_config_file_not_found(mock_file_open, mock_os_path_join, mo
     
     config = load_oracle_config("non_existent.ini")
     assert config.api_key is None
-    assert config.model_name == "gemini-1.5-flash-latest" # Expect default model name
+    assert config.model_name == "gpt-4o-mini" # Expect default model name
     assert config.context_level == "medium" # Default
     
     expected_join_calls = [

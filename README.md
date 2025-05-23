@@ -2,6 +2,17 @@
 
 A terminal-based strategy/simulation game written in Python using the curses library. Manage a dwarf, explore, gather resources, and interact with a world of fungi!
 
+## 🤖 LLM Integration Status
+
+**✅ PRODUCTION-READY** - The Oracle LLM integration is now fully ready for live API usage with comprehensive safety features:
+
+- **🛡️ Cost Controls**: Daily request limits, token limits, timeout protection
+- **⚡ Reliability**: Smart retry logic, graceful error handling, provider auto-detection  
+- **🔧 Multi-Provider**: Supports XAI (Grok), OpenAI (GPT), Anthropic (Claude), Groq
+- **📊 Monitoring**: Real-time usage tracking, detailed logging, emergency controls
+
+**Quick Setup**: Copy `oracle_config.ini.example` → `oracle_config.ini`, add your API key, and play! See [LLM Oracle Integration](#llm-oracle-integration) below for details.
+
 ## Features (Current)
 
 *   Curses-based graphical interface
@@ -100,4 +111,98 @@ This project uses `pytest` for testing and `mypy` for static type checking.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to open issues or submit pull requests. (Further contribution guidelines TBD). 
+Contributions are welcome! Please feel free to open issues or submit pull requests. (Further contribution guidelines TBD).
+
+## LLM Oracle Integration
+
+Fungi Fortress features an AI-powered Oracle that provides guidance, lore, and interactive storytelling through Large Language Model (LLM) integration. The Oracle system is designed to be **flexible and provider-agnostic**, allowing players to use their preferred LLM service and API credits.
+
+**🚀 NEW: Production-Ready with Safety Features** - The LLM integration now includes comprehensive cost controls, retry logic, and monitoring to ensure safe live API usage.
+
+### Supported LLM Providers
+
+The Oracle supports multiple LLM providers through a unified interface:
+
+- **XAI (Grok models)**: Access to Grok-3, Grok-2, and other Grok models via XAI's direct API
+- **OpenAI**: GPT-4o, GPT-4o-mini, GPT-4-turbo, and GPT-3.5-turbo models  
+- **Anthropic**: Claude-3.5-Sonnet, Claude-3.5-Haiku, and Claude-3-Opus models
+- **Groq**: Fast inference for open-source models like LLaMA, Mixtral, and Gemma
+- **Auto-detection**: Automatically chooses the appropriate provider based on model name
+
+### Configuration
+
+Copy `oracle_config.ini.example` to `oracle_config.ini` and configure your settings:
+
+```ini
+[OracleAPI]
+# Your API key for the LLM provider
+api_key = YOUR_ACTUAL_API_KEY_HERE
+
+# Provider selection (auto, xai, groq, openai, anthropic)
+provider = auto
+
+# Model to use - examples by provider:
+# XAI: grok-3, grok-3-beta, grok-2-1212
+# OpenAI: gpt-4o, gpt-4o-mini, gpt-3.5-turbo  
+# Anthropic: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022
+# Groq: llama-3.3-70b-versatile, llama-3.1-8b-instant, gemma2-9b-it
+model_name = gpt-4o-mini
+
+# Context level for game information (low, medium, high)
+context_level = medium
+
+# === COST CONTROL SETTINGS ===
+max_tokens = 500              # Max response length (prevents runaway costs)
+daily_request_limit = 100     # Daily API call limit (cost control)
+timeout_seconds = 30          # Request timeout (prevents hanging)
+max_retries = 2              # Retry attempts (reliability)
+```
+
+### Using Your XAI Credits
+
+**Yes, you can use your XAI API credits directly!** Set your configuration like this:
+
+```ini
+[OracleAPI]
+api_key = xai-your-actual-api-key-here
+provider = xai
+model_name = grok-3
+context_level = medium
+```
+
+The Oracle will communicate directly with XAI's API at `api.x.ai`, using your credits and API limits.
+
+### Cost-Effective Gaming
+
+Since the Oracle is designed for interactive storytelling rather than intensive research tasks, it works well with:
+
+- **Smaller, faster models** (gpt-4o-mini, claude-3-5-haiku, llama-3.1-8b-instant)
+- **Cost-efficient providers** (Groq for open-source models, XAI for competitive pricing)
+- **Flexible switching** between providers based on your budget and preferences
+
+### Safety Features
+
+- **Daily request limits** prevent unexpected charges
+- **Token limits** control response length and costs  
+- **Smart retry logic** handles temporary failures
+- **Real-time monitoring** shows usage and costs
+- **Emergency controls** for immediate cost management
+
+### Setup Verification
+
+After configuring your `oracle_config.ini`, verify everything works:
+
+```bash
+python verify_llm_setup.py
+```
+
+This tool tests provider detection, verifies configuration, and provides optimization tips.
+
+### Provider Flexibility Benefits
+
+- **No vendor lock-in**: Switch providers anytime by updating your config
+- **Use your existing credits**: Works with whatever LLM service you already pay for
+- **Cost optimization**: Choose the most cost-effective option for your usage
+- **Performance tuning**: Select faster models for real-time gameplay or more sophisticated models for complex storytelling
+
+The Oracle's multi-provider architecture ensures you're never locked into a single LLM service, giving you the freedom to use whichever models and credits work best for your gaming experience. 

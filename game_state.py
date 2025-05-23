@@ -387,3 +387,16 @@ class GameState:
         else:
             self.add_debug_message(f"Warning: Could not find suitable location to spawn Oracle '{name}'.")
     # --- End Helper --- 
+
+    def set_oracle_config(self, oracle_config: Optional['OracleConfig']):
+        """Sets the Oracle configuration, performing some basic logging."""
+        if oracle_config:
+            self.oracle_config = oracle_config
+            # Log the received OracleConfig, masking the API key
+            masked_api_key = "'****'" if self.oracle_config.api_key and self.oracle_config.is_real_api_key_present else f"'{self.oracle_config.api_key}'"
+            logger.info(f"Received oracle_config. API Key: {masked_api_key}, Model: {self.oracle_config.model_name}, Real Key Present: {self.oracle_config.is_real_api_key_present}, Type: {type(self.oracle_config)}")
+        else:
+            self.oracle_config = OracleConfig() # Ensure it's always an OracleConfig instance
+            logger.warning("Received None for oracle_config. Initializing with default OracleConfig.")
+
+    # --- Inventory Management ---

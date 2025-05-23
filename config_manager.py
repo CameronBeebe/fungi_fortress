@@ -26,12 +26,21 @@ DEFAULT_CONFIG_FILENAME = "oracle_config.ini"
 class OracleConfig:
     """Configuration for Oracle LLM interactions."""
     api_key: Optional[str] = None
-    model_name: str = "gemini-1.5-flash-latest"  # Default model
+    model_name: str = "gpt-4o-mini"  # Default model
+    provider: str = "auto"  # Provider: auto, xai, groq, openai, anthropic, etc.
     context_level: str = "medium"  # Default context level (low, medium, high)
     enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
     offering_item: Optional[str] = None # Specific item Oracle might ask for (optional)
     offering_amount: int = 0 # Amount of specific item (if any)
     is_real_api_key_present: bool = False # True if api_key is not None, empty, or a known placeholder
+    
+    # Cost control and safety settings
+    max_tokens: int = 500  # Maximum tokens per response to prevent runaway costs
+    timeout_seconds: int = 30  # API call timeout in seconds
+    max_retries: int = 2  # Maximum number of retries on failure
+    retry_delay_seconds: float = 1.0  # Delay between retries
+    daily_request_limit: int = 100  # Maximum requests per day (cost control)
+    enable_request_logging: bool = True  # Whether to log all API requests for monitoring
 
     def __post_init__(self):
         """Validate and finalize configuration after initialization."""
@@ -41,11 +50,24 @@ class OracleConfig:
             self.is_real_api_key_present = False
             if self.api_key in ["YOUR_API_KEY_HERE", "testkey123", "None", ""]: # Log if it's a known placeholder or empty
                  logger.info(f"API key is a placeholder or empty: \'{self.api_key}\'")
+        
+        # Validate safety limits
+        if self.max_tokens <= 0 or self.max_tokens > 4000:
+            logger.warning(f"max_tokens value {self.max_tokens} is outside safe range (1-4000). Using 500.")
+            self.max_tokens = 500
+            
+        if self.timeout_seconds <= 0 or self.timeout_seconds > 120:
+            logger.warning(f"timeout_seconds value {self.timeout_seconds} is outside safe range (1-120). Using 30.")
+            self.timeout_seconds = 30
+            
+        if self.daily_request_limit <= 0 or self.daily_request_limit > 1000:
+            logger.warning(f"daily_request_limit value {self.daily_request_limit} is outside safe range (1-1000). Using 100.")
+            self.daily_request_limit = 100
 
 def load_oracle_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> OracleConfig:
     """Loads Oracle configuration from the specified .ini file.
 
-    Reads API key, model name, and context level from the [OracleAPI] section.
+    Reads API key, model name, provider, and context level from the [OracleAPI] section.
     Handles cases where the file or specific settings might be missing.
 
     Args:
@@ -82,7 +104,16 @@ def load_oracle_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> Oracl
 
     api_key: Optional[str] = None
     model_name: Optional[str] = None
+    provider: str = "auto" # Default provider setting
     context_level: str = "medium" # Default context level
+    
+    # Safety settings with defaults
+    max_tokens: int = 500
+    timeout_seconds: int = 30
+    max_retries: int = 2
+    retry_delay_seconds: float = 1.0
+    daily_request_limit: int = 100
+    enable_request_logging: bool = True
 
     if "OracleAPI" in parser:
         api_key = parser["OracleAPI"].get("api_key")
@@ -94,17 +125,81 @@ def load_oracle_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> Oracl
         if not model_name: # If model_name is empty in the file
             model_name = None 
             
+        provider = parser["OracleAPI"].get("provider", "auto")
+        if provider not in ["auto", "xai", "groq", "openai", "anthropic", "together", "perplexity"]:
+            logger.warning(f"Invalid 'provider' in '{config_file_path}'. Using default 'auto'.")
+            provider = "auto"
+            
         context_level_from_file = parser["OracleAPI"].get("context_level")
         if context_level_from_file in ["low", "medium", "high"]:
             context_level = context_level_from_file
         elif context_level_from_file: # If it's set but not a valid option
             logger.warning(f"Invalid 'context_level' in '{config_file_path}'. Using default '{context_level}'.")
+        
+        # Load safety settings from config file with validation
+        try:
+            max_tokens = parser["OracleAPI"].getint("max_tokens", fallback=500)
+            if max_tokens <= 0 or max_tokens > 4000:
+                logger.warning(f"max_tokens value {max_tokens} in config is outside safe range. Using 500.")
+                max_tokens = 500
+        except ValueError:
+            logger.warning(f"Invalid max_tokens value in config. Using default 500.")
+            max_tokens = 500
+            
+        try:
+            timeout_seconds = parser["OracleAPI"].getint("timeout_seconds", fallback=30)
+            if timeout_seconds <= 0 or timeout_seconds > 120:
+                logger.warning(f"timeout_seconds value {timeout_seconds} in config is outside safe range. Using 30.")
+                timeout_seconds = 30
+        except ValueError:
+            logger.warning(f"Invalid timeout_seconds value in config. Using default 30.")
+            timeout_seconds = 30
+            
+        try:
+            max_retries = parser["OracleAPI"].getint("max_retries", fallback=2)
+            if max_retries < 0 or max_retries > 5:
+                logger.warning(f"max_retries value {max_retries} in config is outside safe range. Using 2.")
+                max_retries = 2
+        except ValueError:
+            logger.warning(f"Invalid max_retries value in config. Using default 2.")
+            max_retries = 2
+            
+        try:
+            retry_delay_seconds = parser["OracleAPI"].getfloat("retry_delay_seconds", fallback=1.0)
+            if retry_delay_seconds < 0 or retry_delay_seconds > 10:
+                logger.warning(f"retry_delay_seconds value {retry_delay_seconds} in config is outside safe range. Using 1.0.")
+                retry_delay_seconds = 1.0
+        except ValueError:
+            logger.warning(f"Invalid retry_delay_seconds value in config. Using default 1.0.")
+            retry_delay_seconds = 1.0
+            
+        try:
+            daily_request_limit = parser["OracleAPI"].getint("daily_request_limit", fallback=100)
+            if daily_request_limit <= 0 or daily_request_limit > 1000:
+                logger.warning(f"daily_request_limit value {daily_request_limit} in config is outside safe range. Using 100.")
+                daily_request_limit = 100
+        except ValueError:
+            logger.warning(f"Invalid daily_request_limit value in config. Using default 100.")
+            daily_request_limit = 100
+            
+        enable_request_logging = parser["OracleAPI"].getboolean("enable_request_logging", fallback=True)
 
     else:
         logger.warning(f"[OracleAPI] section not found in '{config_file_path}'. Oracle LLM features may be unavailable.")
         # api_key will remain None, which is the desired behavior
 
-    return OracleConfig(api_key=api_key, model_name=model_name, context_level=context_level)
+    return OracleConfig(
+        api_key=api_key, 
+        model_name=model_name, 
+        provider=provider, 
+        context_level=context_level,
+        max_tokens=max_tokens,
+        timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
+        retry_delay_seconds=retry_delay_seconds,
+        daily_request_limit=daily_request_limit,
+        enable_request_logging=enable_request_logging
+    )
 
 if __name__ == "__main__":
     # Example usage and test

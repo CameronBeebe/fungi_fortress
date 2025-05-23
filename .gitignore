@@ -85,11 +85,20 @@ cython_debug/
 # macOS specific
 .DS_Store
 
-# Oracle configuration
-oracle_config.ini 
+# === LLM INTEGRATION FILES ===
+# Configuration files with API keys (NEVER commit)
+oracle_config.ini
+oracle_config.ini~
 
-# Log files
+# LLM request tracking and logs (generated files)
+oracle_request_tracking.json
+oracle_interactions.log
+
+# Other log files
 *.log
 debug.log
-oracle_interactions.log
-logs/ 
+logs/
+
+# === KEEP THESE FILES (examples and documentation) ===
+# oracle_config.ini.example  - Configuration template for users
+# verify_llm_setup.py        - Setup verification tool for users 

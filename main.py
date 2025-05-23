@@ -50,10 +50,11 @@ def main(stdscr: curses.window):
     # Load Oracle configuration first
     oracle_config = load_oracle_config()
     
-    if oracle_config:
-        logging.info(f"[MAIN.PY] Loaded oracle_config. API Key: '{oracle_config.api_key}', Type: {type(oracle_config)}")
-    else:
-        logging.warning("[MAIN.PY] load_oracle_config() returned None or Falsy object.")
+    # Log the loaded OracleConfig, masking the API key
+    masked_api_key = "'****'" if oracle_config.api_key and oracle_config.is_real_api_key_present else f"'{oracle_config.api_key}'"
+    logging.info(f"[MAIN.PY] Loaded oracle_config. API Key: {masked_api_key}, Model: {oracle_config.model_name}, Real Key Present: {oracle_config.is_real_api_key_present}, Type: {type(oracle_config)}")
+
+    logging.info("[MAIN.PY] Fungi Fortress initialization complete.")
     
     stdscr.nodelay(True)  # Non-blocking input
     game_state = GameState(oracle_config=oracle_config)
