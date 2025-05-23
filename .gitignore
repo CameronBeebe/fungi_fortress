@@ -83,4 +83,11 @@ dmypy.json
 cython_debug/
 
 # macOS specific
-.DS_Store 
+.DS_Store
+
+# Oracle configuration
+oracle_config.ini 
+
+# Log files
+*.log
+logs/ 

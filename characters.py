@@ -1,7 +1,7 @@
 # characters.py
 import random
 from .lore import lore_base
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, List, Dict, Union
 
 # Conditional import for Task type hint if Task is defined later in the file
 if TYPE_CHECKING:
@@ -95,6 +95,7 @@ class Oracle(NPC):
         Inherits all attributes from NPC.
         interaction_state (dict): Stores data about the player's interaction
                                   history or state with this Oracle. (Optional future use)
+        canned_responses (Dict[str, Union[str, List[str]]]): Predefined dialogue options.
     """
     def __init__(self, name: str, x: int, y: int) -> None:
         """Initializes an Oracle character."""
@@ -102,7 +103,32 @@ class Oracle(NPC):
         # Add any Oracle-specific attributes here if needed in the future
         # For example, tracking interaction state:
         # self.interaction_state: dict[str, Any] = {}
-        # For now, it's just a type distinction.
+        
+        # Default canned responses. These could be loaded from lore_base or a config file later.
+        self.canned_responses: Dict[str, Union[str, List[str]]] = {
+            "greeting": [
+                f"The air around {self.name} shimmers.",
+                "You feel a strange pull towards it...",
+                "It seems to beckon your thoughts."
+            ],
+            "no_offering_made": [
+                f"{self.name} remains silent, its glow dimming slightly.",
+                "Perhaps it requires a token of your understanding..."
+            ],
+            "no_api_key": [
+                f"{self.name} seems to be a conduit to vast knowledge,",
+                "but the connection is currently dormant.",
+                "(The ancient pathways require an API key, configure it in your settings.)"
+            ],
+            "default_query_response": [
+                "The patterns of fate are ever-shifting.",
+                "What you seek may be found, or it may be lost to time."
+            ],
+            "fallback_error": [
+                f"{self.name}'s whispers become indistinct, like wind through cracks.",
+                "The connection falters. Try again later."
+            ]
+        }
 
 # --- Task Class ---
 class Task:

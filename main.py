@@ -7,6 +7,8 @@ Uses curses.wrapper to ensure proper terminal cleanup.
 """
 import curses
 import time
+import sys # Import sys for stdout/stderr
+import logging # Import logging
 
 # Use absolute imports from the package
 from fungi_fortress.game_state import GameState
@@ -17,6 +19,17 @@ from fungi_fortress.game_logic import GameLogic
 from fungi_fortress.map_generation import generate_map
 from fungi_fortress.characters import Dwarf
 from fungi_fortress.tiles import ENTITY_REGISTRY
+from .config_manager import load_oracle_config, OracleConfig
+
+# --- Basic File Logger Setup for Initialization ---
+LOG_FILENAME = "ff_init_debug.log"
+logging.basicConfig(
+    filename=LOG_FILENAME,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s',
+    filemode='w' # Overwrite log each run for this specific init debug
+)
+# --- End Logger Setup ---
 
 def main(stdscr: curses.window):
     """Initializes and runs the main game loop.
@@ -29,11 +42,21 @@ def main(stdscr: curses.window):
     Args:
         stdscr: The main curses window object provided by curses.wrapper.
     """
+    logging.info("Main function started.") # Log start of main
+
     # Set a very low timeout for input polling (1ms)
     stdscr.timeout(1)
 
-    game_state: GameState = GameState()
-    # Pass stdscr to Renderer constructor
+    # Load Oracle configuration first
+    oracle_config = load_oracle_config()
+    
+    if oracle_config:
+        logging.info(f"[MAIN.PY] Loaded oracle_config. API Key: '{oracle_config.api_key}', Type: {type(oracle_config)}")
+    else:
+        logging.warning("[MAIN.PY] load_oracle_config() returned None or Falsy object.")
+    
+    stdscr.nodelay(True)  # Non-blocking input
+    game_state = GameState(oracle_config=oracle_config)
     renderer: Renderer = Renderer(stdscr, game_state)
     input_handler: InputHandler = InputHandler(game_state)
     game_logic: GameLogic = GameLogic(game_state)
@@ -135,6 +158,5 @@ if __name__ == "__main__":
 # - Added basic initial map generation and dwarf placement.
 # - Added logic to handle overlay states (inventory, shop, legend).
 # - Removed sys.path manipulation.
-# - Added fallback for map dimensions if constants.py import fails.
 # - Added type hints for stdscr and key variables.
 # - Removed try/except block around constants import.

@@ -13,6 +13,7 @@ from .utils import a_star
 from .tiles import Tile, ENTITY_REGISTRY
 from .entities import ResourceNode, Structure, Sublevel, GameEntity # Added GameEntity
 from .events import check_events
+from .oracle_logic import get_canned_response # <--- ADD THIS IMPORT
 # from .magic import cast_spell # Import only if cast_spell is used directly in this file
 
 # --- LLM Interface Import --- 
@@ -432,22 +433,43 @@ class GameLogic:
                                         target_npc = npc
                                         break
                             if target_npc:
-                                # Trigger dialogue immediately
+                                # Trigger dialogue immediately - REPLICATE InputHandler LOGIC HERE
+                                self.game_state.active_oracle_entity_id = target_npc.name
                                 self.game_state.show_oracle_dialog = True
                                 self.game_state.paused = True
-                                self.game_state.add_debug_message(f"D{dwarf.id} starting talk with {target_npc.name} (already adjacent).")
-                                can_talk = True
+                                self.game_state.oracle_current_dialogue = []
+                                self.game_state.oracle_llm_interaction_history = []
+                                self.game_state.oracle_prompt_buffer = ""
+
+                                if self.game_state.oracle_config and self.game_state.oracle_config.api_key:
+                                    self.game_state.oracle_interaction_state = "AWAITING_OFFERING"
+                                    offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in self.game_state.oracle_offering_cost.items()])
+                                    self.game_state.oracle_current_dialogue.extend([
+                                        f"{target_npc.name} desires an offering to share deeper insights:",
+                                        f"({offering_cost_str}).",
+                                        "Will you make this offering? (Y/N)"
+                                    ])
+                                else:
+                                    self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
+                                    self.game_state.oracle_current_dialogue = get_canned_response(target_npc, "no_api_key")
+                                
+                                self.game_state.add_debug_message(f"D{dwarf.id} started talking to {target_npc.name} (task completed).")
+                                
+                                # Task is complete, set dwarf idle
+                                dwarf.state = 'idle'
+                                dwarf.task = None
+                                continue # Skip other state transitions for this dwarf this tick
                             else:
-                                self.game_state.add_debug_message(f"D{dwarf.id} cannot talk: Target NPC {target_x},{target_y} not Oracle/moved.")
+                                self.game_state.add_debug_message(f"D{dwarf.id} arrived to talk, but target NPC {target_x},{target_y} was not an Oracle or moved.")
+                                dwarf.state = 'idle' # Become idle if target invalid
+                                dwarf.task = None
                         else:
-                             self.game_state.add_debug_message(f"D{dwarf.id} cannot talk: Task missing target coordinates.")
-                        
-                        # Regardless of success, the task is done here.
-                        dwarf.state = 'idle' # Set dwarf idle
-                        dwarf.path = []
-                        dwarf.task = None # Clear task from dwarf
-                        # Task will be removed from manager below
-                    
+                            self.game_state.add_debug_message("Warning: Talk task missing target coordinates upon arrival.")
+                            dwarf.state = 'idle' # Become idle if task invalid
+                            dwarf.task = None
+                        # Make sure we don't fall through to the next state check
+                        continue 
+
                     # --- Handle ENTER task if already adjacent --- (existing logic seems okay but let's ensure state)
                     elif task.type == 'enter':
                         dwarf.state = 'moving' # Set to moving so path completion logic triggers entry
@@ -598,23 +620,42 @@ class GameLogic:
                         target_x: Optional[int] = current_task.resource_x
                         target_y: Optional[int] = current_task.resource_y
                         if target_x is not None and target_y is not None:
-                            target_npc: Optional[NPC] = None
-                            for npc in self.game_state.characters:
-                                if npc.x == target_x and npc.y == target_y and npc.alive:
-                                    if isinstance(npc, Oracle) or "Whispering Fungus" in npc.name:
-                                        target_npc = npc
+                            target_npc: Optional[Oracle] = None # Ensure target_npc can be an Oracle
+                            for npc_entity in self.game_state.characters: # Use a different loop variable name
+                                if npc_entity.x == target_x and npc_entity.y == target_y and npc_entity.alive:
+                                    # Ensure we are dealing with an Oracle
+                                    if isinstance(npc_entity, Oracle): # Check if it's an Oracle instance
+                                        target_npc = npc_entity # Assign the Oracle instance
                                         break
                             if target_npc:
-                                # Trigger dialogue immediately
+                                # Trigger dialogue immediately - REPLICATE InputHandler LOGIC HERE
+                                self.game_state.active_oracle_entity_id = target_npc.name
                                 self.game_state.show_oracle_dialog = True
                                 self.game_state.paused = True
-                                self.game_state.add_debug_message(f"D{dwarf.id} started talking to {target_npc.name}.")
+                                self.game_state.oracle_current_dialogue = []
+                                self.game_state.oracle_llm_interaction_history = []
+                                self.game_state.oracle_prompt_buffer = ""
+
+                                if self.game_state.oracle_config and self.game_state.oracle_config.api_key:
+                                    self.game_state.oracle_interaction_state = "AWAITING_OFFERING"
+                                    offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in self.game_state.oracle_offering_cost.items()])
+                                    self.game_state.oracle_current_dialogue.extend([
+                                        f"{target_npc.name} desires an offering to share deeper insights:",
+                                        f"({offering_cost_str}).",
+                                        "Will you make this offering? (Y/N)"
+                                    ])
+                                else:
+                                    self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
+                                    self.game_state.oracle_current_dialogue = get_canned_response(target_npc, "no_api_key")
+                                
+                                self.game_state.add_debug_message(f"D{dwarf.id} started talking to {target_npc.name} (task completed).")
+                                
                                 # Task is complete, set dwarf idle
                                 dwarf.state = 'idle'
                                 dwarf.task = None
-                                continue # Skip other state transitions
+                                continue # Skip other state transitions for this dwarf this tick
                             else:
-                                self.game_state.add_debug_message(f"D{dwarf.id} arrived to talk, but target NPC {target_x},{target_y} was not Oracle/moved.")
+                                self.game_state.add_debug_message(f"D{dwarf.id} arrived to talk, but target NPC {target_x},{target_y} was not an Oracle or moved.")
                                 dwarf.state = 'idle' # Become idle if target invalid
                                 dwarf.task = None
                         else:

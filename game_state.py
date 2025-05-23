@@ -1,6 +1,7 @@
 # game_state.py
 import random
 from typing import List, Dict, Tuple, Optional, Any, TypedDict
+import logging # Import logging
 
 # Update constants import to relative
 from .constants import MAP_WIDTH, MAP_HEIGHT, STARTING_RESOURCES, STARTING_SPECIAL_ITEMS, STARTING_PLAYER_STATS
@@ -14,6 +15,10 @@ from .player import Player
 from .inventory import Inventory # Renamed from items to inventory
 from .tiles import Tile, ENTITY_REGISTRY
 from .entities import GameEntity
+# Import OracleConfig for type hinting and storage
+from .config_manager import OracleConfig
+
+logger = logging.getLogger(__name__) # Get logger instance
 
 MapGrid = List[List[Tile]]
 
@@ -68,14 +73,29 @@ class GameState:
         buildings (Dict[str, Dict]): Definitions of buildable structures.
         event_queue (List[GameEvent]): A list of game events.
         show_oracle_dialog (bool): True if the Oracle dialogue window should be displayed.
+        oracle_config (OracleConfig): Configuration for Oracle LLM interactions.
+        oracle_interaction_state (str): Current state of interaction with an Oracle.
+        oracle_current_dialogue (List[str]): Lines of dialogue for the current Oracle interaction.
+        oracle_prompt_buffer (str): User's typed prompt for the Oracle.
+        oracle_offering_cost (Dict[str, int]): Cost to activate LLM interaction with an Oracle.
+        active_oracle_entity_id (Optional[Any]): ID or reference to the currently interacting Oracle.
+        oracle_llm_interaction_history (List[Dict[str, str]]): History of prompts/responses with LLM for current session.
     """
-    def __init__(self) -> None:
+    def __init__(self, oracle_config: OracleConfig) -> None:
         """Initializes the game state.
 
         Sets up the player, initial map, mission, dwarves, inventory,
         task manager, building definitions, and other core game attributes.
         Also generates the initial mycelial network and calculates distances.
+
+        Args:
+            oracle_config (OracleConfig): Configuration for Oracle LLM interactions.
         """
+        if oracle_config:
+            logger.info(f"Received oracle_config. API Key: '{oracle_config.api_key}', Type: {type(oracle_config)}")
+        else:
+            logger.warning("Received oracle_config is None or Falsy.")
+
         self.player = Player(STARTING_PLAYER_STATS)
         self.tick = 0
         self.depth = 0
@@ -87,6 +107,29 @@ class GameState:
         self.show_legend = False
         self.show_oracle_dialog = False
         self.shop_confirm = False
+
+        # Initialize debug_log EARLIER, before it might be used by other initializers
+        self.debug_log: List[str] = []
+
+        # Store Oracle configuration
+        self.oracle_config = oracle_config
+        # DEBUG: Check self.oracle_config after assignment - DO NOT LOG THE KEY ITSELF to in-game log
+        if self.oracle_config:
+            if self.oracle_config.api_key:
+                self.add_debug_message("GS_Init: Oracle API Key is CONFIGURED.")
+            else:
+                self.add_debug_message("GS_Init: Oracle API Key is NOT configured.")
+        else:
+            self.add_debug_message("GS_Init: self.oracle_config object is None after assignment.")
+
+        # Initialize new Oracle interaction attributes
+        self.oracle_interaction_state: str = "IDLE" 
+        self.oracle_current_dialogue: List[str] = []
+        self.oracle_prompt_buffer: str = ""
+        self.oracle_offering_cost: Dict[str, int] = {"magic_fungi": 5, "gold": 10} # Example cost
+        self.active_oracle_entity_id: Optional[Any] = None # Could be Oracle's name or a unique ID
+        self.oracle_llm_interaction_history: List[Dict[str,str]] = []
+
         self.selected_spell = None
         self.spore_exposure_threshold = 20  # Threshold for path illumination
         self.entry_x: Optional[int] = None
@@ -132,7 +175,6 @@ class GameState:
             # Initialize dynamically or use names from ENTITY_REGISTRY
             # "Shadowed Grotto": {"active": False, "map": None},
         }
-        self.debug_log: List[str] = []
         self.task_manager = TaskManager()
 
         # Define buildable structures: Name -> {requirements, ticks}

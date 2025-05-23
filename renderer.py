@@ -1,7 +1,7 @@
 import curses
 import random
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 # Update constants import to relative
 from .constants import (
@@ -15,6 +15,8 @@ from .utils import wrap_text # Seems unused, but keep if description wrapping ad
 from .tiles import Tile, ENTITY_REGISTRY
 # Removed: from items import special_items
 from .entities import GameEntity, Structure, Sublevel, ResourceNode # For legend/hints
+from .characters import Oracle # For type hinting if needed, and for checking entity type
+from .oracle_logic import get_canned_response # Though input_handler mostly sets dialogue
 
 if TYPE_CHECKING:
     from .game_state import GameState # For type hints
@@ -463,9 +465,12 @@ class Renderer:
                     self.log_win.addstr(i, 0, msg.ljust(log_w-1))
                  except curses.error: pass 
 
+        # --- Render Oracle Dialog if active ---
+        if self.game_state.show_oracle_dialog:
+            self.show_oracle_dialog_screen()
+        
         # --- Refresh Windows --- 
         self.map_win.refresh()
-        # Restore refreshing UI and Log windows
         self.ui_win.refresh()
         self.log_win.refresh()
 
@@ -659,65 +664,136 @@ class Renderer:
             curses.doupdate()
 
     def show_oracle_dialog_screen(self):
-        """Displays the Oracle dialogue overlay window.
+        """Displays the Oracle dialog window.
 
-        Creates a new window centered on the screen, draws a border, title,
-        and displays the dialogue content. Includes instructions on how to close it.
-        Handles cleanup and redraw if the dialogue state changes.
+        The content of the window changes based on game_state.oracle_interaction_state:
+        - "AWAITING_OFFERING": Shows offering cost and prompts Y/N.
+        - "SHOWING_CANNED_RESPONSE": Shows pre-defined dialogue.
+        - "AWAITING_PROMPT": (Phase 2) Shows chat history and input prompt.
+        - "AWAITING_LLM_RESPONSE": (Phase 2) Shows "Oracle is contemplating..."
+        - "SHOWING_LLM_RESPONSE": (Phase 2) Shows LLM's narrative response.
         """
-        dialog_h, dialog_w = 20, 60 # Adjust size as needed
-        dialog_y = (self.max_y - dialog_h) // 2
-        dialog_x = (self.max_x - dialog_w) // 2
-        dialog_win = curses.newwin(dialog_h, dialog_w, dialog_y, dialog_x)
-        dialog_win.erase()
-        dialog_win.border()
-        dialog_win.addstr(1, (dialog_w - 15) // 2, "Oracle Dialogue") # Centered title
+        if not self.is_size_ok or not self.ui_win: # Assuming ui_win is used as a base for dialog size
+            return
 
-        row = 3
-        # --- Placeholder Dialogue Content ---
-        # In the future, this will display text from the LLM interaction
-        placeholder_text = [
-            "The Oracle's fungal form pulses gently.",
-            "",
-            "'Greetings, seeker... What knowledge do you wish to unearth?'",
-            "",
-            "(Placeholder - LLM interaction will go here)"
-        ]
-        for line in placeholder_text:
-             if row < dialog_h - 2:
-                 # Simple word wrap (basic implementation)
-                 # A proper implementation might use textwrap.wrap
-                 max_line_width = dialog_w - 4 # Account for border and padding
-                 if len(line) > max_line_width:
-                     words = line.split(' ')
-                     current_line = ""
-                     for word in words:
-                         if len(current_line) + len(word) + 1 <= max_line_width:
-                             current_line += word + " "
-                         else:
-                             if row < dialog_h - 2: dialog_win.addstr(row, 2, current_line.strip()) ; row += 1
-                             current_line = word + " "
-                     if current_line.strip() and row < dialog_h - 2: dialog_win.addstr(row, 2, current_line.strip()) ; row += 1
-                 else:
-                     dialog_win.addstr(row, 2, line); row += 1
-             else:
-                 break # Stop if window is full
-        # --- End Placeholder ---
+        # Define dialog window dimensions (can be adjusted)
+        # Let's try to center it on the map area, or a portion of it.
+        dialog_h = 15  # Height of the dialog box
+        dialog_w = 60  # Width of the dialog box
         
-        dialog_win.addstr(dialog_h - 2, 2, "Press 't' or 'q' to close")
-        dialog_win.refresh()
+        # Calculate top-left corner for centering (approximately)
+        # Ensure it doesn't go off-screen if map area is too small
+        map_area_h = MAP_HEIGHT 
+        map_area_w = MAP_WIDTH
+        start_y = (map_area_h - dialog_h) // 2
+        start_x = (map_area_w - dialog_w) // 2
         
-        if not self.game_state.show_oracle_dialog:
-            # Clean up the overlay window
-            dialog_win.erase()
-            dialog_win.refresh()
-            del dialog_win
+        # Ensure positive coordinates if map is smaller than dialog (should not happen with constants)
+        start_y = max(0, start_y)
+        start_x = max(0, start_x)
+
+        try:
+            # Create a new window for the dialog box each time it's shown for simplicity
+            # This window will be drawn on top of map_win typically.
+            dialog_win = curses.newwin(dialog_h, dialog_w, start_y, start_x)
+            dialog_win.erase() # Clear the window
+            dialog_win.border() # Draw a border
+
+            # Content drawing starts from inside the border (y=1, x=1)
+            content_y, content_x = 1, 1
+            max_content_w = dialog_w - 2 # Account for border
+            max_content_h = dialog_h - 2
+
+            state = self.game_state.oracle_interaction_state
+            current_dialogue_lines = self.game_state.oracle_current_dialogue
             
-            # Force a complete redraw of the underlying screen
-            self.screen.clear() 
-            self.screen.refresh()
-            self.render() # Redraw map, UI, log
-            curses.doupdate()
+            # Display the name of the Oracle if known
+            oracle_name_display = "Oracle" # Default
+            if self.game_state.active_oracle_entity_id:
+                # Attempt to find the Oracle to display its actual name
+                # This is a simplified lookup; in a more complex system, the Oracle object might be directly stored.
+                # For now, active_oracle_entity_id is assumed to be the name.
+                oracle_name_display = str(self.game_state.active_oracle_entity_id)
+            
+            dialog_win.addstr(content_y, content_x, f"--- {oracle_name_display} ---", curses.A_BOLD)
+            content_y += 2 # Move down for dialogue content
+
+            # Display current dialogue lines
+            for i, line in enumerate(current_dialogue_lines):
+                if content_y + i < max_content_h + 1: # Ensure it fits
+                    # Wrap text if too long for the dialog width
+                    wrapped_lines = self._wrap_text_for_dialog(line, max_content_w)
+                    for wrapped_line in wrapped_lines:
+                        if content_y < max_content_h + 1:
+                            dialog_win.addstr(content_y, content_x, wrapped_line)
+                            content_y += 1
+                        else:
+                            break # Stop if no more space in dialog box
+                    if content_y >= max_content_h + 1: # Check again after wrapping
+                        break 
+                else:
+                    break # Stop if no more space
+            
+            # Add state-specific prompts or information at the bottom
+            prompt_y = dialog_h - 3 # Few lines from bottom for prompts
+
+            if state == "AWAITING_OFFERING":
+                # Offering text is already in current_dialogue_lines from input_handler
+                # Display player's current relevant resources for offering
+                # This part might need adjustment based on how resources are displayed or what is relevant
+                inventory_status_y = content_y + 1
+                if inventory_status_y < prompt_y -1:
+                    dialog_win.addstr(inventory_status_y, content_x, "Your current holdings:")
+                    res_y_offset = 1
+                    for res, needed in self.game_state.oracle_offering_cost.items():
+                        if inventory_status_y + res_y_offset < prompt_y -1:
+                            current_amount = self.game_state.inventory.resources.get(res, 0)
+                            dialog_win.addstr(inventory_status_y + res_y_offset, content_x + 2, f"- {res.replace('_', ' ').capitalize()}: {current_amount} (Need {needed})")
+                            res_y_offset +=1
+                        else: break
+                dialog_win.addstr(prompt_y, content_x, "Accept offering? (Y/N)")
+            elif state == "SHOWING_CANNED_RESPONSE":
+                dialog_win.addstr(prompt_y, content_x, "(Press 'T', 'Q', or Enter to close)")
+            elif state == "AWAITING_PROMPT": # Phase 2 placeholder
+                dialog_win.addstr(prompt_y, content_x, "Type your query, press Enter when ready.")
+                # Display self.game_state.oracle_prompt_buffer (Phase 2)
+                input_field_y = prompt_y -1 
+                if input_field_y > content_y:
+                     dialog_win.addstr(input_field_y, content_x, f"> {self.game_state.oracle_prompt_buffer}_") # Simple cursor
+            elif state == "AWAITING_LLM_RESPONSE": # Phase 2 placeholder
+                dialog_win.addstr(prompt_y, content_x, "The Oracle is contemplating... please wait.")
+            elif state == "SHOWING_LLM_RESPONSE": # Phase 2 placeholder
+                 dialog_win.addstr(prompt_y, content_x, "(Press Enter to continue, 'Q' to exit)")
+            
+            # Add a general exit prompt if not covered by specific state
+            if state not in ["SHOWING_CANNED_RESPONSE", "AWAITING_OFFERING", "SHOWING_LLM_RESPONSE"]:
+                 dialog_win.addstr(dialog_h - 2, content_x, "(Press 'Q' to exit dialog)")
+
+            dialog_win.refresh()
+
+        except curses.error as e:
+            # If dialog window creation/drawing fails, log it but don't crash
+            self.game_state.add_debug_message(f"Renderer: Oracle dialog curses error: {e}")
+            # Potentially try to fall back to a simpler message on main screen if possible
+            # For now, just ensures the game doesn't crash if dialog can't be drawn.
+            pass 
+            
+    def _wrap_text_for_dialog(self, text: str, max_width: int) -> List[str]:
+        """Simple text wrapper for dialog lines."""
+        words = text.split(' ')
+        lines = []
+        current_line = ""
+        for word in words:
+            if not current_line:
+                current_line = word
+            elif len(current_line) + 1 + len(word) <= max_width:
+                current_line += " " + word
+            else:
+                lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+        return lines if lines else [""] # Ensure at least one line for empty strings
 
     def _get_mycelial_distance(self, coords):
         """Helper method to get the distance from coordinates to the nexus

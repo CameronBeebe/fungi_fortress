@@ -1,0 +1,7 @@
+[OracleAPI]
+api_key = YOUR_API_KEY_HERE
+# Optional: Specify a preferred model, though the game might have a default
+# model_name = 
+
+# Optional: Configuration for context detail level if we implement it later
+# context_level = medium # Options: low, medium, high 
