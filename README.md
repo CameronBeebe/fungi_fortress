@@ -11,7 +11,7 @@ A terminal-based strategy/simulation game written in Python using the curses lib
 - **🔧 Multi-Provider**: Supports XAI (Grok), OpenAI (GPT), Anthropic (Claude), Groq
 - **📊 Monitoring**: Real-time usage tracking, detailed logging, emergency controls
 
-**Quick Setup**: Copy `oracle_config.ini.example` → `oracle_config.ini`, add your API key, and play! See [LLM Oracle Integration](#llm-oracle-integration) below for details.
+**Quick Setup**: Copy `llm_config.ini.example` → `llm_config.ini`, set your API key as an environment variable, and play! See [LLM Oracle Integration](#llm-oracle-integration) below for details.
 
 ## Features (Current)
 
@@ -46,12 +46,23 @@ A terminal-based strategy/simulation game written in Python using the curses lib
     ```
 2.  **Set up API Key (Optional, for LLM features):**
     This game can use a Large Language Model (LLM) for certain features. To enable these:
-    *   Locate the file named `oracle_config.ini.example` in the root directory.
-    *   Make a copy of this file and rename it to `oracle_config.ini`.
-    *   Open `oracle_config.ini` in a text editor.
-    *   Replace `YOUR_API_KEY_HERE` with your actual API key from an LLM provider.
-    *   You can also optionally specify a `model_name` and `context_level` if you have specific preferences.
-    *   **Important:** The `oracle_config.ini` file is included in `.gitignore` and should NEVER be committed to version control if it contains a real API key.
+    *   Copy `llm_config.ini.example` to `llm_config.ini`
+    *   Set your API key as an environment variable (for security):
+        ```bash
+        # For XAI (Grok models):
+        export XAI_API_KEY="your-xai-api-key-here"
+        
+        # For OpenAI (GPT models):
+        export OPENAI_API_KEY="your-openai-api-key-here"
+        
+        # For Anthropic (Claude models):
+        export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
+        
+        # For Groq (fast open-source models):
+        export GROQ_API_KEY="your-groq-api-key-here"
+        ```
+    *   The game automatically detects which API key to use based on your chosen model
+    *   **Security:** API keys are stored in environment variables, never in files
 
 3.  **Ensure requirements are met** (see above, especially for `curses` on Windows).
 4.  **Run the game:**
@@ -153,46 +164,56 @@ The Oracle supports multiple LLM providers through a unified interface:
 
 ### Configuration
 
-Copy `oracle_config.ini.example` to `oracle_config.ini` and configure your settings:
+Copy `llm_config.ini.example` to `llm_config.ini` and configure your settings:
 
 ```ini
-[OracleAPI]
-# Your API key for the LLM provider
-api_key = YOUR_ACTUAL_API_KEY_HERE
+[LLM]
+# === API KEY CONFIGURATION ===
+# API keys are loaded from environment variables for security
+# Set these environment variables in your shell or .env file:
+#
+# For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
+# For OpenAI:         export OPENAI_API_KEY="your-openai-api-key-here"
+# For Anthropic:      export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
+# For Groq:           export GROQ_API_KEY="your-groq-api-key-here"
+# For Together:       export TOGETHER_API_KEY="your-together-api-key-here"
+# For Perplexity:     export PERPLEXITY_API_KEY="your-perplexity-api-key-here"
 
-# Provider selection (auto, xai, groq, openai, anthropic)
+# Provider selection (auto, xai, groq, openai, anthropic, together, perplexity)
 provider = auto
 
 # Model to use - examples by provider:
-# XAI: grok-3, grok-3-beta, grok-2-1212
+# XAI: grok-3, grok-3-beta, grok-2-1212, grok-3-mini, grok-3-mini-fast
 # OpenAI: gpt-4o, gpt-4o-mini, gpt-3.5-turbo  
 # Anthropic: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022
 # Groq: llama-3.3-70b-versatile, llama-3.1-8b-instant, gemma2-9b-it
+# Together: meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo
+# Perplexity: llama-3.1-sonar-small-128k-online
 model_name = gpt-4o-mini
 
 # Context level for game information (low, medium, high)
 context_level = medium
 
 # === COST CONTROL SETTINGS ===
-max_tokens = 500              # Max response length (prevents runaway costs)
-daily_request_limit = 100     # Daily API call limit (cost control)
-timeout_seconds = 30          # Request timeout (prevents hanging)
+max_tokens = 1000             # Max response length (prevents runaway costs)
+daily_request_limit = 0       # Daily API call limit (0 = unlimited)
+timeout_seconds = 60          # Request timeout (prevents hanging)
 max_retries = 2              # Retry attempts (reliability)
 ```
 
-### Using Your XAI Credits
+### Using Your API Credits
 
-**Yes, you can use your XAI API credits directly!** Set your configuration like this:
+**Secure Environment Variable Setup**: API keys are now stored as environment variables for enhanced security:
 
-```ini
-[OracleAPI]
-api_key = xai-your-actual-api-key-here
-provider = xai
-model_name = grok-3
-context_level = medium
+```bash
+# Add to your shell profile (.bashrc, .zshrc, etc.) for persistence:
+export XAI_API_KEY="xai-your-actual-api-key-here"
+
+# Or set for current session only:
+export XAI_API_KEY="xai-your-actual-api-key-here"
 ```
 
-The Oracle will communicate directly with XAI's API at `api.x.ai`, using your credits and API limits.
+The game will automatically detect which API key to use based on your chosen provider and model.
 
 ### Cost-Effective Gaming
 
@@ -236,7 +257,7 @@ pytest tests/test_integration_game.py tests/test_integration_xai_direct.py -v
 
 ### Setup Verification
 
-After configuring your `oracle_config.ini`, verify everything works:
+After configuring your `llm_config.ini`, verify everything works:
 
 ```bash
 python verify_llm_setup.py

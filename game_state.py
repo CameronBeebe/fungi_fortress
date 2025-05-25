@@ -15,8 +15,8 @@ from .player import Player
 from .inventory import Inventory # Renamed from items to inventory
 from .tiles import Tile, ENTITY_REGISTRY
 from .entities import GameEntity
-# Import OracleConfig for type hinting and storage
-from .config_manager import OracleConfig
+# Import LLMConfig for type hinting and storage (formerly OracleConfig)
+from .config_manager import LLMConfig
 
 logger = logging.getLogger(__name__) # Get logger instance
 
@@ -73,7 +73,7 @@ class GameState:
         buildings (Dict[str, Dict]): Definitions of buildable structures.
         event_queue (List[GameEvent]): A list of game events.
         show_oracle_dialog (bool): True if the Oracle dialogue window should be displayed.
-        oracle_config (OracleConfig): Configuration for Oracle LLM interactions.
+        oracle_config (LLMConfig): Configuration for LLM interactions (formerly Oracle-specific).
         oracle_interaction_state (str): Current state of interaction with an Oracle.
         oracle_current_dialogue (List[str]): Lines of dialogue for the current Oracle interaction.
         oracle_prompt_buffer (str): User's typed prompt for the Oracle.
@@ -86,7 +86,7 @@ class GameState:
         show_quest_menu (bool): Flag to show quest/content window
         new_oracle_content_count (int): Count of new content since last viewing quest menu
     """
-    def __init__(self, oracle_config: OracleConfig) -> None:
+    def __init__(self, oracle_config: LLMConfig) -> None:
         """Initializes the game state.
 
         Sets up the player, initial map, mission, dwarves, inventory,
@@ -94,7 +94,7 @@ class GameState:
         Also generates the initial mycelial network and calculates distances.
 
         Args:
-            oracle_config (OracleConfig): Configuration for Oracle LLM interactions.
+            oracle_config (LLMConfig): Configuration for LLM interactions (formerly Oracle-specific).
         """
         if oracle_config:
             logger.info(f"Received oracle_config. API Key: '{oracle_config.api_key}', Type: {type(oracle_config)}")
@@ -402,7 +402,7 @@ class GameState:
             self.add_debug_message(f"Warning: Could not find suitable location to spawn Oracle '{name}'.")
     # --- End Helper --- 
 
-    def set_oracle_config(self, oracle_config: Optional['OracleConfig']):
+    def set_oracle_config(self, oracle_config: Optional['LLMConfig']):
         """Sets the Oracle configuration, performing some basic logging."""
         if oracle_config:
             self.oracle_config = oracle_config
@@ -410,7 +410,7 @@ class GameState:
             masked_api_key = "'****'" if self.oracle_config.api_key and self.oracle_config.is_real_api_key_present else f"'{self.oracle_config.api_key}'"
             logger.info(f"Received oracle_config. API Key: {masked_api_key}, Model: {self.oracle_config.model_name}, Real Key Present: {self.oracle_config.is_real_api_key_present}, Type: {type(self.oracle_config)}")
         else:
-            self.oracle_config = OracleConfig() # Ensure it's always an OracleConfig instance
-            logger.warning("Received None for oracle_config. Initializing with default OracleConfig.")
+            self.oracle_config = LLMConfig() # Ensure it's always an LLMConfig instance
+            logger.warning("Received None for oracle_config. Initializing with default LLMConfig.")
 
     # --- Inventory Management ---

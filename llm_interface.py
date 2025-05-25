@@ -343,12 +343,12 @@ def _detect_provider_and_call_api(prompt: str, api_key: str, model_name: str, pr
     _log_debug_message("LLM API Call", f"Provider Hint: {provider_hint}")
 
     if not api_key or api_key == "YOUR_API_KEY_HERE" or api_key == "testkey123":
-        error_msg = "Error: API key is missing, a placeholder, or the test key. Configure oracle_config.ini."
+        error_msg = "Error: API key is missing, a placeholder, or the test key. Configure llm_config.ini."
         _log_debug_message("LLM API Call", error_msg)
         return f"The Oracle's connection is disrupted. (Error: API Key not configured for LLM. Details: {error_msg})"
 
     if not model_name:
-        error_msg = "Error: Model name not specified in oracle_config.ini."
+        error_msg = "Error: Model name not specified in llm_config.ini."
         _log_debug_message("LLM API Call", error_msg)
         return f"The Oracle's connection is unstable. (Error: LLM Model not specified. Details: {error_msg})"
 

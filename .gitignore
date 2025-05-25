@@ -87,8 +87,15 @@ cython_debug/
 
 # === LLM INTEGRATION FILES ===
 # Configuration files with API keys (NEVER commit)
-oracle_config.ini
-oracle_config.ini~
+# LLM Configuration files (contain API keys)
+llm_config.ini
+llm_config.ini~
+
+# Legacy Oracle configuration files (deprecated)
+# These files have been replaced by llm_config.ini
+# oracle_config.ini - Legacy configuration file for users
+# oracle_config.ini~ - Legacy backup files
+# oracle_config.ini.example - Legacy configuration template for users
 
 # LLM request tracking and logs (generated files)
 oracle_request_tracking.json
@@ -100,7 +107,6 @@ debug.log
 logs/
 
 # === KEEP THESE FILES (examples and documentation) ===
-# oracle_config.ini.example  - Configuration template for users
 # verify_llm_setup.py        - Setup verification tool for users
 
 # === TEST FILES WITH API KEYS (NEVER commit) ===

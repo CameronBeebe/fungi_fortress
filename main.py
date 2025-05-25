@@ -24,7 +24,7 @@ from fungi_fortress.game_logic import GameLogic
 from fungi_fortress.map_generation import generate_map
 from fungi_fortress.characters import Dwarf
 from fungi_fortress.tiles import ENTITY_REGISTRY
-from .config_manager import load_oracle_config, OracleConfig
+from .config_manager import load_llm_config, LLMConfig
 
 # --- Basic File Logger Setup for Initialization ---
 LOG_FILENAME = "ff_init_debug.log"
@@ -56,17 +56,17 @@ def main(stdscr: curses.window):
     # Set a very low timeout for input polling (1ms)
     stdscr.timeout(1)
 
-    # Load Oracle configuration first
-    oracle_config = load_oracle_config()
+    # Load LLM configuration first
+    llm_config = load_llm_config()
     
-    # Log the loaded OracleConfig, masking the API key
-    masked_api_key = "'****'" if oracle_config.api_key and oracle_config.is_real_api_key_present else f"'{oracle_config.api_key}'"
-    logging.info(f"[MAIN.PY] Loaded oracle_config. API Key: {masked_api_key}, Model: {oracle_config.model_name}, Real Key Present: {oracle_config.is_real_api_key_present}, Type: {type(oracle_config)}")
+    # Log the loaded LLMConfig, masking the API key
+    masked_api_key = "'****'" if llm_config.api_key and llm_config.is_real_api_key_present else f"'{llm_config.api_key}'"
+    logging.info(f"[MAIN.PY] Loaded llm_config. API Key: {masked_api_key}, Model: {llm_config.model_name}, Provider: {llm_config.provider}, Real Key Present: {llm_config.is_real_api_key_present}, Type: {type(llm_config)}")
 
     logging.info("[MAIN.PY] Fungi Fortress initialization complete.")
     
     stdscr.nodelay(True)  # Non-blocking input
-    game_state = GameState(oracle_config=oracle_config)
+    game_state = GameState(oracle_config=llm_config)
     renderer: Renderer = Renderer(stdscr, game_state)
     input_handler: InputHandler = InputHandler(game_state)
     game_logic: GameLogic = GameLogic(game_state)

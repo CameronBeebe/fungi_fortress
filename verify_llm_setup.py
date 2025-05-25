@@ -3,7 +3,7 @@
 Fungi Fortress LLM Setup Verification Tool
 
 This script helps users verify that their multi-provider LLM configuration is working correctly.
-Run this after setting up your oracle_config.ini to confirm everything is configured properly.
+Run this after setting up your llm_config.ini to confirm everything is configured properly.
 
 Usage: python verify_llm_setup.py
 """
@@ -13,7 +13,7 @@ import sys
 sys.path.append('.')
 
 from llm_interface import _detect_provider_and_call_api
-from config_manager import load_oracle_config
+from config_manager import load_llm_config
 import requests
 
 def verify_provider_detection():
@@ -67,15 +67,16 @@ def verify_config_structure():
     
     try:
         # Test loading the example config (should use defaults since no real API key)
-        config = load_oracle_config("oracle_config.ini.example")
+        config = load_llm_config("llm_config.ini.example")
         
-        print(f"   📄 Config file: oracle_config.ini.example")
-        print(f"   🔑 API Key configured: {config.is_real_api_key_present}")
-        print(f"   🤖 Default model: {config.model_name}")
-        print(f"   🌐 Default provider: {config.provider}")
-        print(f"   📊 Context level: {config.context_level}")
-        print("   ✅ Configuration structure is valid!")
-        return True
+        if config:
+            print(f"   📄 Config file: llm_config.ini.example")
+            print(f"   🔑 API Key configured: {config.is_real_api_key_present}")
+            print(f"   🤖 Default model: {config.model_name}")
+            print(f"   🌐 Default provider: {config.provider}")
+            print(f"   📊 Context level: {config.context_level}")
+            print("   ✅ Configuration structure is valid!")
+            return True
         
     except Exception as e:
         print(f"   ❌ Error loading configuration: {e}")
@@ -85,10 +86,10 @@ def test_basic_xai_api_call():
     """Test basic XAI API connectivity without structured outputs."""
     print("=== Testing XAI API Basic Connectivity ===")
     
-    config = load_oracle_config()
+    config = load_llm_config()
     
     if not config.api_key or config.api_key == "YOUR_API_KEY_HERE":
-        print("❌ No valid API key found in oracle_config.ini")
+        print("❌ No valid API key found in llm_config.ini")
         return False
         
     print(f"✅ API Key loaded: {config.api_key[:10]}...{config.api_key[-4:]}")
@@ -137,7 +138,7 @@ def test_structured_outputs():
     """Test XAI structured outputs feature."""
     print("\n=== Testing XAI Structured Outputs ===")
     
-    config = load_oracle_config()
+    config = load_llm_config()
     
     headers = {
         "Authorization": f"Bearer {config.api_key}",
@@ -223,11 +224,11 @@ def main():
         
         if not structured_success:
             print("\n⚠️  Basic API works but structured outputs failed.")
-            print("💡 Recommendation: Disable structured outputs in oracle_config.ini")
+            print("💡 Recommendation: Disable structured outputs in llm_config.ini")
             print("   Set: enable_structured_outputs = false")
     else:
         print("\n❌ Basic API connectivity failed.")
-        print("💡 Check your API key and model name in oracle_config.ini")
+        print("💡 Check your API key and model name in llm_config.ini")
     
     print("\n" + "=" * 50)
     print("🏁 Diagnostics complete!")
@@ -254,7 +255,7 @@ if __name__ == "__main__":
         print("   • Auto-detection: Based on model name patterns")
         print()
         print("🚀 Next Steps:")
-        print("1. Copy oracle_config.ini.example to oracle_config.ini")
+        print("1. Copy llm_config.ini.example to llm_config.ini")
         print("2. Add your API key for your preferred provider")
         print("3. Set your preferred model and provider")
         print("4. Start the game and interact with the Oracle!")
