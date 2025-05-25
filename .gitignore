@@ -101,4 +101,9 @@ logs/
 
 # === KEEP THESE FILES (examples and documentation) ===
 # oracle_config.ini.example  - Configuration template for users
-# verify_llm_setup.py        - Setup verification tool for users 
+# verify_llm_setup.py        - Setup verification tool for users
+
+# === TEST FILES WITH API KEYS (NEVER commit) ===
+test_xai_direct.py
+test_integration_xai_direct.py
+tests/test_integration_xai_direct.py 
