@@ -41,6 +41,7 @@ class OracleConfig:
     retry_delay_seconds: float = 1.0  # Delay between retries
     daily_request_limit: int = 100  # Maximum requests per day (cost control)
     enable_request_logging: bool = True  # Whether to log all API requests for monitoring
+    enable_structured_outputs: bool = True  # Whether to use XAI structured outputs feature
 
     def __post_init__(self):
         """Validate and finalize configuration after initialization."""
@@ -94,12 +95,12 @@ def load_oracle_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> Oracl
         logger.info(f"Configuration file '{config_file_path}' not found. Oracle LLM features may be unavailable.")
         example_config_path = os.path.join(PACKAGE_ROOT_DIR, "oracle_config.ini.example")
         if os.path.exists(example_config_path):
-            print(f"INFO: Configuration file '{config_file_name}' not found.")
-            print(f"To enable LLM features, please copy '{example_config_path}' to '{config_file_path}' and add your API key.")
-            print("See README.md for more details.")
+            logger.info(f"Configuration file '{config_file_name}' not found.")
+            logger.info(f"To enable LLM features, please copy '{example_config_path}' to '{config_file_path}' and add your API key.")
+            logger.info("See README.md for more details.")
         else:
-            print(f"INFO: Configuration file '{config_file_name}' not found and no example configuration was found.")
-            print("LLM features will be disabled. See README.md for manual configuration instructions if you wish to use them.")
+            logger.info(f"Configuration file '{config_file_name}' not found and no example configuration was found.")
+            logger.info("LLM features will be disabled. See README.md for manual configuration instructions if you wish to use them.")
         return OracleConfig() 
 
     api_key: Optional[str] = None
@@ -114,6 +115,7 @@ def load_oracle_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> Oracl
     retry_delay_seconds: float = 1.0
     daily_request_limit: int = 100
     enable_request_logging: bool = True
+    enable_structured_outputs: bool = True
 
     if "OracleAPI" in parser:
         api_key = parser["OracleAPI"].get("api_key")
@@ -183,6 +185,7 @@ def load_oracle_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> Oracl
             daily_request_limit = 100
             
         enable_request_logging = parser["OracleAPI"].getboolean("enable_request_logging", fallback=True)
+        enable_structured_outputs = parser["OracleAPI"].getboolean("enable_structured_outputs", fallback=True)
 
     else:
         logger.warning(f"[OracleAPI] section not found in '{config_file_path}'. Oracle LLM features may be unavailable.")
@@ -198,7 +201,8 @@ def load_oracle_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> Oracl
         max_retries=max_retries,
         retry_delay_seconds=retry_delay_seconds,
         daily_request_limit=daily_request_limit,
-        enable_request_logging=enable_request_logging
+        enable_request_logging=enable_request_logging,
+        enable_structured_outputs=enable_structured_outputs
     )
 
 if __name__ == "__main__":

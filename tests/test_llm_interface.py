@@ -82,7 +82,7 @@ def test_parse_llm_response_action_at_start():
     # The first part of the split is "", which becomes the initial narrative.
     # The second part is "add_message::{'text': 'Alert!'} Main narrative."
     # This will fail JSON parsing for the action details.
-    assert narrative.strip() == "(The Oracle's words concerning an action were muddled: add_message::{'text': 'Alert!'} Main narrative.)\""
+    assert narrative.strip() == "(The Oracle's words concerning an action were muddled: add_message::{'text': 'Alert!'} Main narrative.)"
     assert actions == []
 
 def test_parse_llm_response_action_at_start_clean():
@@ -231,7 +231,8 @@ class TestProviderDetection:
         ]
         
         for model in test_cases:
-            with patch('llm_interface._call_xai_api') as mock_xai:
+            with patch('llm_interface._call_xai_api') as mock_xai, \
+                 patch('llm_interface._check_and_increment_request_count', return_value=True):
                 mock_xai.return_value = "Test response"
                 
                 result = _detect_provider_and_call_api(
@@ -256,7 +257,8 @@ class TestProviderDetection:
         ]
         
         for model in test_cases:
-            with patch('llm_interface._call_openai_compatible_api') as mock_openai:
+            with patch('llm_interface._call_openai_compatible_api') as mock_openai, \
+                 patch('llm_interface._check_and_increment_request_count', return_value=True):
                 mock_openai.return_value = "Test response"
                 
                 result = _detect_provider_and_call_api(
@@ -280,7 +282,8 @@ class TestProviderDetection:
         ]
         
         for model in test_cases:
-            with patch('llm_interface._call_openai_compatible_api') as mock_anthropic:
+            with patch('llm_interface._call_openai_compatible_api') as mock_anthropic, \
+                 patch('llm_interface._check_and_increment_request_count', return_value=True):
                 mock_anthropic.return_value = "Test response"
                 
                 result = _detect_provider_and_call_api(
@@ -304,7 +307,8 @@ class TestProviderDetection:
         ]
         
         for model in test_cases:
-            with patch('llm_interface._call_groq_api') as mock_groq:
+            with patch('llm_interface._call_groq_api') as mock_groq, \
+                 patch('llm_interface._check_and_increment_request_count', return_value=True):
                 mock_groq.return_value = "Test response"
                 
                 result = _detect_provider_and_call_api(
@@ -320,7 +324,8 @@ class TestProviderDetection:
     
     def test_provider_hint_override(self):
         """Test that explicit provider hints override auto-detection."""
-        with patch('llm_interface._call_xai_api') as mock_xai:
+        with patch('llm_interface._call_xai_api') as mock_xai, \
+             patch('llm_interface._check_and_increment_request_count', return_value=True):
             mock_xai.return_value = "Test response"
             
             # Use a non-XAI model name but force XAI provider

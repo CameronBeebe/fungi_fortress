@@ -60,20 +60,32 @@ A terminal-based strategy/simulation game written in Python using the curses lib
     ```
     *(Alternatively, if running as an installed module later: `python -m fungi_fortress.main`)*
 
-## Basic Controls (Tentative - Check `InputHandler`)
+## Basic Controls
 
 *   **Arrow Keys:** Move cursor / navigate menus
 *   **Enter:** Confirm selection / interact
+*   **ESC:** Quit game / Close open menus
 *   **i:** Toggle Inventory
-*   **s:** Toggle Shop (if applicable)
+*   **q:** Open Quest/Oracle Content Menu  
 *   **l:** Toggle Legend
+*   **t:** Talk to adjacent NPCs/Oracles
+*   **e:** Enter/Interact with structures
 *   **p:** Pause game
-*   **m:** Mine (Assign task at cursor?)
-*   **c:** Chop (Assign task at cursor?)
-*   **b:** Build (Assign task at cursor?)
-*   **q:** Quit
+*   **m:** Mine/Move (Assign task at cursor)
+*   **f:** Fish/Fight (Assign task at cursor)
+*   **b:** Build (Assign task at cursor)
+*   **d:** Descent/Shop preparation
+*   **c:** Cast selected spell
+*   **s:** Cycle through spells
+*   **1-5:** Select spell slots
 
-*(These controls are inferred and may need verification by checking `input_handler.py`)*
+### Oracle Dialogue Controls
+
+When consulting an Oracle:
+*   **Type normally:** Enter your query (including 'q' safely)
+*   **Enter:** Submit query
+*   **ESC:** Exit consultation (with confirmation when typing)
+*   **Arrow Keys:** Navigate longer responses
 
 ## Testing and Type Checking
 
@@ -117,13 +129,23 @@ Contributions are welcome! Please feel free to open issues or submit pull reques
 
 Fungi Fortress features an AI-powered Oracle that provides guidance, lore, and interactive storytelling through Large Language Model (LLM) integration. The Oracle system is designed to be **flexible and provider-agnostic**, allowing players to use their preferred LLM service and API credits.
 
-**🚀 NEW: Production-Ready with Safety Features** - The LLM integration now includes comprehensive cost controls, retry logic, and monitoring to ensure safe live API usage.
+**🚀 PRODUCTION-READY** - The LLM integration is fully stable with comprehensive safety features, extensive testing, and robust error handling for live API usage.
+
+### Recent Improvements (Latest Update)
+
+- **✅ Enhanced Error Handling**: Improved parsing of malformed LLM responses with graceful degradation
+- **✅ Comprehensive Test Suite**: 150+ tests covering unit tests, integration tests, and live API validation
+- **✅ Response Format Support**: Handles both structured JSON responses and legacy text format seamlessly  
+- **✅ Provider Auto-Detection**: Automatically selects the correct API based on model name patterns
+- **✅ Structured Output**: Supports XAI's structured JSON schema for more reliable responses
+- **✅ Integration Tests**: Added `test_integration_game.py` and `test_integration_xai_direct.py` for full pipeline validation
 
 ### Supported LLM Providers
 
 The Oracle supports multiple LLM providers through a unified interface:
 
 - **XAI (Grok models)**: Access to Grok-3, Grok-2, and other Grok models via XAI's direct API
+  - **NEW**: Full support for structured JSON responses and reasoning tokens
 - **OpenAI**: GPT-4o, GPT-4o-mini, GPT-4-turbo, and GPT-3.5-turbo models  
 - **Anthropic**: Claude-3.5-Sonnet, Claude-3.5-Haiku, and Claude-3-Opus models
 - **Groq**: Fast inference for open-source models like LLaMA, Mixtral, and Gemma
@@ -184,9 +206,33 @@ Since the Oracle is designed for interactive storytelling rather than intensive 
 
 - **Daily request limits** prevent unexpected charges
 - **Token limits** control response length and costs  
-- **Smart retry logic** handles temporary failures
+- **Smart retry logic** handles temporary failures gracefully
 - **Real-time monitoring** shows usage and costs
 - **Emergency controls** for immediate cost management
+- **Robust error handling** with fallback responses
+- **Request tracking** and logging for debugging
+
+### Testing Infrastructure
+
+The LLM integration includes comprehensive testing:
+
+```bash
+# Run all tests including LLM integration tests
+pytest
+
+# Run only LLM-specific tests
+pytest tests/test_llm_interface.py -v
+
+# Run integration tests (requires API key)
+pytest tests/test_integration_game.py tests/test_integration_xai_direct.py -v
+```
+
+**Test Coverage**:
+- 24 unit tests for LLM interface logic
+- 3 integration tests for live API validation  
+- Provider detection and auto-switching tests
+- Error handling and malformed response tests
+- Cost control and safety feature tests
 
 ### Setup Verification
 

@@ -60,7 +60,7 @@ class InputHandler:
         Key Bindings (Summary):
 
         Global:
-          q: Quit game.
+          q: Toggle quest menu.
           p: Toggle pause.
           i: Toggle inventory screen.
           l: Toggle legend screen (pauses game).
@@ -99,10 +99,17 @@ class InputHandler:
         key_char = chr(key) if 32 <= key <= 126 else None
 
         if self.game_state.show_inventory:
-            if key in [ord('i'), ord('q')]:
+            if key in [ord('i'), 27]:  # 'i' or ESC
                 self.game_state.show_inventory = False
                 return True
             return True # Absorb other keys when inventory is open
+
+        if self.game_state.show_quest_menu:
+            if key == 27:  # ESC key only
+                self.game_state.show_quest_menu = False
+                self.game_state.paused = False  # Unpause when closing
+                return True
+            return True # Absorb other keys when quest menu is open
 
         if self.game_state.show_oracle_dialog:
             current_oracle = self._get_active_oracle()
@@ -111,21 +118,20 @@ class InputHandler:
             # --- Paging Input (handled across multiple states) ---
             # Define max_content_h roughly as it's calculated in renderer for paging logic
             # This is an approximation; ideally, this comes from a shared constant or renderer directly.
-            dialog_h_approx = 15 # As used in renderer
-            # Approximation: title (1) + space (1) + oracle_name_line (1) + space (1) + prompt_area (1) + borders (2) = 7. Content = 15 - 7 = 8
-            # More simply: dialog_h - 5 as derived for renderer's max_content_h
-            lines_per_page = dialog_h_approx - 5 
+            dialog_h_approx = 22 # Updated to match the new increased height in renderer (was 18)
+            # Content calculation: dialog_h - 6 (reserved space for input/prompts) - 3 (title and spacing) = 13 lines
+            lines_per_page = dialog_h_approx - 9  # More conservative calculation for content area
             if lines_per_page < 1: lines_per_page = 1
 
             page_changed = False
-            if key == curses.KEY_NPAGE: # Page Down
+            if key == curses.KEY_DOWN: # Down arrow for next page
                 # Need to know total wrapped lines to avoid over-scrolling.
                 # This is complex without re-wrapping text here. For now, assume renderer handles boundary.
                 # A simpler approach for input: just increment/decrement and let renderer cap it.
                 self.game_state.oracle_dialogue_page_start_index += lines_per_page
                 # Renderer will cap this if it goes too far. We might want to get total_lines from somewhere.
                 page_changed = True
-            elif key == curses.KEY_PPAGE: # Page Up
+            elif key == curses.KEY_UP: # Up arrow for previous page
                 self.game_state.oracle_dialogue_page_start_index -= lines_per_page
                 if self.game_state.oracle_dialogue_page_start_index < 0:
                     self.game_state.oracle_dialogue_page_start_index = 0
@@ -135,18 +141,36 @@ class InputHandler:
                 # If page changed, we consume the input and no other action for this key press occurs in the dialog
                 return True
 
-            # General close keys, checked first
-            if key == ord('q'): # 'q' always closes
-                self.game_state.show_oracle_dialog = False
-                self.game_state.paused = False
-                # Reset states only if not in a state that should persist (e.g. AWAITING_LLM_RESPONSE)
-                if self.game_state.oracle_interaction_state != "AWAITING_LLM_RESPONSE":
-                    self.game_state.oracle_interaction_state = "IDLE"
-                    self.game_state.oracle_current_dialogue = []
-                    self.game_state.oracle_prompt_buffer = ""
-                    self.game_state.active_oracle_entity_id = None
-                self.game_state.oracle_no_api_second_stage_pending = False # Reset this flag on any 'q' close
-                self.game_state.add_debug_message(f"Oracle dialog closed via 'q'.")
+            # Handle ESC key for graceful exit with confirmation
+            if key == 27:  # ESC key
+                if self.game_state.oracle_interaction_state == "AWAITING_PROMPT":
+                    # When actively typing, ask for confirmation
+                    self.game_state.oracle_current_dialogue.append("Do you wish to end this consultation? (Y/N)")
+                    self.game_state.oracle_interaction_state = "CONFIRMING_EXIT"
+                    return True
+                else:
+                    # In other states, exit immediately
+                    self._close_oracle_dialogue()
+                    return True
+
+            # Handle 'q' key - only exit in non-input states
+            if key == ord('q') and self.game_state.oracle_interaction_state != "AWAITING_PROMPT":
+                # Quick exit (only when not actively typing)
+                self._close_oracle_dialogue()
+                return True
+
+            # Handle exit confirmation state
+            if self.game_state.oracle_interaction_state == "CONFIRMING_EXIT":
+                if key == ord('y') or key == ord('Y'):
+                    self._close_oracle_dialogue()
+                    return True
+                elif key == ord('n') or key == ord('N'):
+                    # Remove the confirmation message and return to prompt
+                    if self.game_state.oracle_current_dialogue and "Do you wish to end this consultation?" in self.game_state.oracle_current_dialogue[-1]:
+                        self.game_state.oracle_current_dialogue.pop()
+                    self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
+                    return True
+                # Absorb other keys during confirmation
                 return True
 
             if self.game_state.oracle_interaction_state == "AWAITING_OFFERING":
@@ -200,28 +224,15 @@ class InputHandler:
                         return True # Handled, stay in dialog
                     else:
                         # Close dialog (either second Enter after no-API, or other canned responses not part of the two-stage no-API flow)
-                        self.game_state.show_oracle_dialog = False
-                        self.game_state.paused = False
-                        self.game_state.oracle_interaction_state = "IDLE"
-                        self.game_state.oracle_current_dialogue = []
-                        self.game_state.oracle_prompt_buffer = ""
-                        self.game_state.active_oracle_entity_id = None
-                        self.game_state.oracle_no_api_second_stage_pending = False # Ensure reset
+                        self._close_oracle_dialogue()
                         return True
-                # Note: 'q' is handled by the general close key section above.
-                # Other keys are absorbed in SHOWING_CANNED_RESPONSE if not Enter or q.
+                # Note: ESC is handled by the general close key section above.
+                # Other keys are absorbed in SHOWING_CANNED_RESPONSE if not Enter.
                 return True 
 
             elif self.game_state.oracle_interaction_state == "SHOWING_CANNED_RESPONSE_FINAL_NO_API":
-                if key in [curses.KEY_ENTER, 10, 13, ord('q')]: # Enter or q closes
-                    self.game_state.show_oracle_dialog = False
-                    self.game_state.paused = False
-                    self.game_state.oracle_interaction_state = "IDLE"
-                    self.game_state.oracle_current_dialogue = []
-                    self.game_state.oracle_prompt_buffer = ""
-                    self.game_state.active_oracle_entity_id = None
-                    self.game_state.oracle_no_api_second_stage_pending = False # Ensure reset
-                    self.game_state.add_debug_message("Oracle dialog (final no-API) closed.")
+                if key in [curses.KEY_ENTER, 10, 13]: # Enter closes
+                    self._close_oracle_dialogue()
                     return True
                 return True # Absorb other keys
 
@@ -248,6 +259,7 @@ class InputHandler:
                         self.game_state.add_event("ORACLE_QUERY", event_details)
                         
                         self.game_state.oracle_interaction_state = "AWAITING_LLM_RESPONSE"
+                        self.game_state.oracle_query_start_tick = self.game_state.tick  # Track when query started
                         # Dialogue like "Oracle is contemplating..." will be added by GameLogic's action handler for set_oracle_state
                         self.game_state.oracle_prompt_buffer = "" # Clear buffer after sending
                     else:
@@ -256,7 +268,7 @@ class InputHandler:
                         # Similar to above, new text added. Page index not explicitly reset.
                 elif key == curses.KEY_BACKSPACE or key == 127 or key == 8: # Handle backspace
                     self.game_state.oracle_prompt_buffer = self.game_state.oracle_prompt_buffer[:-1]
-                elif 32 <= key <= 126: # Printable ASCII characters
+                elif 32 <= key <= 126: # Printable ASCII characters (including 'q')
                     # Limit prompt length if necessary
                     if len(self.game_state.oracle_prompt_buffer) < 200: # Example limit
                         self.game_state.oracle_prompt_buffer += chr(key)
@@ -264,8 +276,9 @@ class InputHandler:
                 return True
             
             elif self.game_state.oracle_interaction_state == "AWAITING_LLM_RESPONSE":
-                # Input is generally ignored while waiting for LLM, except perhaps a cancel key (handled by 'q')
-                self.game_state.add_debug_message("Input ignored: Awaiting LLM response.")
+                # Input is generally ignored while waiting for LLM, except ESC
+                if key != 27:  # Allow ESC, absorb other input
+                    self.game_state.add_debug_message("Input ignored: Awaiting LLM response.")
                 return True
 
             # Fallback for any other Oracle states, absorb key
@@ -463,13 +476,17 @@ class InputHandler:
             # --- End Shop Input Handling ---
 
         if self.game_state.show_legend:
-            if key == ord('l'):
+            if key in [ord('l'), 27]:  # 'l' or ESC
                 self.game_state.show_legend = False
                 self.game_state.paused = False
                 return True
 
-        if key == ord('q'):
+        if key == 27:  # ESC key - quit game
             return False
+        elif key == ord('q'):  # 'q' now opens quest menu
+            self.game_state.show_quest_menu = True
+            self.game_state.paused = True
+            self.game_state.add_debug_message("Quest content displayed")
         elif key == ord('p'):
             self.game_state.paused = not self.game_state.paused
             self.game_state.add_debug_message("Paused" if self.game_state.paused else "Running")
@@ -957,5 +974,25 @@ class InputHandler:
             self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE" # Move to show this message
             # InteractionEventDetails.log_interaction("player", "offering_failed_insufficient", oracle.name)
             return False
+
+    def _close_oracle_dialogue(self):
+        """Closes the oracle dialogue and provides feedback about any generated content."""
+        # Check if any content was generated during this interaction for summary
+        recent_content_count = sum(1 for content in self.game_state.oracle_generated_content 
+                                 if (self.game_state.tick - content.get("tick", 0)) < 10)
+        
+        self.game_state.show_oracle_dialog = False
+        self.game_state.paused = False
+        self.game_state.oracle_interaction_state = "IDLE"
+        self.game_state.oracle_current_dialogue = []
+        self.game_state.oracle_prompt_buffer = ""
+        self.game_state.active_oracle_entity_id = None
+        self.game_state.oracle_no_api_second_stage_pending = False
+        
+        # Provide feedback about generated content
+        if recent_content_count > 0:
+            self.game_state.add_debug_message(f"Oracle dialogue closed. {recent_content_count} item(s) were generated! Press 'q' to view.")
+        else:
+            self.game_state.add_debug_message("Oracle dialogue closed.")
 
     # Removed find_adjacent_walkable and find_adjacent_tile

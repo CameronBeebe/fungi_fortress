@@ -9,6 +9,11 @@ import curses
 import time
 import sys # Import sys for stdout/stderr
 import logging # Import logging
+import os # Import os for environment variables
+
+# Set ESC key delay to 25ms instead of default 1000ms (fallback for older Python)
+# This must be set before any curses initialization
+os.environ.setdefault("ESCDELAY", "25")
 
 # Use absolute imports from the package
 from fungi_fortress.game_state import GameState
@@ -43,6 +48,10 @@ def main(stdscr: curses.window):
         stdscr: The main curses window object provided by curses.wrapper.
     """
     logging.info("Main function started.") # Log start of main
+
+    # Set ESC key delay to 25ms for faster ESC key response (Python 3.9+)
+    if hasattr(curses, 'set_escdelay'):
+        curses.set_escdelay(25)
 
     # Set a very low timeout for input polling (1ms)
     stdscr.timeout(1)
@@ -119,8 +128,13 @@ def main(stdscr: curses.window):
         # Update game logic at fixed rate
         elapsed_since_logic = current_time - last_logic_time
         if elapsed_since_logic >= target_logic_time:
-            # Skip logic update if paused or any overlay is active
-            if not (game_state.paused or game_state.show_inventory or game_state.in_shop or game_state.show_legend or game_state.show_oracle_dialog):
+            # Allow logic update when Oracle dialogue is active (for API calls)
+            # Skip logic update only if paused without Oracle dialogue, or other overlays are active
+            oracle_dialogue_active = game_state.show_oracle_dialog
+            paused_without_oracle = game_state.paused and not oracle_dialogue_active
+            other_overlays_active = game_state.show_inventory or game_state.in_shop or game_state.show_legend
+            
+            if not (paused_without_oracle or other_overlays_active):
                 game_logic.update()
                 needs_render = True
             last_logic_time = current_time - (elapsed_since_logic % target_logic_time)  # Maintain fixed timestep
@@ -137,6 +151,8 @@ def main(stdscr: curses.window):
                 renderer.show_legend_screen()
             elif game_state.show_oracle_dialog:
                 renderer.show_oracle_dialog_screen()
+            elif game_state.show_quest_menu:
+                renderer.show_quest_content_screen()
             else:
                 renderer.render()
             

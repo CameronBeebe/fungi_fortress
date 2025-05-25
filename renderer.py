@@ -446,12 +446,19 @@ class Renderer:
         add_ui_line(" f: fish/fight")
         add_ui_line(" i: inventory")
         add_ui_line(" l: legend")
+        # Show quest content hotkey with indicator if new content is available
+        quest_hotkey_text = " q: quest content"
+        if self.game_state.new_oracle_content_count > 0:
+            quest_hotkey_text += f" ({self.game_state.new_oracle_content_count} new!)"
+            add_ui_line(quest_hotkey_text, curses.A_BOLD | curses.color_pair(2))  # Highlight when new content available
+        else:
+            add_ui_line(quest_hotkey_text)
         add_ui_line(" t: talk") 
         add_ui_line(" e: enter/interact")
         add_ui_line(" b: build")
         add_ui_line(" d: descend/shop")
         add_ui_line(" p: pause")
-        add_ui_line(" q: quit")
+        add_ui_line(" ESC: quit")
         # Add more hotkeys as needed, ensuring they fit UI_WIDTH
 
         # --- Render Log --- 
@@ -521,7 +528,7 @@ class Renderer:
         for item, qty in self.game_state.inventory.special_items.items():
              if row < inv_h - 2: inv_win.addstr(row, 4, f"{item}: {qty}") ; row += 1
 
-        inv_win.addstr(inv_h - 2, 2, "Press 'i' or 'q' to close")
+        inv_win.addstr(inv_h - 2, 2, "Press 'i' or ESC to close")
         inv_win.refresh()
         if not self.game_state.show_inventory:
             # Clean up the overlay window
@@ -649,7 +656,7 @@ class Renderer:
         add_legend_entry('A', "Animal", 12)
         add_legend_entry('C', "Character/NPC", 14)
 
-        leg_win.addstr(leg_h - 2, 2, "Press 'l' to close")
+        leg_win.addstr(leg_h - 2, 2, "Press 'l' or ESC to close")
         leg_win.refresh()
         if not self.game_state.show_legend:
             # Clean up the overlay window
@@ -677,9 +684,9 @@ class Renderer:
         if not self.is_size_ok or not self.ui_win: # Assuming ui_win is used as a base for dialog size
             return
 
-        # Define dialog window dimensions (can be adjusted)
+        # Define dialog window dimensions (increased height to accommodate more content and better spacing)
         # Let's try to center it on the map area, or a portion of it.
-        dialog_h = 15  # Height of the dialog box
+        dialog_h = 22  # Height of the dialog box (increased from 18 to accommodate more lines and better spacing)
         dialog_w = 60  # Width of the dialog box
         
         # Calculate top-left corner for centering (approximately)
@@ -714,9 +721,9 @@ class Renderer:
             content_y_start_for_dialogue += 2 # Move below the title and a blank line for actual dialogue content
 
             # Calculate available height for the scrollable dialogue text
-            # Prompt area is at dialog_h - 2. Content area ends at dialog_h - 3.
-            # Content starts at content_y_start_for_dialogue.
-            max_content_h = (dialog_h - 3) - content_y_start_for_dialogue + 1 
+            # Reserve more space at bottom for input field and prompts
+            # prompt_y will be at dialog_h - 2, input field at dialog_h - 4, content ends at dialog_h - 6
+            max_content_h = (dialog_h - 6) - content_y_start_for_dialogue + 1 
             if max_content_h < 1: max_content_h = 1 # Ensure at least 1 line if window is tiny
 
             state = self.game_state.oracle_interaction_state
@@ -754,21 +761,23 @@ class Renderer:
 
             current_draw_y = content_y_start_for_dialogue
             for line_text in lines_to_display_on_page:
-                if current_draw_y <= (dialog_h - 3): # Ensure we don't write over border or prompt area
+                if current_draw_y <= (dialog_h - 6): # Ensure we don't write over reserved space for input/prompts
                     try:
                         dialog_win.addstr(current_draw_y, content_x, line_text)
                     except curses.error: 
                         pass 
                     current_draw_y += 1
 
-            # --- Prompt and Paging Info Area ---
-            prompt_y = dialog_h - 2 # Line for prompts/paging info
+            # --- Calculate prompt positions with better spacing ---
+            input_field_y = dialog_h - 4    # Input field area (2 lines from bottom)
+            prompt_y = dialog_h - 2          # Main prompt line (1 line from bottom)
 
+            # --- Paging Info Display ---
             paging_info_parts = []
             if page_start_index > 0:
-                paging_info_parts.append("[PgUp]")
+                paging_info_parts.append("[↑]")
             if page_start_index + max_content_h < total_lines:
-                paging_info_parts.append("[PgDn]")
+                paging_info_parts.append("[↓]")
             
             paging_display_str = " ".join(paging_info_parts)
 
@@ -784,17 +793,18 @@ class Renderer:
                     current_amount = self.game_state.inventory.resources.get(res, 0)
                     resource_lines_to_show.append(f"  - {res.replace('_', ' ').capitalize()}: {current_amount} (Need {needed})")
 
-                # Check if there's enough vertical space for "Your current holdings:" + resource lines + prompt
-                # prompt_y is dialog_h - 2. Resources must fit between current_draw_y and prompt_y -1.
+                # Check if there's enough vertical space for "Your current holdings:" + resource lines
+                # Resources must fit between current_draw_y and input_field_y - 1
                 resource_area_start_y = current_draw_y 
                 
                 required_lines_for_resources = 1 + len(resource_lines_to_show) # "Holdings:" + each resource line
-                if (prompt_y - 1) - resource_area_start_y + 1 >= required_lines_for_resources:
+                if (input_field_y - 1) - resource_area_start_y + 1 >= required_lines_for_resources:
                     dialog_win.addstr(resource_area_start_y, content_x, "Your current holdings:")
                     resource_area_start_y +=1
                     for r_line in resource_lines_to_show:
-                        dialog_win.addstr(resource_area_start_y, content_x + 1, r_line) # Indent resource lines
-                        resource_area_start_y +=1
+                        if resource_area_start_y < input_field_y - 1:  # Ensure we don't overlap with input area
+                            dialog_win.addstr(resource_area_start_y, content_x + 1, r_line) # Indent resource lines
+                            resource_area_start_y +=1
                 
                 final_prompt_text = "Accept offering? (Y/N)"
                 if paging_display_str: # Add paging if offering dialogue itself is paged (unlikely but possible)
@@ -802,7 +812,7 @@ class Renderer:
                 dialog_win.addstr(prompt_y, content_x, final_prompt_text)
 
             elif state == "SHOWING_CANNED_RESPONSE" or state == "SHOWING_LLM_RESPONSE":
-                base_prompt = "(Enter to continue, 'q' to exit)"
+                base_prompt = "(Enter to continue, ESC to exit)"
                 if paging_display_str:
                     dialog_win.addstr(prompt_y, content_x, f"{paging_display_str} {base_prompt}")
                 else: # If no paging needed, simplify the prompt for single page views
@@ -810,34 +820,51 @@ class Renderer:
             
             elif state == "SHOWING_CANNED_RESPONSE_FINAL_NO_API":
                 # Specific prompt for the final stage of the no-API key canned response
-                final_no_api_prompt = "('q' to depart)" # Changed Q to q previously, ensure consistency
+                final_no_api_prompt = "(ESC to depart)"
                 if paging_display_str: # Unlikely to have paging here, but good to be thorough
                     dialog_win.addstr(prompt_y, content_x, f"{paging_display_str} {final_no_api_prompt}")
                 else:
                     dialog_win.addstr(prompt_y, content_x, final_no_api_prompt)
 
             elif state == "AWAITING_PROMPT":
-                # Paging info (for dialogue history)
+                # Paging info (for dialogue history) - display on separate line if present
                 if paging_display_str:
-                     dialog_win.addstr(prompt_y, content_x, paging_display_str)
+                    dialog_win.addstr(input_field_y - 1, content_x, paging_display_str)
 
-                # Input field for player's query
-                input_field_y = dialog_h - 3 # One line above the main prompt/paging line
-                if input_field_y > content_y : # Ensure it doesn't overlap with dialogue history
-                    dialog_win.addstr(input_field_y, content_x, f"> {self.game_state.oracle_prompt_buffer}_")
-                elif input_field_y == content_y: # If history fills right up to it
-                     dialog_win.addstr(input_field_y, content_x, f"> {self.game_state.oracle_prompt_buffer}_")
+                # Input field for player's query - now guaranteed to have dedicated space
+                # Wrap the prompt buffer to prevent overflow
+                prompt_with_cursor = f"> {self.game_state.oracle_prompt_buffer}_"
+                max_input_width = max_content_w - 2  # Leave some margin
+                
+                if len(prompt_with_cursor) <= max_input_width:
+                    # Single line input
+                    dialog_win.addstr(input_field_y, content_x, prompt_with_cursor)
+                else:
+                    # Multi-line input wrapping
+                    wrapped_input = self._wrap_text_for_dialog(prompt_with_cursor, max_input_width)
+                    current_input_y = input_field_y
+                    for line in wrapped_input[-2:]:  # Show last 2 lines of input to keep cursor visible
+                        if current_input_y <= prompt_y - 1:  # Don't overlap with prompt line
+                            dialog_win.addstr(current_input_y, content_x, line)
+                            current_input_y += 1
 
-                # General instruction for prompt state (might be redundant if paging info is present)
-                if not paging_display_str: # Only show if no paging buttons are there
-                    dialog_win.addstr(prompt_y, content_x, "Type query, Enter when ready.")
+                # General instruction for prompt state on the main prompt line
+                if not paging_display_str: # Only show instruction if no paging buttons shown above
+                    dialog_win.addstr(prompt_y, content_x, "Type query, Enter when ready. ESC to leave.")
+                else:
+                    # If paging is shown above input, just show a shorter prompt
+                    dialog_win.addstr(prompt_y, content_x, "Enter when ready. ESC to leave.")
 
             elif state == "AWAITING_LLM_RESPONSE":
-                dialog_win.addstr(prompt_y, content_x, "The Oracle is contemplating... (q to cancel)")
+                # Show a more informative message with progress indication
+                elapsed_time = self.game_state.tick - getattr(self.game_state, 'oracle_query_start_tick', self.game_state.tick)
+                dots = "." * (elapsed_time % 4)  # Animate dots 0, 1, 2, 3, 0, 1, 2, 3...
+                progress_msg = f"The Oracle is contemplating{dots:4s} (ESC to cancel)"
+                dialog_win.addstr(prompt_y, content_x, progress_msg)
             
             # General exit prompt if not explicitly handled and no paging (less relevant now with paging info)
             if not paging_display_str and state not in ["SHOWING_CANNED_RESPONSE", "AWAITING_OFFERING", "SHOWING_LLM_RESPONSE", "AWAITING_PROMPT", "AWAITING_LLM_RESPONSE", "SHOWING_CANNED_RESPONSE_FINAL_NO_API"]:
-                 dialog_win.addstr(prompt_y, content_x, "(Press 'q' to exit dialog)")
+                 dialog_win.addstr(prompt_y, content_x, "(Press ESC to exit dialog)")
 
 
             dialog_win.refresh()
@@ -847,7 +874,7 @@ class Renderer:
             self.game_state.add_debug_message(f"Renderer: Oracle dialog curses error: {e}")
             # Potentially try to fall back to a simpler message on main screen if possible
             # For now, just ensures the game doesn't crash if dialog can't be drawn.
-            pass 
+            pass
             
     def _wrap_text_for_dialog(self, text: str, max_width: int) -> List[str]:
         """Simple text wrapper for dialog lines."""
@@ -878,6 +905,132 @@ class Renderer:
         """
         # Use the game state's mycelial network instead of building our own
         return self.game_state.get_mycelial_distance(coords)
+
+    def show_quest_content_screen(self):
+        """Displays the oracle-generated content/quest window.
+
+        Creates a new window centered on the screen. Shows oracle-generated
+        quests, characters, items, events, and other content with a summary
+        of what was created during oracle interactions.
+        Handles cleanup and redraw if the quest menu state changes.
+        """
+        quest_h, quest_w = 25, 70
+        quest_y = (self.max_y - quest_h) // 2
+        quest_x = (self.max_x - quest_w) // 2
+        quest_win = curses.newwin(quest_h, quest_w, quest_y, quest_x)
+        quest_win.erase()
+        quest_win.border()
+        
+        # Show title with new content indicator if applicable
+        title = "Oracle-Generated Content"
+        if self.game_state.new_oracle_content_count > 0:
+            title += f" ({self.game_state.new_oracle_content_count} NEW!)"
+        quest_win.addstr(1, (quest_w - len(title)) // 2, title, curses.A_BOLD)
+
+        row = 3
+        
+        # Check if there's any content to display
+        if not self.game_state.oracle_generated_content:
+            quest_win.addstr(row, 2, "No oracle-generated content yet.")
+            quest_win.addstr(row + 1, 2, "Consult an Oracle to generate quests, characters,")
+            quest_win.addstr(row + 2, 2, "items, and events for your game world.")
+            quest_win.addstr(row + 4, 2, "Generated content will appear here after successful")
+            quest_win.addstr(row + 5, 2, "oracle interactions with structured outputs.")
+        else:
+            # Show summary statistics first
+            total_content = len(self.game_state.oracle_generated_content)
+            new_content = self.game_state.new_oracle_content_count
+            quest_win.addstr(row, 2, f"Total Generated: {total_content} items")
+            if new_content > 0:
+                quest_win.addstr(row, 35, f"New since last view: {new_content}", curses.A_BOLD | curses.color_pair(2))  # Yellow/highlight
+            row += 2
+            
+            # Group content by type
+            content_by_type = {}
+            for content in self.game_state.oracle_generated_content:
+                content_type = content.get("type", "other")
+                if content_type not in content_by_type:
+                    content_by_type[content_type] = []
+                content_by_type[content_type].append(content)
+            
+            # Display content by categories
+            for content_type, items in content_by_type.items():
+                if row >= quest_h - 4:  # Leave space for close message
+                    quest_win.addstr(row, 2, "... (more content available)")
+                    break
+                    
+                # Category header
+                category_name = {
+                    "quest": "Quests",
+                    "character": "Characters", 
+                    "item": "Items",
+                    "event": "Events",
+                    "other": "Other Content"
+                }.get(content_type, content_type.title())
+                
+                quest_win.addstr(row, 2, f"--- {category_name} ({len(items)}) ---")
+                row += 1
+                
+                # List items in this category, highlighting new ones
+                current_tick = self.game_state.tick
+                for item in items[-6:]:  # Show last 6 items per category (most recent first)
+                    if row >= quest_h - 4:
+                        break
+                        
+                    name = item.get("name", "Unknown")
+                    tick = item.get("tick", 0)
+                    
+                    # Calculate how "new" this content is (within last 50 ticks is considered recent)
+                    is_recent = (current_tick - tick) < 50
+                    
+                    # Build display text with more information
+                    item_text = f"  • {name}"
+                    
+                    # Add description preview if available
+                    description = item.get("description", "")
+                    if description and len(description) > 0:
+                        # Add first part of description, truncated
+                        preview = description[:30] + "..." if len(description) > 30 else description
+                        item_text += f" - {preview}"
+                    
+                    # Add tick info
+                    item_text += f" (tick {tick})"
+                    
+                    # Truncate if too long
+                    if len(item_text) > quest_w - 4:
+                        item_text = item_text[:quest_w - 7] + "..."
+                    
+                    # Display with highlighting for recent content
+                    if is_recent:
+                        quest_win.addstr(row, 2, item_text, curses.A_BOLD | curses.color_pair(2))  # Highlight recent content
+                    else:
+                        quest_win.addstr(row, 2, item_text)
+                    row += 1
+                
+                if len(items) > 6:
+                    quest_win.addstr(row, 4, f"... and {len(items) - 6} more")
+                    row += 1
+                
+                row += 1  # Add space between categories
+
+        quest_win.addstr(quest_h - 2, 2, "Press ESC to close")
+        quest_win.refresh()
+        
+        # Reset new content counter when window is viewed
+        if self.game_state.new_oracle_content_count > 0:
+            self.game_state.new_oracle_content_count = 0
+        
+        if not self.game_state.show_quest_menu:
+            # Clean up the overlay window
+            quest_win.erase()
+            quest_win.refresh()
+            del quest_win
+            
+            # Force a complete redraw
+            self.screen.clear()
+            self.screen.refresh()
+            self.render()
+            curses.doupdate()
 
 # Ensure color pairs cover all entity.color values used in ENTITY_REGISTRY
 # Ensure tile drawing uses entity.char and entity.color

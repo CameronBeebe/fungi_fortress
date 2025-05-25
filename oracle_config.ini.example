@@ -50,4 +50,9 @@ daily_request_limit = 100
 
 # Enable detailed request logging (true/false, default: true)
 # Logs all API requests for monitoring usage and debugging
-enable_request_logging = true 
+enable_request_logging = true
+
+# Enable XAI structured outputs (true/false, default: true)
+# Uses JSON Schema to guarantee valid structured responses from XAI models
+# This provides more reliable game action parsing compared to text parsing
+enable_structured_outputs = true 

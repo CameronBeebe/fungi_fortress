@@ -42,6 +42,20 @@ except ImportError:
 # from .game_state import GameEvent, GameState # Assuming GameEvent is defined there
 # from .config_manager import OracleConfig # For API key access
 
+# --- Logging Setup ---
+ORACLE_LOG_FILE = "oracle_interactions.log"
+
+def _log_debug_message(category: str, message: str):
+    """Internal logging function to write debug messages to the oracle log file instead of stdout."""
+    try:
+        timestamp = datetime.datetime.now(timezone.utc).isoformat()
+        log_entry = f"[{timestamp}] [{category}] {message}\n"
+        with open(ORACLE_LOG_FILE, "a") as f:
+            f.write(log_entry)
+    except Exception:
+        # If logging fails, fail silently to avoid breaking the game
+        pass
+
 # --- Request Rate Limiting ---
 REQUEST_TRACKING_FILE = "oracle_request_tracking.json"
 
@@ -56,7 +70,7 @@ def _load_daily_request_count() -> Dict[str, int]:
                 return {today: data.get(today, 0)}
         return {}
     except Exception as e:
-        print(f"[Request Tracking] Error loading request count: {e}")
+        _log_debug_message("Request Tracking", f"Error loading request count: {e}")
         return {}
 
 def _save_daily_request_count(request_data: Dict[str, int]):
@@ -65,7 +79,7 @@ def _save_daily_request_count(request_data: Dict[str, int]):
         with open(REQUEST_TRACKING_FILE, 'w') as f:
             json.dump(request_data, f)
     except Exception as e:
-        print(f"[Request Tracking] Error saving request count: {e}")
+        _log_debug_message("Request Tracking", f"Error saving request count: {e}")
 
 def _check_and_increment_request_count(daily_limit: int) -> bool:
     """Check if we're under the daily request limit and increment if so.
@@ -73,22 +87,27 @@ def _check_and_increment_request_count(daily_limit: int) -> bool:
     Returns:
         bool: True if request is allowed, False if limit exceeded.
     """
+    # If daily_limit is 0 or negative, disable limiting entirely
+    if daily_limit <= 0:
+        _log_debug_message("Request Tracking", f"Daily request limiting disabled (limit: {daily_limit})")
+        return True
+        
     today = datetime.date.today().isoformat()
     request_data = _load_daily_request_count()
     current_count = request_data.get(today, 0)
     
     if current_count >= daily_limit:
-        print(f"[Request Tracking] Daily request limit ({daily_limit}) exceeded. Current count: {current_count}")
+        _log_debug_message("Request Tracking", f"Daily request limit ({daily_limit}) exceeded. Current count: {current_count}")
         return False
     
     # Increment count
     request_data[today] = current_count + 1
     _save_daily_request_count(request_data)
-    print(f"[Request Tracking] Request {current_count + 1}/{daily_limit} for today")
+    _log_debug_message("Request Tracking", f"Request {current_count + 1}/{daily_limit} for today")
     return True
 
-def _call_xai_api(prompt: str, api_key: str, model_name: str, max_tokens: int = 500, timeout_seconds: int = 30) -> Optional[str]:
-    """Makes an API call to XAI using their direct API.
+def _call_xai_api(prompt: str, api_key: str, model_name: str, max_tokens: int = 500, timeout_seconds: int = 30, use_structured_output: bool = True) -> Optional[str]:
+    """Makes an API call to XAI using the OpenAI SDK with XAI-specific parameters.
     
     Args:
         prompt (str): The complete prompt to send to the LLM.
@@ -96,47 +115,131 @@ def _call_xai_api(prompt: str, api_key: str, model_name: str, max_tokens: int = 
         model_name (str): The specific XAI model to use.
         max_tokens (int): Maximum tokens in response.
         timeout_seconds (int): Request timeout in seconds.
+        use_structured_output (bool): Whether to use XAI's structured output feature.
         
     Returns:
         Optional[str]: The LLM's response string, or None if an error occurs.
     """
-    if not REQUESTS_AVAILABLE:
-        return "Error: requests library not available for XAI API calls."
-        
+    if not OPENAI_AVAILABLE:
+        return "Error: openai library required for XAI API calls"
+    
     try:
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "messages": [{"role": "user", "content": prompt}],
-            "model": model_name,
-            "max_tokens": max_tokens,
-            "stream": False
-        }
-        
-        response = requests.post(
-            "https://api.x.ai/v1/chat/completions",
-            headers=headers,
-            json=data,
+        # Create XAI client using OpenAI SDK
+        client = openai.OpenAI(
+            api_key=api_key,
+            base_url="https://api.x.ai/v1",
             timeout=timeout_seconds
         )
         
-        if response.status_code == 200:
-            result = response.json()
-            return result["choices"][0]["message"]["content"]
-        elif response.status_code == 429:
-            return f"XAI API Rate Limited: Please wait before making more requests."
-        else:
-            return f"XAI API Error: {response.status_code} - {response.text}"
+        # Prepare messages with proper role distinction
+        # Split the prompt into system and user messages for better performance
+        if "You are " in prompt and "\n\nGame Context:" in prompt:
+            # Extract system message and user content
+            parts = prompt.split("\n\nGame Context:", 1)
+            system_content = parts[0]
+            user_content = "Game Context:" + parts[1] if len(parts) > 1 else ""
             
-    except requests.exceptions.Timeout:
-        return f"XAI API Error: Request timed out after {timeout_seconds} seconds."
-    except requests.exceptions.ConnectionError:
-        return f"XAI API Error: Connection failed."
+            messages = [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content}
+            ]
+        else:
+            # Fallback: treat entire prompt as user message
+            messages = [{"role": "user", "content": prompt}]
+        
+        # Prepare completion parameters
+        completion_params = {
+            "model": model_name,
+            "messages": messages,
+            "max_tokens": max(max_tokens, 500),  # Ensure at least 500 tokens for grok-3-mini
+            "temperature": 0.7  # Use the XAI example temperature
+        }
+        
+        # Add reasoning effort for grok-3-mini models
+        if "grok-3-mini" in model_name.lower():
+            completion_params["reasoning_effort"] = "high"  # Use high for better responses
+        
+        # Add structured output schema if enabled
+        if use_structured_output:
+            oracle_schema = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "oracle_response",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "narrative": {
+                                "type": "string",
+                                "description": "The Oracle's narrative response to show to the player"
+                            },
+                            "actions": {
+                                "type": "array",
+                                "description": "Game actions to execute",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "action_type": {"type": "string"},
+                                        "details": {"type": "object"}
+                                    },
+                                    "required": ["action_type", "details"],
+                                    "additionalProperties": False
+                                }
+                            }
+                        },
+                        "required": ["narrative", "actions"],
+                        "additionalProperties": False
+                    }
+                }
+            }
+            completion_params["response_format"] = oracle_schema
+        
+        # Make the API call
+        _log_debug_message("XAI API", f"Making request to model: {model_name}")
+        completion = client.chat.completions.create(**completion_params)
+        
+        # Extract response content
+        message = completion.choices[0].message
+        content = message.content
+        
+        # For grok-3-mini models, handle reasoning content as per XAI example
+        if "grok-3-mini" in model_name.lower():
+            # Log reasoning content if available
+            if hasattr(message, 'reasoning_content') and message.reasoning_content:
+                reasoning = message.reasoning_content
+                _log_debug_message("XAI API", f"Reasoning Content: {reasoning[:200]}..." if len(reasoning) > 200 else f"Reasoning Content: {reasoning}")
+            
+            # Log usage information
+            if completion.usage:
+                _log_debug_message("XAI API", f"Completion tokens: {completion.usage.completion_tokens}")
+                # Log reasoning token usage if available (grok-3-mini specific)
+                if hasattr(completion.usage, 'completion_tokens_details') and completion.usage.completion_tokens_details:
+                    _log_debug_message("XAI API", f"Reasoning tokens: {completion.usage.completion_tokens_details.reasoning_tokens}")
+        
+        # Log final response for debugging
+        _log_debug_message("XAI API", f"Final Response: {content[:200]}..." if content and len(content) > 200 else f"Final Response: {content}")
+        
+        if not content:
+            _log_debug_message("XAI API", f"Warning: Empty response from {model_name}")
+            return "Error: Empty response from LLM"
+        
+        return content
+        
+    except RateLimitError as e:
+        error_msg = f"Rate limit exceeded: {e}"
+        _log_debug_message("XAI API", error_msg)
+        return f"Error: {error_msg}"
+    except APIConnectionError as e:
+        error_msg = f"Connection error: {e}"
+        _log_debug_message("XAI API", error_msg)
+        return f"Error: {error_msg}"
+    except APIStatusError as e:
+        error_msg = f"API status error: {e}"
+        _log_debug_message("XAI API", error_msg)
+        return f"Error: {error_msg}"
     except Exception as e:
-        return f"XAI API Error: {str(e)}"
+        _log_debug_message("XAI API", f"Error: {e}")
+        return f"Error: Unexpected error - {e}"
 
 def _call_openai_compatible_api(prompt: str, api_key: str, model_name: str, base_url: str = None, max_tokens: int = 500, timeout_seconds: int = 30) -> Optional[str]:
     """Makes an API call using OpenAI-compatible format (works with many providers).
@@ -234,19 +337,19 @@ def _detect_provider_and_call_api(prompt: str, api_key: str, model_name: str, pr
     Returns:
         Optional[str]: The LLM's response string, or None if an error occurs.
     """
-    print(f"[LLM API Call] Sending prompt (first 100 chars): {prompt[:100]}...")
-    print(f"[LLM API Call] Using API Key: {'*' * (len(api_key) - 4) + api_key[-4:] if api_key and len(api_key) > 4 else 'KEY_TOO_SHORT_OR_INVALID'}")
-    print(f"[LLM API Call] Using Model: {model_name}")
-    print(f"[LLM API Call] Provider Hint: {provider_hint}")
+    _log_debug_message("LLM API Call", f"Sending prompt (first 100 chars): {prompt[:100]}...")
+    _log_debug_message("LLM API Call", f"Using API Key: {'*' * (len(api_key) - 4) + api_key[-4:] if api_key and len(api_key) > 4 else 'KEY_TOO_SHORT_OR_INVALID'}")
+    _log_debug_message("LLM API Call", f"Using Model: {model_name}")
+    _log_debug_message("LLM API Call", f"Provider Hint: {provider_hint}")
 
     if not api_key or api_key == "YOUR_API_KEY_HERE" or api_key == "testkey123":
         error_msg = "Error: API key is missing, a placeholder, or the test key. Configure oracle_config.ini."
-        print(f"[LLM API Call] {error_msg}")
+        _log_debug_message("LLM API Call", error_msg)
         return f"The Oracle's connection is disrupted. (Error: API Key not configured for LLM. Details: {error_msg})"
 
     if not model_name:
         error_msg = "Error: Model name not specified in oracle_config.ini."
-        print(f"[LLM API Call] {error_msg}")
+        _log_debug_message("LLM API Call", error_msg)
         return f"The Oracle's connection is unstable. (Error: LLM Model not specified. Details: {error_msg})"
 
     # Get safety settings from config
@@ -263,14 +366,14 @@ def _detect_provider_and_call_api(prompt: str, api_key: str, model_name: str, pr
         retry_delay = getattr(oracle_config, 'retry_delay_seconds', 1.0)
         daily_limit = getattr(oracle_config, 'daily_request_limit', 100)
     
-    print(f"[LLM API Call] Safety limits: max_tokens={max_tokens}, timeout={timeout_seconds}s, retries={max_retries}, daily_limit={daily_limit}")
+    _log_debug_message("LLM API Call", f"Safety limits: max_tokens={max_tokens}, timeout={timeout_seconds}s, retries={max_retries}, daily_limit={daily_limit}")
     
     # Check daily request limit
     if not _check_and_increment_request_count(daily_limit):
         return f"The Oracle has reached its daily interaction limit ({daily_limit} requests). Please try again tomorrow."
 
     # Determine provider based on model name or hint
-    if provider_hint:
+    if provider_hint and provider_hint.lower() != "auto":
         provider = provider_hint.lower()
     elif model_name.startswith(("grok", "grok-")):
         provider = "xai"
@@ -284,13 +387,15 @@ def _detect_provider_and_call_api(prompt: str, api_key: str, model_name: str, pr
         # Default to OpenAI-compatible for unknown models
         provider = "openai"
     
-    print(f"[LLM API Call] Detected provider: {provider}")
+    _log_debug_message("LLM API Call", f"Detected provider: {provider}")
     
     try:
         if provider == "xai":
+            use_structured_output = getattr(oracle_config, 'enable_structured_outputs', True)
             return _call_with_retries(
                 _call_xai_api, prompt, api_key, model_name, 
-                max_tokens=max_tokens, timeout_seconds=timeout_seconds,
+                max_tokens=max_tokens, timeout_seconds=timeout_seconds, 
+                use_structured_output=use_structured_output,
                 max_retries=max_retries, retry_delay=retry_delay
             )
         elif provider == "groq":
@@ -317,7 +422,7 @@ def _detect_provider_and_call_api(prompt: str, api_key: str, model_name: str, pr
             return f"Unsupported provider: {provider}"
             
     except Exception as e:
-        print(f"[LLM API Call] Unexpected error: {e}")
+        _log_debug_message("LLM API Call", f"Unexpected error: {e}")
         return f"A mysterious interference disrupts the Oracle. (Error: Unexpected problem during LLM call. Details: {e})"
 
 # Placeholder for an actual LLM API call function
@@ -357,10 +462,11 @@ def _log_oracle_interaction(timestamp: str, player_query: str, prompt: str, raw_
         with open(ORACLE_LOG_FILE, "a") as f:
             f.write(json.dumps(log_entry) + "\n")
     except Exception as e:
-        print(f"[LLM Interface Logging] Critical Error: Could not write to {ORACLE_LOG_FILE}. Error: {e}")
+        _log_debug_message("LLM Interface Logging", f"Critical Error: Could not write to {ORACLE_LOG_FILE}. Error: {e}")
 
 def _parse_llm_response(response_text: str) -> (str, List[Dict[str, Any]]):
     """Parses the LLM's raw response text to separate narrative from structured actions.
+    Handles both structured JSON responses (from XAI structured outputs) and legacy text format.
 
     Args:
         response_text (str): The raw string response from the LLM.
@@ -370,6 +476,30 @@ def _parse_llm_response(response_text: str) -> (str, List[Dict[str, Any]]):
             - narrative (str): The textual response to be shown to the player.
             - actions (List[Dict[str, Any]]): A list of game action dictionaries.
     """
+    # First, try to parse as structured JSON (XAI structured outputs)
+    try:
+        parsed_json = json.loads(response_text.strip())
+        if isinstance(parsed_json, dict) and "narrative" in parsed_json and "actions" in parsed_json:
+            narrative = parsed_json["narrative"]
+            actions = parsed_json["actions"]
+            
+            # Validate actions structure
+            validated_actions = []
+            for action in actions:
+                if isinstance(action, dict) and "action_type" in action and "details" in action:
+                    validated_actions.append(action)
+                else:
+                    _log_debug_message("LLM Interface", f"Skipping malformed action in structured response: {action}")
+            
+            _log_debug_message("LLM Interface", f"Successfully parsed structured JSON response with {len(validated_actions)} actions")
+            return narrative, validated_actions
+    except json.JSONDecodeError:
+        # Not JSON, fall back to legacy text parsing
+        pass
+    except Exception as e:
+        _log_debug_message("LLM Interface", f"Error parsing structured JSON response: {e}, falling back to text parsing")
+    
+    # Legacy text parsing (original implementation)
     narrative = []
     actions = []
     parts = response_text.split("ACTION::")
@@ -381,14 +511,33 @@ def _parse_llm_response(response_text: str) -> (str, List[Dict[str, Any]]):
                 action_def = part.strip()
                 # Expecting format: action_type::{json_details}
                 action_type, json_details_str = action_def.split("::", 1)
-                details = json.loads(json_details_str)
-                actions.append({"action_type": action_type.strip(), "details": details})
-            except json.JSONDecodeError as e:
-                print(f"[LLM Interface] Error decoding JSON from LLM action: {json_details_str}. Error: {e}\"")
-                narrative.append(f"(The Oracle's words concerning an action were muddled: {part.strip()})\"")
+                
+                # Try to parse the JSON - first as-is, then with fixed quotes
+                details = None
+                try:
+                    details = json.loads(json_details_str)
+                except json.JSONDecodeError:
+                    # Try fixing single quotes to double quotes
+                    try:
+                        fixed_json = json_details_str.replace("'", '"')
+                        details = json.loads(fixed_json)
+                        _log_debug_message("LLM Interface", f"Fixed JSON quotes for action: {action_type}")
+                    except json.JSONDecodeError as e2:
+                        _log_debug_message("LLM Interface", f"Error decoding JSON from LLM action: {json_details_str}. Error: {e2}")
+                        # Add error message to narrative as expected by tests
+                        error_msg = f"(The Oracle's words concerning an action were muddled: {action_type}::{json_details_str})"
+                        narrative.append(error_msg)
+                        continue  # Skip this malformed action
+                
+                if details is not None:
+                    actions.append({"action_type": action_type.strip(), "details": details})
+                    
             except ValueError: # Not enough values to unpack (split didn't find "::")
-                print(f"[LLM Interface] Malformed action string from LLM: {part.strip()}\"")
-                narrative.append(f"(The Oracle made an unclear gesture: {part.strip()})\"")
+                _log_debug_message("LLM Interface", f"Malformed action string from LLM: {part.strip()}")
+                # Add error message to narrative as expected by tests
+                error_msg = f"(The Oracle made an unclear gesture: {part.strip()})"
+                narrative.append(error_msg)
+                continue  # Skip this malformed action
 
     return " ".join(narrative).strip(), actions
 
@@ -405,7 +554,7 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
     event_type = event_data.get("type")
     details = event_data.get("details", {})
     
-    print(f"[LLM Interface] Received event: {event_type} - Details: {details}")
+    _log_debug_message("LLM Interface", f"Received event: {event_type} - Details: {details}")
 
     actions_to_execute = []
     
@@ -414,7 +563,7 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
         oracle_name = details.get("oracle_name", "The Oracle") # Get oracle name if available
 
         if not player_query:
-            print("[LLM Interface] No query text found in ORACLE_QUERY event.\"")
+            _log_debug_message("LLM Interface", "[LLM Interface] No query text found in ORACLE_QUERY event.\"")
             # Optionally, return an action to display a message to the player
             actions_to_execute.append({
                 "action_type": "add_oracle_dialogue", 
@@ -429,10 +578,10 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
             "Respond to the player's query with insightful, thematic, and sometimes enigmatic guidance. "
             "Your responses should be a single paragraph. "
             "If you wish to suggest a game event or action, embed it in your response using the format: "
-            "ACTION::action_type::{'json_key': 'json_value'}. For example: "
-            "ACTION::add_message::{'text': 'A strange energy emanates from the east.'} or "
-            "ACTION::spawn_character::{'type': 'Mystic Fungoid', 'name': 'Glimmercap', 'x': 10, 'y': 12}. "
-            "Ensure the JSON is valid."
+            "ACTION::action_type::{\"json_key\": \"json_value\"}. For example: "
+            "ACTION::add_message::{\"text\": \"A strange energy emanates from the east.\"} or "
+            "ACTION::spawn_character::{\"type\": \"Mystic Fungoid\", \"name\": \"Glimmercap\", \"x\": 10, \"y\": 12}. "
+            "Use double quotes in JSON and ensure the JSON is valid. Actions are optional - only include them if meaningful to your response."
         )
 
         # Game Context (Simplified for now, expand as needed)
@@ -512,7 +661,7 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
                 # Add any game actions suggested by the LLM
                 if llm_actions:
                     actions_to_execute.extend(llm_actions)
-                    print(f"[LLM Interface] Parsed actions from LLM: {llm_actions}")
+                    _log_debug_message("LLM Interface", f"Parsed actions from LLM: {llm_actions}")
 
                 # Update interaction history (only on successful parse)
                 game_state.oracle_llm_interaction_history.append({"player": player_query, "oracle": narrative})
@@ -531,7 +680,7 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
         except Exception as e: # Catch unexpected errors from _call_llm_api itself if it raises one
             error_message = f"A critical error occurred while communicating with the Oracle. Details: {str(e)}"
             error_for_log = error_message # Log this exception
-            print(f"[LLM Interface] Critical error during LLM call processing: {e}")
+            _log_debug_message("LLM Interface", f"Critical error during LLM call processing: {e}")
             actions_to_execute.append({
                 "action_type": "add_oracle_dialogue",
                 "details": {"text": "The Oracle's connection is severely disrupted. Please check the logs.", "is_llm_response": True}
@@ -596,28 +745,28 @@ def _call_with_retries(api_func, *args, max_retries: int = 2, retry_delay: float
                 if "Rate Limited" in result or "timed out" in result or "Connection failed" in result:
                     if attempt < max_retries:
                         delay = retry_delay * (2 ** attempt)  # Exponential backoff
-                        print(f"[API Retry] Attempt {attempt + 1} failed with: {result[:100]}...")
-                        print(f"[API Retry] Waiting {delay:.1f} seconds before retry {attempt + 2}/{max_retries + 1}")
+                        _log_debug_message("API Retry", f"Attempt {attempt + 1} failed with: {result[:100]}...")
+                        _log_debug_message("API Retry", f"Waiting {delay:.1f} seconds before retry {attempt + 2}/{max_retries + 1}")
                         time.sleep(delay)
                         continue
                     else:
-                        print(f"[API Retry] Max retries ({max_retries}) exceeded. Final error: {result[:100]}...")
+                        _log_debug_message("API Retry", f"Max retries ({max_retries}) exceeded. Final error: {result[:100]}...")
                         return result
             
             # Success or non-retryable error
             if attempt > 0:
-                print(f"[API Retry] Success on attempt {attempt + 1}")
+                _log_debug_message("API Retry", f"Success on attempt {attempt + 1}")
             return result
             
         except Exception as e:
             last_error = str(e)
             if attempt < max_retries:
                 delay = retry_delay * (2 ** attempt)
-                print(f"[API Retry] Attempt {attempt + 1} raised exception: {last_error}")
-                print(f"[API Retry] Waiting {delay:.1f} seconds before retry {attempt + 2}/{max_retries + 1}")
+                _log_debug_message("API Retry", f"Attempt {attempt + 1} raised exception: {last_error}")
+                _log_debug_message("API Retry", f"Waiting {delay:.1f} seconds before retry {attempt + 2}/{max_retries + 1}")
                 time.sleep(delay)
             else:
-                print(f"[API Retry] Max retries ({max_retries}) exceeded. Final exception: {last_error}")
+                _log_debug_message("API Retry", f"Max retries ({max_retries}) exceeded. Final exception: {last_error}")
                 return f"API Error after {max_retries + 1} attempts: {last_error}"
     
     return f"API Error after {max_retries + 1} attempts: {last_error}" 

@@ -281,14 +281,20 @@ class GameLogic:
         and checks mission status.
         Also processes events through the LLM interface.
         """
-        if self.game_state.paused:
-            return
-
-        self.game_state.tick += 1
-
-        # --- Event Processing ---
-        # Consume and process all events from the queue
-        # This includes events that might trigger LLM interactions
+        # Check for Oracle timeout (prevent hanging forever) - this should work even when paused
+        if (self.game_state.oracle_interaction_state == "AWAITING_LLM_RESPONSE" and 
+            hasattr(self.game_state, 'oracle_query_start_tick')):
+            elapsed_ticks = self.game_state.tick - self.game_state.oracle_query_start_tick
+            timeout_ticks = 120  # 2 minutes at ~1 tick per second
+            
+            if elapsed_ticks > timeout_ticks:
+                self.game_state.add_debug_message("Oracle query timed out after 2 minutes")
+                self.game_state.oracle_current_dialogue.append("The Oracle's contemplation has grown too deep. The cosmic forces have withdrawn.")
+                self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
+                self.game_state.oracle_dialogue_page_start_index = 0
+        
+        # --- Event Processing (including Oracle events) ---
+        # Always process events, even when paused, to allow Oracle dialogue to work
         game_events = self.game_state.consume_events()
         all_llm_actions: List[Dict[str, Any]] = []
         for event in game_events:
@@ -311,8 +317,8 @@ class GameLogic:
                     })
                     all_llm_actions.append({"action_type": "set_oracle_state", "details": {"state": "AWAITING_PROMPT"}})
 
-
         # Process actions returned by the LLM interface or other event handlers
+        # This should also work even when paused to allow Oracle dialogue updates
         if all_llm_actions:
             for action in all_llm_actions:
                 action_type = action.get("action_type")
@@ -329,6 +335,18 @@ class GameLogic:
                     name = details.get("name", "Mysterious Figure")
                     x = details.get("x", self.game_state.cursor_x)
                     y = details.get("y", self.game_state.cursor_y)
+                    
+                    # Track this as oracle-generated content
+                    content_entry = {
+                        "type": "character",
+                        "name": name,
+                        "char_type": char_type,
+                        "location": (x, y),
+                        "tick": self.game_state.tick,
+                        "details": details.copy()
+                    }
+                    self.game_state.oracle_generated_content.append(content_entry)
+                    self.game_state.add_debug_message(f"[Oracle] Generated character: {name} ({char_type})")
                     
                     # Ensure x, y are within map bounds
                     x = max(0, min(MAP_WIDTH - 1, x))
@@ -385,41 +403,158 @@ class GameLogic:
 
                 elif action_type == "add_oracle_dialogue":
                     dialogue_text = details.get("text", "The Oracle says nothing.")
-                    self.game_state.oracle_current_dialogue.append(dialogue_text)
-                    # Reset page index if this is a direct LLM response, as it's new content the user should see from the start.
-                    if details.get("is_llm_response"):
-                        self.game_state.oracle_dialogue_page_start_index = 0
-                        if self.game_state.oracle_interaction_state == "AWAITING_LLM_RESPONSE":
-                           self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
+                    # Only add dialogue if Oracle dialogue is still active to prevent late responses
+                    if (self.game_state.show_oracle_dialog and 
+                        self.game_state.oracle_interaction_state != "IDLE"):
+                        self.game_state.oracle_current_dialogue.append(dialogue_text)
+                        # Reset page index if this is a direct LLM response, as it's new content the user should see from the start.
+                        if details.get("is_llm_response"):
+                            self.game_state.oracle_dialogue_page_start_index = 0
+                            if self.game_state.oracle_interaction_state == "AWAITING_LLM_RESPONSE":
+                               self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
+                    else:
+                        # Oracle dialogue was closed, log the response but don't interfere with UI
+                        self.game_state.add_debug_message(f"Oracle response after dialogue closed: {dialogue_text[:100]}{'...' if len(dialogue_text) > 100 else ''}")
                 
                 elif action_type == "set_oracle_state":
                     new_state = details.get("state")
                     if new_state:
-                        old_state = self.game_state.oracle_interaction_state
-                        self.game_state.oracle_interaction_state = new_state
-                        self.game_state.add_debug_message(f"Oracle state set to: {new_state}")
-                        
-                        # If state changes and new introductory dialogue is added, reset page index
-                        reset_page_for_new_dialogue = False
-                        if new_state == "AWAITING_PROMPT" and not self.game_state.oracle_current_dialogue:
-                             self.game_state.oracle_current_dialogue.append("The Oracle awaits your words...")
-                             reset_page_for_new_dialogue = True
-                        elif new_state == "AWAITING_LLM_RESPONSE" and old_state != "AWAITING_LLM_RESPONSE":
-                            # Typically, "Oracle is contemplating..." is added when player sends query.
-                            # If we are explicitly setting this state and it wasn't already this state,
-                            # and new dialogue might be added.
-                            if not any("Oracle contemplates" in line for line in self.game_state.oracle_current_dialogue[-2:]):
-                                self.game_state.oracle_current_dialogue.append("The Oracle contemplates your query...")
-                                reset_page_for_new_dialogue = True
-                        
-                        if reset_page_for_new_dialogue:
-                            self.game_state.oracle_dialogue_page_start_index = 0
+                        # Only change Oracle state if dialogue is still active
+                        if (self.game_state.show_oracle_dialog and 
+                            self.game_state.oracle_interaction_state != "IDLE"):
+                            old_state = self.game_state.oracle_interaction_state
+                            self.game_state.oracle_interaction_state = new_state
+                            self.game_state.add_debug_message(f"Oracle state set to: {new_state}")
+                            
+                            # If state changes and new introductory dialogue is added, reset page index
+                            reset_page_for_new_dialogue = False
+                            if new_state == "AWAITING_PROMPT" and not self.game_state.oracle_current_dialogue:
+                                 self.game_state.oracle_current_dialogue.append("The Oracle awaits your words...")
+                                 reset_page_for_new_dialogue = True
+                            elif new_state == "AWAITING_LLM_RESPONSE" and old_state != "AWAITING_LLM_RESPONSE":
+                                # Typically, "Oracle is contemplating..." is added when player sends query.
+                                # If we are explicitly setting this state and it wasn't already this state,
+                                # and new dialogue might be added.
+                                if not any("Oracle contemplates" in line for line in self.game_state.oracle_current_dialogue[-2:]):
+                                    self.game_state.oracle_current_dialogue.append("The Oracle contemplates your query...")
+                                    reset_page_for_new_dialogue = True
+                            
+                            if reset_page_for_new_dialogue:
+                                self.game_state.oracle_dialogue_page_start_index = 0
+                        else:
+                            # Oracle dialogue was closed, ignore state change
+                            self.game_state.add_debug_message(f"Oracle state change ignored (dialogue closed): {new_state}")
+
+                elif action_type == "create_quest":
+                    # Track quest generation
+                    quest_name = details.get("name", "Unknown Quest")
+                    content_entry = {
+                        "type": "quest",
+                        "name": quest_name,
+                        "description": details.get("description", "A mysterious quest..."),
+                        "objectives": details.get("objectives", []),
+                        "rewards": details.get("rewards", []),
+                        "tick": self.game_state.tick,
+                        "details": details.copy()
+                    }
+                    self.game_state.oracle_generated_content.append(content_entry)
+                    self.game_state.add_debug_message(f"[Oracle] Generated quest: {quest_name}")
+                    self.game_state.new_oracle_content_count += 1
+                    
+                    # Add feedback to Oracle dialogue if still active
+                    if (self.game_state.show_oracle_dialog and 
+                        self.game_state.oracle_interaction_state != "IDLE"):
+                        self.game_state.oracle_current_dialogue.append(f"✦ Quest Created: '{quest_name}' ✦")
+
+                elif action_type == "create_item":
+                    # Track item/artifact generation
+                    item_name = details.get("name", "Unknown Item")
+                    content_entry = {
+                        "type": "item",
+                        "name": item_name,
+                        "description": details.get("description", "A mysterious item..."),
+                        "location": details.get("location", "Unknown"),
+                        "properties": details.get("properties", {}),
+                        "tick": self.game_state.tick,
+                        "details": details.copy()
+                    }
+                    self.game_state.oracle_generated_content.append(content_entry)
+                    self.game_state.add_debug_message(f"[Oracle] Generated item: {item_name}")
+                    self.game_state.new_oracle_content_count += 1
+                    
+                    # Add feedback to Oracle dialogue if still active
+                    if (self.game_state.show_oracle_dialog and 
+                        self.game_state.oracle_interaction_state != "IDLE"):
+                        self.game_state.oracle_current_dialogue.append(f"✦ Item Created: '{item_name}' ✦")
+
+                elif action_type == "create_character":
+                    # Track character generation
+                    char_name = details.get("name", "Unknown Character")
+                    content_entry = {
+                        "type": "character",
+                        "name": char_name,
+                        "description": details.get("description", "A mysterious character..."),
+                        "location": details.get("location", "Unknown"),
+                        "faction": details.get("faction", "None"),
+                        "tick": self.game_state.tick,
+                        "details": details.copy()
+                    }
+                    self.game_state.oracle_generated_content.append(content_entry)
+                    self.game_state.add_debug_message(f"[Oracle] Generated character: {char_name}")
+                    self.game_state.new_oracle_content_count += 1
+                    
+                    # Add feedback to Oracle dialogue if still active
+                    if (self.game_state.show_oracle_dialog and 
+                        self.game_state.oracle_interaction_state != "IDLE"):
+                        self.game_state.oracle_current_dialogue.append(f"✦ Character Created: '{char_name}' ✦")
+
+                elif action_type == "create_event":
+                    # Track event generation
+                    event_name = details.get("name", "Unknown Event")
+                    content_entry = {
+                        "type": "event", 
+                        "name": event_name,
+                        "description": details.get("description", "A mysterious event..."),
+                        "trigger": details.get("trigger", "Unknown"),
+                        "effects": details.get("effects", []),
+                        "tick": self.game_state.tick,
+                        "details": details.copy()
+                    }
+                    self.game_state.oracle_generated_content.append(content_entry)
+                    self.game_state.add_debug_message(f"[Oracle] Generated event: {event_name}")
+                    self.game_state.new_oracle_content_count += 1
+                    
+                    # Add feedback to Oracle dialogue if still active
+                    if (self.game_state.show_oracle_dialog and 
+                        self.game_state.oracle_interaction_state != "IDLE"):
+                        self.game_state.oracle_current_dialogue.append(f"✦ Event Created: '{event_name}' ✦")
+
+                # For any other action types (except simple messages), track as miscellaneous content
+                elif action_type not in ["add_message", "set_oracle_state"]:  # Don't track simple message additions or state changes
+                    content_entry = {
+                        "type": "other",
+                        "action_type": action_type,
+                        "description": f"Oracle action: {action_type}",
+                        "tick": self.game_state.tick,
+                        "details": details.copy()
+                    }
+                    self.game_state.oracle_generated_content.append(content_entry)
+                    self.game_state.add_debug_message(f"[Oracle] Generated content: {action_type}")
 
                 # Add more action handlers here as needed (e.g., update_quest, give_item)
+
+                # Log unhandled actions
                 else:
-                    self.game_state.add_debug_message(f"Unknown action type from LLM: {action_type}")
+                    if action_type != "add_message":  # Don't log message additions as unhandled
+                        self.game_state.add_debug_message(f"[GameLogic] Unhandled Action: {action_type}")
         
-        # --- General Game Updates (after events and LLM actions) ---
+        # Early return if paused - skip the rest of the game updates but allow Oracle events above
+        if self.game_state.paused:
+            return
+
+        self.game_state.tick += 1
+
+        # --- General Game Updates (only when not paused) ---
 
         # Check events that might occur based on game state (e.g., ambient events)
         # This function might add new events to game_state.event_queue for next tick
@@ -1101,6 +1236,300 @@ class GameLogic:
             if check_mission_completion(self.game_state, self.game_state.mission):
                 complete_mission(self.game_state, self.game_state.mission)
                 self.game_state.mission_complete = True
+
+        # Update spore exposure for dwarves only if game is not paused
+        if not self.game_state.paused:
+            for dwarf in self.game_state.dwarves:
+                if dwarf.state in ['working', 'fighting', 'fishing']:
+                    current_task = dwarf.task # Type hint helper
+                    # Check if task and target coordinates exist
+                    if current_task and dwarf.target_x is not None and dwarf.target_y is not None:
+                        # --- Make sure the 'enter' task is not processed here ---
+                        if current_task.type == 'enter':
+                            self.game_state.add_debug_message(f"Warning: D{dwarf.id} in state {dwarf.state} with 'enter' task. Resetting.")
+                            dwarf.state = 'idle'
+                            dwarf.task = None
+                            continue # Skip rest of processing for this dwarf
+
+                        # --- Task Progress ---
+                        work_rate = 1
+                        if dwarf.state == 'working' and current_task.type in ['mine', 'chop']:
+                            work_rate = dwarf.mining_skill # Assuming mining skill affects chopping too
+                        dwarf.task_ticks -= work_rate
+
+                        # --- Task Completion ---
+                        if dwarf.task_ticks <= 0:
+                            target_tile: Optional[Tile] = self.game_state.get_tile(dwarf.target_x, dwarf.target_y) # Tile being interacted with (adjacent)
+                            resource_tile: Optional[Tile] = self.game_state.get_tile(dwarf.resource_x, dwarf.resource_y) if dwarf.resource_x is not None else None # Tile containing the resource/build site
+
+                            completed_task_type: str = current_task.type
+                            self.game_state.add_debug_message(f"D{dwarf.id} finished {completed_task_type} task at ({dwarf.target_x},{dwarf.target_y}) targeting resource at ({dwarf.resource_x},{dwarf.resource_y})")
+
+                            # --- Handle Task Completion Effects ---
+                            if completed_task_type == 'mine' and resource_tile:
+                                if isinstance(resource_tile.entity, ResourceNode):
+                                    resource_node: ResourceNode = resource_tile.entity # Type hint helper
+                                    resource_name: str = resource_node.resource_type
+                                    yield_amount: int = resource_node.yield_amount
+                                    self.game_state.inventory.add_resource(resource_name, yield_amount)
+                                    self.game_state.add_debug_message(f"Yielded {yield_amount} {resource_name}")
+
+                                    # Replace mined entity with appropriate floor
+                                    floor_entity_name = "stone_floor" # Default underground
+                                    if self.game_state.depth == 0: floor_entity_name = "grass"
+                                    # Example: Check if in a specific sublevel type
+                                    # elif any(sub_name == "Mycelial Nexus Core" and sub_data.get("active", False) for sub_name, sub_data in self.game_state.sub_levels.items()):
+                                    #    floor_entity_name = "mycelium_floor"
+
+                                    floor_entity: Optional[GameEntity] = ENTITY_REGISTRY.get(floor_entity_name)
+                                    if floor_entity:
+                                        resource_tile.entity = floor_entity
+                                        self.game_state.add_debug_message(f"Replaced {resource_name} with {floor_entity_name}")
+                                    else:
+                                         self.game_state.add_debug_message(f"Warning: Could not find floor entity '{floor_entity_name}' to replace {resource_name}")
+
+
+                                    # --- Special effect for fungi ---
+                                    if resource_name in ["fungi", "magic_fungi"]:
+                                        spore_gain: int = getattr(resource_node, 'spore_yield', 0)
+                                        if spore_gain > 0:
+                                             self.game_state.player.spore_exposure += spore_gain
+                                             self.game_state.add_debug_message(f"Gained {spore_gain} spore exposure (total: {self.game_state.player.spore_exposure})")
+
+                                    # --- Path Illumination Logic ---
+                                    if resource_name == "magic_fungi" and self.game_state.nexus_site:
+                                        if self.game_state.player.spore_exposure >= self.game_state.spore_exposure_threshold:
+                                            start_pos: Tuple[int, int] = (dwarf.x, dwarf.y) # Dwarf's current position
+                                            target_site: Tuple[int, int] = self.game_state.nexus_site
+                                            self.game_state.add_debug_message(f"Attempting to illuminate path from {start_pos} to nexus at {target_site}")
+                                            path_to_nexus: Optional[List[Tuple[int, int]]] = a_star(current_map, start_pos, target_site)
+
+                                            if path_to_nexus:
+                                                path_length: int = len(path_to_nexus)
+                                                highlight_duration: int = 50 # Duration in ticks
+                                                self.game_state.add_debug_message(f"Illuminating path ({path_length} steps) to Nexus {target_site}")
+
+                                                # Colors for the mycelium visualization (purple/pink/magenta)
+                                                mycelium_colors: List[int] = [5, 13, 201, 206] # Purple, Bright Magenta, Pink variants
+
+                                                # Apply path highlighting with proper colors
+                                                for i, (px, py) in enumerate(path_to_nexus):
+                                                    path_tile: Optional[Tile] = self.game_state.get_tile(px, py)
+                                                    if path_tile:
+                                                        path_tile.highlight_ticks = highlight_duration
+                                                        # Calculate position in path (0 to 1.0)
+                                                        pos: float = i / max(1, path_length - 1)
+                                                        # Choose color based on position - creates gradient effect
+                                                        color_index: int = min(int(pos * len(mycelium_colors)), len(mycelium_colors) - 1)
+                                                        # Apply custom color instead of default highlight color
+                                                        path_tile.set_color_override(mycelium_colors[color_index])
+
+                                                # Make nexus pulse with special color effect
+                                                nexus_tile: Optional[Tile] = self.game_state.get_tile(target_site[0], target_site[1])
+                                                if nexus_tile:
+                                                    nexus_tile.flash_ticks = 100
+                                                    nexus_tile.set_color_override(13) # Bright Magenta for nexus
+                                            else:
+                                                self.game_state.add_debug_message(f"Could not find path from {start_pos} to Nexus {target_site}")
+                                        else:
+                                            self.game_state.add_debug_message(f"Spore exposure ({self.game_state.player.spore_exposure}) below threshold ({self.game_state.spore_exposure_threshold})")
+                                    # --- End Path Illumination Logic ---
+                                else:
+                                    self.game_state.add_debug_message(f"Warning: Mine task completed on non-ResourceNode entity: {resource_tile.entity.name if resource_tile and resource_tile.entity else 'None'}")
+
+                            elif completed_task_type == 'chop' and resource_tile:
+                                 if isinstance(resource_tile.entity, ResourceNode) and resource_tile.entity.resource_type == "wood":
+                                     resource_node = resource_tile.entity # Type hint helper
+                                     yield_amount = resource_node.yield_amount
+                                     self.game_state.inventory.add_resource("wood", yield_amount)
+                                     self.game_state.add_debug_message(f"Yielded {yield_amount} wood")
+                                     # Replace tree with appropriate floor
+                                     floor_entity_name = "grass" if self.game_state.depth == 0 else "stone_floor"
+                                     floor_entity = ENTITY_REGISTRY.get(floor_entity_name)
+                                     if floor_entity:
+                                         resource_tile.entity = floor_entity
+                                         self.game_state.add_debug_message(f"Replaced tree with {floor_entity_name}")
+                                     else:
+                                         self.game_state.add_debug_message(f"Warning: Could not find floor entity '{floor_entity_name}' to replace tree")
+                                 else:
+                                      self.game_state.add_debug_message(f"Warning: Chop task completed on non-wood entity: {resource_tile.entity.name if resource_tile and resource_tile.entity else 'None'}")
+
+                            elif completed_task_type == 'build':
+                                building_name: Optional[str] = current_task.building
+                                build_site_x: Optional[int] = current_task.resource_x
+                                build_site_y: Optional[int] = current_task.resource_y
+
+                                if building_name and build_site_x is not None and build_site_y is not None:
+                                    building_template: Optional[GameEntity] = ENTITY_REGISTRY.get(building_name)
+                                    build_site_tile: Optional[Tile] = self.game_state.get_tile(build_site_x, build_site_y)
+
+                                    if building_template and build_site_tile:
+                                        # Check resources (example for Nexus, generalize for others)
+                                        can_build = False
+                                        cost = self.game_state.buildings.get(building_name, {}).get('cost', {})
+                                        special_cost = self.game_state.buildings.get(building_name, {}).get('special_cost', {})
+
+                                        # Check resource costs
+                                        has_resources = all(self.game_state.inventory.resources.get(res, 0) >= amount for res, amount in cost.items())
+                                        # Check special item costs
+                                        has_special_items = all(self.game_state.inventory.special_items.get(item, 0) >= amount for item, amount in special_cost.items())
+
+                                        if has_resources and has_special_items:
+                                            # Deduct costs
+                                            for res, amount in cost.items():
+                                                self.game_state.inventory.remove_resource(res, amount)
+                                            for item, amount in special_cost.items():
+                                                self.game_state.inventory.remove_item(item, amount)
+
+                                            # Place the building entity (create a new instance if needed)
+                                            # Assuming building templates in ENTITY_REGISTRY are classes or copyable
+                                            build_site_tile.entity = building_template # TODO: Ensure this doesn't reuse same object instance if stateful
+                                            self.game_state.add_debug_message(f"Built {building_name} at ({build_site_x}, {build_site_y})")
+                                            can_build = True
+
+                                            # Check mission completion after successful build
+                                            if check_mission_completion(self.game_state, self.game_state.mission):
+                                                complete_mission(self.game_state, self.game_state.mission)
+                                        else:
+                                            missing_res = {res: amount for res, amount in cost.items() if self.game_state.inventory.resources.get(res, 0) < amount}
+                                            missing_items = {item: amount for item, amount in special_cost.items() if self.game_state.inventory.special_items.get(item, 0) < amount}
+                                            self.game_state.add_debug_message(f"Cannot build {building_name}. Missing: {missing_res}, {missing_items}")
+
+                                    else:
+                                         self.game_state.add_debug_message(f"ERROR: Cannot build {building_name}. Invalid entity template or build site tile at ({build_site_x}, {build_site_y}).")
+                                else:
+                                    self.game_state.add_debug_message(f"Warning: Build task completed for invalid building '{building_name}' or missing coordinates.")
+
+
+                            elif completed_task_type == 'build_bridge':
+                                 bridge_target_x: Optional[int] = current_task.resource_x
+                                 bridge_target_y: Optional[int] = current_task.resource_y
+                                 if bridge_target_x is not None and bridge_target_y is not None:
+                                    bridge_target_tile = self.game_state.get_tile(bridge_target_x, bridge_target_y)
+                                    # Check adjacency using dwarf's current position (target_x/y) vs resource_x/y
+                                    is_adjacent = abs(dwarf.target_x - bridge_target_x) + abs(dwarf.target_y - bridge_target_y) == 1
+
+                                    if bridge_target_tile and bridge_target_tile.entity.name == "Water" and is_adjacent:
+                                        wood_cost = 1 # Example cost
+                                        if self.game_state.inventory.resources.get("wood", 0) >= wood_cost:
+                                            self.game_state.inventory.remove_resource("wood", wood_cost)
+                                            if self.game_state.update_tile_entity(bridge_target_x, bridge_target_y, "bridge"):
+                                                self.game_state.add_debug_message(f"D{dwarf.id} built bridge segment at ({bridge_target_x}, {bridge_target_y})")
+                                            else:
+                                                 self.game_state.add_debug_message(f"ERROR: Failed to update tile entity to bridge at ({bridge_target_x}, {bridge_target_y})")
+                                        else:
+                                            self.game_state.add_debug_message(f"D{dwarf.id} cannot build bridge: Needs {wood_cost} wood.")
+                                    elif not bridge_target_tile:
+                                         self.game_state.add_debug_message(f"D{dwarf.id} cannot build bridge: Target tile {bridge_target_x},{bridge_target_y} invalid.")
+                                    elif not is_adjacent:
+                                         self.game_state.add_debug_message(f"D{dwarf.id} cannot build bridge: Not adjacent to target {bridge_target_x},{bridge_target_y}. Dwarf at {dwarf.target_x},{dwarf.target_y}")
+                                    else: # Target tile is not water anymore
+                                        self.game_state.add_debug_message(f"D{dwarf.id} cannot build bridge: Target tile at ({bridge_target_x}, {bridge_target_y}) is no longer water ({bridge_target_tile.entity.name}).")
+                                 else:
+                                    self.game_state.add_debug_message(f"Warning: Build_bridge task completed with invalid resource coordinates.")
+
+                            elif completed_task_type == 'fish':
+                                if random.random() < 0.3: # Chance to catch fish
+                                    self.game_state.inventory.add_resource("food", 1)
+                                    self.game_state.add_debug_message(f"D{dwarf.id} caught a fish!")
+                                else:
+                                    self.game_state.add_debug_message(f"D{dwarf.id} fished but caught nothing.")
+
+                            elif completed_task_type == 'hunt':
+                                 # Target animal is at resource_x, resource_y for hunt/fight tasks
+                                 target_x, target_y = current_task.resource_x, current_task.resource_y
+                                 if target_x is not None and target_y is not None:
+                                     animal_at_target: Optional[Animal] = next((a for a in self.game_state.animals if a.x == target_x and a.y == target_y and a.alive), None)
+                                     if animal_at_target:
+                                         animal_at_target.alive = False # Kill the animal
+                                         self.game_state.inventory.add_resource("food", animal_at_target.yield_food) # Gain food based on animal type
+                                         self.game_state.add_debug_message(f"D{dwarf.id} hunted {animal_at_target.name}! Got {animal_at_target.yield_food} food.")
+                                     else:
+                                         self.game_state.add_debug_message(f"D{dwarf.id} finished hunt, but animal at ({target_x},{target_y}) moved or was gone.")
+                                 else:
+                                     self.game_state.add_debug_message(f"Warning: Hunt task missing target coordinates.")
+
+                            elif completed_task_type == 'fight':
+                                 # Target character is at resource_x, resource_y
+                                 target_x, target_y = current_task.resource_x, current_task.resource_y
+                                 if target_x is not None and target_y is not None:
+                                     character_at_target: Optional[NPC] = next((c for c in self.game_state.characters if c.x == target_x and c.y == target_y and c.alive), None)
+                                     if character_at_target:
+                                         # Simple fight logic: character dies
+                                         character_at_target.alive = False
+                                         self.game_state.add_debug_message(f"D{dwarf.id} defeated {character_at_target.name}!")
+                                         # Potentially trigger mission completion check
+                                         if check_mission_completion(self.game_state, self.game_state.mission):
+                                             complete_mission(self.game_state, self.game_state.mission)
+                                     else:
+                                         self.game_state.add_debug_message(f"D{dwarf.id} finished fight, but target at ({target_x},{target_y}) moved or was already defeated.")
+                                 else:
+                                      self.game_state.add_debug_message(f"Warning: Fight task missing target coordinates.")
+
+                            # --- Reset Dwarf State After Task Completion ---
+                            dwarf.state = 'idle'
+                            dwarf.path = []
+                            dwarf.task = None
+                            dwarf.target_x, dwarf.target_y = None, None
+                            dwarf.resource_x, dwarf.resource_y = None, None
+                            dwarf.task_ticks = 0
+
+                            # --- Assign Next Task From Queue ---
+                            if dwarf.task_queue:
+                                next_task: Task = dwarf.task_queue.pop(0)
+                                # Check reachability for the next task
+                                path_to_next: Optional[List[Tuple[int, int]]] = a_star(current_map, (dwarf.x, dwarf.y), (next_task.x, next_task.y))
+
+                                if path_to_next is not None or (dwarf.x, dwarf.y) == (next_task.x, next_task.y):
+                                    # Assign the task
+                                    if path_to_next:
+                                        dwarf.state = 'moving'
+                                        dwarf.path = path_to_next
+                                    else: # Already there
+                                        if next_task.type in ['mine', 'chop', 'build', 'build_bridge']: dwarf.state = 'working'
+                                        elif next_task.type in ['hunt', 'fight']: dwarf.state = 'fighting'
+                                        elif next_task.type == 'fish': dwarf.state = 'fishing'
+                                        elif next_task.type == 'enter': dwarf.state = 'moving' # Go to adjacent tile
+                                        else: dwarf.state = 'idle'
+                                        dwarf.path = []
+
+                                    dwarf.target_x, dwarf.target_y = next_task.x, next_task.y
+                                    dwarf.task = next_task
+                                    dwarf.resource_x, dwarf.resource_y = next_task.resource_x, next_task.resource_y
+
+                                    # Set initial task ticks for the queued task
+                                    if next_task.type in ['fish', 'hunt', 'fight']:
+                                        dwarf.task_ticks = FISHING_TICKS
+                                    elif next_task.type == 'build' and next_task.building and next_task.building in self.game_state.buildings:
+                                        dwarf.task_ticks = self.game_state.buildings[next_task.building]['ticks']
+                                    elif next_task.type == 'build_bridge':
+                                        dwarf.task_ticks = BASE_UNDERGROUND_MINING_TICKS
+                                    elif next_task.type in ['mine', 'chop']:
+                                         resource_tile_for_ticks = self.game_state.get_tile(next_task.resource_x, next_task.resource_y) if next_task.resource_x is not None else None
+                                         base_ticks = getattr(resource_tile_for_ticks.entity, 'hardness', BASE_UNDERGROUND_MINING_TICKS) if resource_tile_for_ticks else BASE_UNDERGROUND_MINING_TICKS
+                                         dwarf.task_ticks = base_ticks
+                                    elif next_task.type == 'enter':
+                                        dwarf.task_ticks = 1
+                                    else:
+                                        dwarf.task_ticks = 0
+
+                                    self.game_state.add_debug_message(f"Started next queued {next_task.type} task for D{dwarf.id}")
+                                else:
+                                    # Next task in queue is unreachable, drop it
+                                    self.game_state.add_debug_message(f"No path to next queued task ({next_task.type} at {next_task.x},{next_task.y}) for D{dwarf.id}, task dropped")
+                                    # Dwarf remains idle, will check queue again next tick if needed
+                            else:
+                                 # No tasks left in queue
+                                self.game_state.add_debug_message(f"D{dwarf.id} now idle")
+
+                    else: # Dwarf is working/fighting/fishing but task object or target coords are missing?
+                         self.game_state.add_debug_message(f"Warning: D{dwarf.id} in state {dwarf.state} but has invalid task/target. Task: {dwarf.task}, Target: ({dwarf.target_x},{dwarf.target_y}). Resetting.")
+                         dwarf.state = 'idle' # Reset state to idle
+                         dwarf.task = None
+                         dwarf.path = []
+                         dwarf.target_x, dwarf.target_y = None, None
+                         dwarf.resource_x, dwarf.resource_y = None, None
+                         dwarf.task_ticks = 0
 
     def find_adjacent_tile(self, x: int, y: int) -> Optional[Tuple[int, int]]:
         """Finds a random, walkable, and unoccupied adjacent tile.

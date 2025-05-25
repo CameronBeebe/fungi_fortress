@@ -13,6 +13,8 @@ import sys
 sys.path.append('.')
 
 from llm_interface import _detect_provider_and_call_api
+from config_manager import load_oracle_config
+import requests
 
 def verify_provider_detection():
     """Verify that provider detection works correctly for different model names."""
@@ -60,8 +62,6 @@ def verify_provider_detection():
 def verify_config_structure():
     """Verify that the oracle config structure is valid and can be loaded."""
     
-    from config_manager import load_oracle_config
-    
     print("\n" + "="*50)
     print("🔧 Verifying configuration loading...")
     
@@ -80,6 +80,157 @@ def verify_config_structure():
     except Exception as e:
         print(f"   ❌ Error loading configuration: {e}")
         return False
+
+def test_basic_xai_api_call():
+    """Test basic XAI API connectivity without structured outputs."""
+    print("=== Testing XAI API Basic Connectivity ===")
+    
+    config = load_oracle_config()
+    
+    if not config.api_key or config.api_key == "YOUR_API_KEY_HERE":
+        print("❌ No valid API key found in oracle_config.ini")
+        return False
+        
+    print(f"✅ API Key loaded: {config.api_key[:10]}...{config.api_key[-4:]}")
+    print(f"✅ Model: {config.model_name}")
+    print(f"✅ Provider: {config.provider}")
+    
+    # Test simple API call
+    headers = {
+        "Authorization": f"Bearer {config.api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    test_data = {
+        "messages": [{"role": "user", "content": "Say hello"}],
+        "model": config.model_name,
+        "max_tokens": 50,
+        "stream": False
+    }
+    
+    try:
+        print("🔄 Making test API call...")
+        response = requests.post(
+            "https://api.x.ai/v1/chat/completions",
+            headers=headers,
+            json=test_data,
+            timeout=30
+        )
+        
+        print(f"📊 Response Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            content = result["choices"][0]["message"]["content"]
+            print(f"✅ Success! Response: {content}")
+            return True
+        else:
+            print(f"❌ API Error: {response.status_code}")
+            print(f"📝 Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Exception during API call: {e}")
+        return False
+
+def test_structured_outputs():
+    """Test XAI structured outputs feature."""
+    print("\n=== Testing XAI Structured Outputs ===")
+    
+    config = load_oracle_config()
+    
+    headers = {
+        "Authorization": f"Bearer {config.api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    # Test with JSON schema
+    test_data = {
+        "messages": [{"role": "user", "content": "Respond with a greeting and suggest an action. Use the required JSON format."}],
+        "model": config.model_name,
+        "max_tokens": 100,
+        "stream": False,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "test_response",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "narrative": {
+                            "type": "string",
+                            "description": "A greeting message"
+                        },
+                        "actions": {
+                            "type": "array",
+                            "description": "Test actions",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "action_type": {"type": "string"},
+                                    "details": {"type": "object"}
+                                },
+                                "required": ["action_type", "details"],
+                                "additionalProperties": False
+                            }
+                        }
+                    },
+                    "required": ["narrative", "actions"],
+                    "additionalProperties": False
+                }
+            }
+        }
+    }
+    
+    try:
+        print("🔄 Making structured output test...")
+        response = requests.post(
+            "https://api.x.ai/v1/chat/completions",
+            headers=headers,
+            json=test_data,
+            timeout=30
+        )
+        
+        print(f"📊 Response Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            content = result["choices"][0]["message"]["content"]
+            print(f"✅ Structured Output Success!")
+            print(f"📝 Response: {content}")
+            return True
+        else:
+            print(f"❌ Structured Output Failed: {response.status_code}")
+            print(f"📝 Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Exception during structured output test: {e}")
+        return False
+
+def main():
+    """Run all diagnostic tests."""
+    print("🧪 Fungi Fortress LLM Diagnostics")
+    print("=" * 50)
+    
+    # Test basic connectivity
+    basic_success = test_basic_xai_api_call()
+    
+    if basic_success:
+        # If basic works, test structured outputs
+        structured_success = test_structured_outputs()
+        
+        if not structured_success:
+            print("\n⚠️  Basic API works but structured outputs failed.")
+            print("💡 Recommendation: Disable structured outputs in oracle_config.ini")
+            print("   Set: enable_structured_outputs = false")
+    else:
+        print("\n❌ Basic API connectivity failed.")
+        print("💡 Check your API key and model name in oracle_config.ini")
+    
+    print("\n" + "=" * 50)
+    print("🏁 Diagnostics complete!")
 
 if __name__ == "__main__":
     print("🎮 Fungi Fortress LLM Setup Verification")
@@ -117,4 +268,6 @@ if __name__ == "__main__":
         print("required dependencies are installed:")
         print("  pip install openai requests groq")
         
-    print("\n🎮 Ready to explore the Fungi Fortress with AI-powered Oracle!") 
+    print("\n🎮 Ready to explore the Fungi Fortress with AI-powered Oracle!")
+    
+    main() 
