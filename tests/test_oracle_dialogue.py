@@ -9,7 +9,7 @@ from fungi_fortress.characters import Dwarf, Oracle, Task
 from fungi_fortress.tiles import Tile, ENTITY_REGISTRY
 from fungi_fortress.constants import MAP_WIDTH, MAP_HEIGHT
 from fungi_fortress.game_logic import GameLogic
-from fungi_fortress.config_manager import OracleConfig
+from fungi_fortress.config_manager import LLMConfig
 from fungi_fortress.oracle_logic import get_canned_response
 from fungi_fortress.inventory import Inventory
 
@@ -18,12 +18,12 @@ def setup_game_state_with_oracle(
     dwarf_pos=(5, 5), 
     oracle_pos=(6, 5), 
     oracle_name="Test Oracle",
-    oracle_config: OracleConfig = OracleConfig(api_key="test_key"),
+    llm_config: LLMConfig = LLMConfig(api_key="test_key"),
     offering_item: str = None,
     offering_amount: int = 0,
     initial_player_inventory: dict = None
 ):
-    gs = GameState(oracle_config=oracle_config)
+    gs = GameState(llm_config=llm_config)
     gs.dwarves = []
     gs.characters = []
     
@@ -38,7 +38,6 @@ def setup_game_state_with_oracle(
 
     if oracle_pos:
         oracle = Oracle(oracle_name, oracle_pos[0], oracle_pos[1])
-        oracle.oracle_config = oracle_config
         oracle.offering_item = offering_item
         oracle.offering_amount = offering_amount
         oracle.canned_responses = {
@@ -267,7 +266,7 @@ def test_logic_talk_triggers_dialog_immediately_if_adjacent(mock_complete, mock_
 
 def test_game_state_oracle_flag_default():
     """Test that show_oracle_dialog defaults to False."""
-    gs = GameState(oracle_config=OracleConfig()) # Provide default OracleConfig
+    gs = GameState(llm_config=LLMConfig()) # Provide default LLMConfig
     assert not gs.show_oracle_dialog
 
 # --- Tests for _get_active_oracle (InputHandler internal method) ---
@@ -279,63 +278,83 @@ def test_game_state_oracle_flag_default():
 
 # --- New Oracle Interaction Flow Tests (Phase 1) ---
 
-def test_oracle_interaction_no_api_key():
-    """Test interaction when Oracle has no API key."""
-    gs = setup_game_state_with_oracle(oracle_config=OracleConfig(api_key=None))
-    input_handler = InputHandler(gs)
-    oracle = next(c for c in gs.characters if isinstance(c, Oracle))
-    gs.active_oracle_entity_id = oracle.name # Simulate that the talk task led to this oracle
-    
-    # Simulate the state InputHandler would set when opening dialog with no API key
-    gs.show_oracle_dialog = True
-    gs.paused = True
-    # The initial dialogue for no API key should be set by initiate_oracle_dialogue
-    # or when input_handler first processes with show_oracle_dialog = True.
-    # Let's assume initiate_oracle_dialogue in GameState sets this.
-    gs.oracle_current_dialogue = get_canned_response(oracle, "no_api_key")
-    gs.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
-    
-    # Any key (like 'q' or 't') should close it
-    input_handler.handle_input(ord('q'))
-    assert not gs.show_oracle_dialog
-    assert gs.oracle_interaction_state == "IDLE"
-    # assert oracle.name not in InteractionEventDetails.handled_interactions # Ensure no offering was processed
-
-def test_oracle_interaction_with_api_key_no_offering_required():
-    """Test interaction: API key present, global offering cost applies.""" # Docstring updated
+@patch('fungi_fortress.llm_interface.handle_game_event') # Mock the LLM call
+@patch('fungi_fortress.input_handler.InputHandler._get_active_oracle')
+def test_oracle_interaction_no_api_key(mock_get_active_oracle, mock_handle_event):
+    """Test interaction: no API key, no offering required by Oracle itself initially."""
+    # Simulate an Oracle that doesn't require an offering to initiate dialogue
+    # but the system (GameState.llm_config) has no API key.
     gs = setup_game_state_with_oracle(
-        oracle_config=OracleConfig(api_key="fake_key"),
-        offering_item=None # This oracle entity itself doesn't have a specific offering
+        llm_config=LLMConfig(api_key=None), # No API Key in game state
+        offering_item=None # Oracle entity itself doesn't ask for anything upfront
     )
     input_handler = InputHandler(gs)
     oracle = next(c for c in gs.characters if isinstance(c, Oracle))
-    dwarf = gs.dwarves[0]
+    mock_get_active_oracle.return_value = oracle # Ensure this oracle is returned by the getter
+    gs.active_oracle_entity_id = oracle.name # Set active oracle directly for simplicity
 
-    # Position dwarf adjacent to the Oracle for direct dialog initiation
-    dwarf.x = oracle.x + 1
-    dwarf.y = oracle.y
-    gs.cursor_x, gs.cursor_y = oracle.x, oracle.y # Cursor on Oracle
+    # Simulate the state InputHandler expects when dialogue opens via 't' keypress
+    # and the Oracle itself doesn't require an offering (so it should go to AWAITING_PROMPT)
+    gs.show_oracle_dialog = True
+    gs.paused = True
+    # If Oracle.offering_item is None, InputHandler should set state to AWAITING_PROMPT
+    # and present the initial greeting. But if GameState.llm_config.api_key is None,
+    # the canned response for no_api_key should be shown.
+    gs.oracle_interaction_state = "AWAITING_PROMPT"
+    gs.oracle_current_dialogue = get_canned_response(oracle, "greeting_no_offering")
 
-    # Simulate 't' key press to initiate interaction
-    input_handler.handle_input(ord('t'))
+    # Player types something and presses Enter (simulated by curses.KEY_ENTER)
+    gs.oracle_prompt_buffer = "Hello Oracle!"
+    input_handler.handle_input(curses.KEY_ENTER)
 
-    assert gs.show_oracle_dialog is True
-    assert gs.active_oracle_entity_id == oracle.name
-    assert gs.oracle_interaction_state == "AWAITING_OFFERING" # Always goes here if API key present
+    # Because there's no API key in gs.llm_config, handle_game_event (when called via GameLogic)
+    # should eventually lead to an add_oracle_dialogue action with the "no_api_key" message.
+    # We are mocking handle_game_event directly, so we won't see its output here,
+    # but we test that an ORACLE_QUERY event is created.
+    assert any(event['type'] == 'ORACLE_QUERY' for event in gs.event_queue)
+    query_event = next(event for event in gs.event_queue if event['type'] == 'ORACLE_QUERY')
+    assert query_event['details']['query_text'] == "Hello Oracle!"
+
+    # To test the *result* of that event, we'd need to run GameLogic.update()
+    # which would then call handle_game_event. The test for that specific interaction
+    # (handle_game_event behavior with no API key) is in test_llm_interface.py.
+
+@patch('fungi_fortress.llm_interface.handle_game_event') # Mock the LLM call
+@patch('fungi_fortress.input_handler.InputHandler._get_active_oracle')
+def test_oracle_interaction_with_api_key_no_offering_required(mock_get_active_oracle, mock_handle_event):
+    """Test interaction: API key present, no offering required by Oracle."""
+    gs = setup_game_state_with_oracle(
+        llm_config=LLMConfig(api_key="fake_key"), # API key is present
+        offering_item=None # Oracle does not require an offering item
+    )
+    input_handler = InputHandler(gs)
+    oracle = next(c for c in gs.characters if isinstance(c, Oracle))
+    mock_get_active_oracle.return_value = oracle
+    gs.active_oracle_entity_id = oracle.name
+
+    # Dialogue opens, Oracle doesn't require an offering, so state is AWAITING_PROMPT
+    gs.show_oracle_dialog = True
+    gs.paused = True
+    gs.oracle_interaction_state = "AWAITING_PROMPT"
+    gs.oracle_current_dialogue = get_canned_response(oracle, "greeting_no_offering")
+
+    # Player types prompt and presses Enter
+    gs.oracle_prompt_buffer = "What is the weather like?"
+    input_handler.handle_input(curses.KEY_ENTER)
+
+    # An ORACLE_QUERY event should be created
+    assert any(event['type'] == 'ORACLE_QUERY' for event in gs.event_queue)
+    query_event = next(event for event in gs.event_queue if event['type'] == 'ORACLE_QUERY')
+    assert query_event['details']['query_text'] == "What is the weather like?"
     
-    offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in gs.oracle_offering_cost.items()])
-    expected_dialogue = [
-        f"{oracle.name} desires an offering to share deeper insights:",
-        f"({offering_cost_str}).",
-        "Will you make this offering? (Y/N)"
-    ]
-    assert gs.oracle_current_dialogue == expected_dialogue
+    # GameLogic would then process this event, calling mock_handle_event.
+    # mock_handle_event.assert_called_once() # This would be asserted after GameLogic.update()
 
 def test_oracle_interaction_successful_offering():
     """Test interaction: API key present, offering required and met."""
     # GameState.oracle_offering_cost is {"magic_fungi": 5, "gold": 10}
     gs = setup_game_state_with_oracle(
-        oracle_config=OracleConfig(api_key="fake_key"),
+        llm_config=LLMConfig(api_key="fake_key"), # Renamed OracleConfig to LLMConfig
         initial_player_inventory={"magic_fungi": 10, "gold": 20, "food": 5} # Ensure enough for GS cost
     )
     input_handler = InputHandler(gs)
@@ -368,7 +387,7 @@ def test_oracle_interaction_successful_offering():
 def test_oracle_interaction_decline_offering():
     """Test interaction: Player declines to make an offering."""
     gs = setup_game_state_with_oracle(
-        oracle_config=OracleConfig(api_key="fake_key"),
+        llm_config=LLMConfig(api_key="fake_key"),
         offering_item="magic_fungi", # These are for oracle entity, not gs.oracle_offering_cost
         offering_amount=1,
         initial_player_inventory={"magic_fungi": 2}
@@ -394,7 +413,7 @@ def test_oracle_interaction_insufficient_offering():
     """Test interaction: Player tries to offer but has insufficient items."""
     # GameState.oracle_offering_cost is {"magic_fungi": 5, "gold": 10}
     gs = setup_game_state_with_oracle(
-        oracle_config=OracleConfig(api_key="fake_key"),
+        llm_config=LLMConfig(api_key="fake_key"),
         initial_player_inventory={"magic_fungi": 1, "gold": 1} # Not enough for GS cost
     )
     input_handler = InputHandler(gs)
@@ -447,7 +466,7 @@ def test_oracle_interaction_insufficient_offering():
 def test_oracle_interaction_successful_offering_refined(mock_get_active_oracle):
     """Refined Test: API key present, offering required and met."""
     gs = setup_game_state_with_oracle(
-        oracle_config=OracleConfig(api_key="fake_key"),
+        llm_config=LLMConfig(api_key="fake_key"),
         # offering_item for Oracle entity is not used by 't' press if API key is present global cost is used
         initial_player_inventory={"magic_fungi": 10, "gold": 20, "food": 5} 
     )

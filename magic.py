@@ -19,6 +19,10 @@ from .game_state import GameState # Need game state type
 
 # Import entity types needed for runtime checks
 from .characters import Dwarf, Animal, NPC # Corrected import path
+from .entities import ResourceNode, Structure # Ensure these are imported
+
+# Import a_star_for_illumination and find_path_on_network
+from .utils import bresenham_line, a_star_for_illumination, find_path_on_network
 
 if TYPE_CHECKING:
     # Avoid circular import - these types are only needed for hints
@@ -159,7 +163,7 @@ def fungal_bloom_effect(tile: 'Tile', game: 'GameState'):
                         game.network_distances = game.calculate_network_distances()
                         game.add_debug_message(f"Fungal Bloom: Enhanced mycelial network at ({tile.x}, {tile.y})")
                         # Visual feedback: make the new node pulse briefly
-                        tile.pulse_ticks = 30
+                        tile.pulse_ticks = 15
                         tile.set_color_override(206) # Bright pink
 
 def reveal_mycelial_network(game: 'GameState') -> str:
@@ -279,7 +283,7 @@ def reveal_mycelial_network(game: 'GameState') -> str:
                 if (px, py) == node or (px, py) == connected_node: continue
 
                 path_tile = game.get_tile(px, py)
-                if path_tile and path_tile.walkable:
+                if path_tile: # Allow highlighting non-walkable path segments like water
                     path_pos_ratio = i / max(1, len(line_path) - 1) # Position along path [0, 1]
 
                     # Duration based on max node distance, fading from edges
@@ -298,35 +302,12 @@ def reveal_mycelial_network(game: 'GameState') -> str:
     game.add_debug_message(f"Revealed mycelial network with {len(all_paths)} nodes. Decay from edges inward.")
     return "Mycelial network revealed! Watch as it pulses with fungal life!"
 
-# Helper function for Bresenham's line algorithm
-def bresenham_line(x0: int, y0: int, x1: int, y1: int) -> List[Tuple[int, int]]:
-    """Generates coordinates for a line between two points using Bresenham's algorithm."""
-    points = []
-    dx = abs(x1 - x0)
-    dy = abs(y1 - y0)
-    sx = 1 if x0 < x1 else -1
-    sy = 1 if y0 < y1 else -1
-    err = dx - dy
-
-    while True:
-        points.append((x0, y0))
-        if x0 == x1 and y0 == y1:
-            break
-        e2 = 2 * err
-        if e2 > -dy:
-            err -= dy
-            x0 += sx
-        if e2 < dx:
-            err += dx
-            y0 += sy
-    return points
-
 # Define the spells dictionary using the SpellDefinition TypedDict
 spells: Dict[str, SpellDefinition] = {
     "Spore Cloud": {
         "cost": 10,
         "aoe_radius": 3,
-        "visual_effect": lambda tile: setattr(tile, 'flash_ticks', 50),
+        "visual_effect": lambda tile: setattr(tile, 'flash_ticks', 20),
         "entity_effect": lambda entity: setattr(entity, 'health', entity.health - 10) if hasattr(entity, 'health') else None
     },
     "Fungal Bloom": {
@@ -405,5 +386,167 @@ def cast_spell(spell_name: str, game: 'GameState') -> str:
 def expose_to_spores(game: 'GameState', amount: int):
     """Increases player spore exposure."""
     game.player.spore_exposure += amount
+
+def highlight_path_to_nexus(game: 'GameState', magic_fungi_location: Tuple[int, int]) -> str:
+    """Highlights a path ALONG THE MYCELIAL NETWORK from a magic fungus to the nexus.
+
+    Uses BFS on the mycelial network graph. Visualizes segments with Bresenham's line.
+
+    Args:
+        game (GameState): The current game state.
+        magic_fungi_location (Tuple[int, int]): The (x,y) coords of the harvested magic fungus.
+
+    Returns:
+        str: A message indicating success or failure.
+    """
+    if not game.mycelial_network or not game.nexus_site:
+        # It's crucial that nexus_site is part of the mycelial_network keys for this to work
+        return "No mycelial network or nexus site detected to highlight path!"
+
+    # Determine the starting node for pathfinding on the network.
+    # If the magic_fungi_location itself is a network node, use it.
+    # Otherwise, find the closest network node to the magic fungus.
+    start_node_for_network_path = None
+    if magic_fungi_location in game.mycelial_network:
+        start_node_for_network_path = magic_fungi_location
+    else:
+        min_dist = float('inf')
+        closest_node = None
+        for node_coord in game.mycelial_network.keys():
+            dist = abs(node_coord[0] - magic_fungi_location[0]) + abs(node_coord[1] - magic_fungi_location[1])
+            if dist < min_dist:
+                min_dist = dist
+                closest_node = node_coord
+        
+        if closest_node:
+            game.add_debug_message(f"Magic fungus at {magic_fungi_location} not a direct network node. Pathing from closest node: {closest_node}")
+            start_node_for_network_path = closest_node
+        else:
+            return f"Magic fungus at {magic_fungi_location} is not near any mycelial network nodes."
+    
+    if not start_node_for_network_path:
+         return f"Could not determine a starting network node for illumination from {magic_fungi_location}."
+
+    # Find path on the network graph from the determined start node to the nexus site
+    network_path_nodes = find_path_on_network(game.mycelial_network, start_node_for_network_path, game.nexus_site)
+
+    if not network_path_nodes:
+        return f"No path found in mycelial network from {start_node_for_network_path} to nexus {game.nexus_site}."
+
+    # DO NOT Clear existing visual effects to allow multiple paths
+    # for y_coord in range(MAP_HEIGHT):
+    #     for x_coord in range(MAP_WIDTH):
+    #         tile = game.get_tile(x_coord, y_coord)
+    #         if tile:
+    #             tile.highlight_ticks = 0
+    #             tile.flash_ticks = 0
+    #             tile.pulse_ticks = 0
+    #             tile.set_color_override(None)
+    
+    path_colors = [16, 206, 13, 5] # Bright Magenta, Pink, Dark Magenta, Cyan/Blue
+    water_highlight_color = 6 # Magenta for water
+    reveal_duration = 75 # Duration for the initial static path reveal
+
+    # Apply a static highlight for the initial reveal
+    all_highlighted_tiles_on_path = set()
+    for node_coord in network_path_nodes:
+        all_highlighted_tiles_on_path.add(node_coord)
+
+    for i in range(len(network_path_nodes) - 1):
+        node1 = network_path_nodes[i]
+        node2 = network_path_nodes[i+1]
+        line_segment_tiles = bresenham_line(node1[0], node1[1], node2[0], node2[1])
+        for seg_tile_coord in line_segment_tiles:
+            all_highlighted_tiles_on_path.add(seg_tile_coord)
+
+    for i, tile_coord in enumerate(list(all_highlighted_tiles_on_path)):
+        tile = game.get_tile(tile_coord[0], tile_coord[1])
+        if not tile: continue
+
+        current_color = path_colors[i % len(path_colors)]
+        is_water_tile = tile.entity and tile.entity.name == "Water"
+
+        if is_water_tile:
+            current_color = water_highlight_color
+        
+        tile.set_color_override(current_color)
+        tile.highlight_ticks = reveal_duration # Use highlight_ticks for the static reveal
+
+        # Special emphasis for start (fungus location or closest node) and end (nexus)
+        if tile_coord == start_node_for_network_path:
+            if start_node_for_network_path == magic_fungi_location:
+                 tile.set_color_override(14) # Bright Red for the actual fungus
+            else:
+                 tile.set_color_override(path_colors[0])
+            tile.highlight_ticks = reveal_duration + 25 # Slightly longer for terminals
+        elif tile_coord == game.nexus_site:
+             tile.set_color_override(16) # Bright Magenta for nexus
+             tile.highlight_ticks = reveal_duration + 25 # Slightly longer for terminals
+
+    # After initial reveal, initiate the pulsing effect
+    initiate_nexus_pulse(game, network_path_nodes, start_node_for_network_path) # NEW FUNCTION CALL
+
+    path_display = [(x,y) for x,y in network_path_nodes]
+    game.add_debug_message(f"Revealed mycelial network path ({len(path_display)} nodes) from {start_node_for_network_path} to nexus: {path_display}")
+    magic_fungi_entity = ENTITY_REGISTRY.get('magic_fungi')
+    fungi_name = magic_fungi_entity.name if magic_fungi_entity else "Magic Fungus"
+    return f"A path from the {fungi_name} (near {start_node_for_network_path}) to the Nexus ({game.nexus_site}) now reveals itself!"
+
+def initiate_nexus_pulse(game: 'GameState', path_nodes: List[Tuple[int, int]], fungus_node: Tuple[int, int]):
+    """Initiates a series of pulses from the nexus along the given path.
+
+    Args:
+        game (GameState): The current game state.
+        path_nodes (List[Tuple[int, int]]): The list of coordinates representing the path
+                                          from the fungus (or nearest network node) to the nexus.
+                                          Important: This path is FROM FUNGUS TO NEXUS.
+        fungus_node (Tuple[int, int]): The coordinate of the fungus or its closest network node.
+    """
+    if not game.nexus_site or not path_nodes:
+        return
+
+    # The provided path_nodes is from fungus_node to nexus_site.
+    # For pulsing from nexus to fungus, we need to reverse it.
+    # However, the visual effect is that the *signal* goes from fungus to nexus (path reveal),
+    # and then *energy* pulses from nexus back to fungus.
+    # So, the path for pulsing should indeed be from nexus to fungus.
+
+    pulse_path_nexus_to_fungus = list(reversed(path_nodes))
+
+    if not pulse_path_nexus_to_fungus or pulse_path_nexus_to_fungus[0] != game.nexus_site:
+        game.add_debug_message(f"Pulse Error: Path for pulsing does not start at nexus. Nexus: {game.nexus_site}, Path Start: {pulse_path_nexus_to_fungus[0] if pulse_path_nexus_to_fungus else 'Empty'}")
+        return
+
+    path_length = len(pulse_path_nexus_to_fungus)
+    if path_length == 0:
+        return
+
+    num_sends = 3 + (path_length // 5)  # e.g., 3 base pulses, +1 for every 5 path segments
+    pulse_speed = 3  # Ticks per tile
+    pulse_length = 3 # How many tiles the pulse occupies visually
+    pulse_color = 201 # Example: Pinkish color for the pulse itself
+
+    # Ensure there's a game.active_pulses attribute
+    if not hasattr(game, 'active_pulses'):
+        game.active_pulses = []
+
+    new_pulse_id = f"pulse_{game.tick}_{fungus_node[0]}_{fungus_node[1]}"
+
+    # Create the pulse object using the ActivePulse structure
+    # Note: current_tile_index starts at 0 (the nexus)
+    # tiles_to_render will be populated by the game logic update
+    new_pulse = {
+        "id": new_pulse_id,
+        "path": pulse_path_nexus_to_fungus, 
+        "current_tile_index": 0, 
+        "ticks_on_current_tile": 0,
+        "pulse_speed": pulse_speed,
+        "pulse_color": pulse_color,
+        "remaining_sends": num_sends,
+        "tiles_to_render": [],
+        "pulse_length": pulse_length
+    }
+    game.active_pulses.append(new_pulse)
+    game.add_debug_message(f"Initiated pulse series: {new_pulse_id} ({num_sends} sends) from nexus to {fungus_node} along path of {path_length} nodes.")
 
 # Removed __main__ block as it's not type-safe without significant test setup

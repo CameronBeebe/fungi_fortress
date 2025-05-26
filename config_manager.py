@@ -1,33 +1,23 @@
 import configparser
-from typing import Optional, Dict, List # Added Dict, List for future use if needed here
+from typing import Optional, Dict, List
 import os
-import logging # Import logging
+import logging
 from dataclasses import dataclass
 
-# Get a logger instance (it will inherit the config from main.py if run after main's setup)
-# Or, if this module is imported before main's basicConfig, it might log to console by default.
-# For robustness in this specific debug case, we ensure it uses the same file if possible,
-# but basicConfig in main should cover it if main runs first.
-logger = logging.getLogger(__name__) 
-# If we wanted to be absolutely sure it logs to our file even if imported first:
-# if not logging.getLogger().hasHandlers():
-#     logging.basicConfig(
-#         filename="ff_init_debug.log", level=logging.INFO, 
-#         format='%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s', filemode='a'
-#     )
+# Get a logger instance for LLM interactions
+logger = logging.getLogger(__name__)
 
 # --- Path configuration for LLM config files ---
 # Assumes config files are in the same directory as this script (package root)
 PACKAGE_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG_FILENAME = "llm_config.ini"
-LEGACY_CONFIG_FILENAME = "oracle_config.ini"
 # --- End Path configuration ---
 
 @dataclass
 class LLMConfig:
-    """Configuration for LLM interactions (formerly OracleConfig)."""
+    """Configuration for LLM interactions."""
     api_key: Optional[str] = None
-    model_name: str = "gpt-4o-mini"  # Default model
+    model_name: str = "grok-3-mini"  # Default model
     provider: str = "auto"  # Provider: auto, xai, groq, openai, anthropic, etc.
     context_level: str = "medium"  # Default context level (low, medium, high)
     enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
@@ -42,7 +32,8 @@ class LLMConfig:
     retry_delay_seconds: float = 1.0  # Delay between retries
     daily_request_limit: int = 100  # Maximum requests per day (cost control)
     enable_request_logging: bool = True  # Whether to log all API requests for monitoring
-    enable_structured_outputs: bool = True  # Whether to use XAI structured outputs feature
+    enable_structured_outputs: bool = True  # Whether to use structured outputs feature
+    enable_streaming: bool = True  # Whether to enable streaming responses for more lifelike Oracle interactions
 
     def __post_init__(self):
         """Validate and finalize configuration after initialization."""
@@ -63,11 +54,8 @@ class LLMConfig:
             self.timeout_seconds = 30
             
         if self.daily_request_limit < 0 or self.daily_request_limit > 1000:
-            logger.warning(f"daily_request_limit value {self.daily_request_limit} is outside safe range (0-1000). Using 100.")
+            logger.warning(f"daily_request_limit value {self.daily_request_limit} is outside safe range (0-1000, 0=unlimited). Using 100.")
             self.daily_request_limit = 100
-
-# Alias for backward compatibility
-OracleConfig = LLMConfig
 
 def get_api_key_from_env(provider: str) -> Optional[str]:
     """Get API key from environment variables based on provider.
@@ -135,7 +123,6 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
 
     Reads model name, provider, and other settings from the [LLM] section.
     API keys are loaded from environment variables for security.
-    Falls back to legacy oracle_config.ini if new config doesn't exist.
 
     Args:
         config_file_name (str): The name of the configuration file.
@@ -149,13 +136,6 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
     
     # Construct path relative to this file's directory
     config_file_path = os.path.join(PACKAGE_ROOT_DIR, config_file_name)
-    
-    # Check if new config exists, otherwise try legacy config
-    if not os.path.exists(config_file_path) and config_file_name == DEFAULT_CONFIG_FILENAME:
-        legacy_path = os.path.join(PACKAGE_ROOT_DIR, LEGACY_CONFIG_FILENAME)
-        if os.path.exists(legacy_path):
-            logger.info(f"New config '{config_file_path}' not found, using legacy config '{legacy_path}'")
-            return load_legacy_oracle_config(LEGACY_CONFIG_FILENAME)
     
     logger.info(f"Attempting to load config from: {config_file_path}")
 
@@ -187,8 +167,9 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
     daily_request_limit: int = 100
     enable_request_logging: bool = True
     enable_structured_outputs: bool = True
+    enable_streaming: bool = True
 
-    # Load from [LLM] section (new format)
+    # Load from [LLM] section
     if "LLM" in parser:
         model_name = parser["LLM"].get("model_name")
         if not model_name:
@@ -245,7 +226,7 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
         try:
             daily_request_limit = parser["LLM"].getint("daily_request_limit", fallback=100)
             if daily_request_limit < 0 or daily_request_limit > 1000:
-                logger.warning(f"daily_request_limit value {daily_request_limit} in config is outside safe range. Using 100.")
+                logger.warning(f"daily_request_limit value {daily_request_limit} in config is outside safe range (0-1000, 0=unlimited). Using 100.")
                 daily_request_limit = 100
         except ValueError:
             logger.warning(f"Invalid daily_request_limit value in config. Using default 100.")
@@ -253,6 +234,7 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
             
         enable_request_logging = parser["LLM"].getboolean("enable_request_logging", fallback=True)
         enable_structured_outputs = parser["LLM"].getboolean("enable_structured_outputs", fallback=True)
+        enable_streaming = parser["LLM"].getboolean("enable_streaming", fallback=True)
 
     else:
         logger.warning(f"[LLM] section not found in '{config_file_path}'. LLM features may be unavailable.")
@@ -280,136 +262,9 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
         retry_delay_seconds=retry_delay_seconds,
         daily_request_limit=daily_request_limit,
         enable_request_logging=enable_request_logging,
-        enable_structured_outputs=enable_structured_outputs
+        enable_structured_outputs=enable_structured_outputs,
+        enable_streaming=enable_streaming
     )
-
-def load_legacy_oracle_config(config_file_name: str = LEGACY_CONFIG_FILENAME) -> LLMConfig:
-    """Loads Oracle configuration from the legacy oracle_config.ini file format.
-    
-    This function maintains backward compatibility with the old format.
-    """
-    parser = configparser.ConfigParser()
-    
-    # Construct path relative to this file's directory
-    config_file_path = os.path.join(PACKAGE_ROOT_DIR, config_file_name)
-    
-    logger.info(f"Loading legacy config from: {config_file_path}")
-
-    try:
-        with open(config_file_path, 'r') as f:
-            parser.read_file(f)
-    except FileNotFoundError:
-        logger.info(f"Legacy configuration file '{config_file_path}' not found.")
-        return LLMConfig() 
-
-    api_key: Optional[str] = None
-    model_name: Optional[str] = None
-    provider: str = "auto"
-    context_level: str = "medium"
-    
-    # Safety settings with defaults
-    max_tokens: int = 500
-    timeout_seconds: int = 30
-    max_retries: int = 2
-    retry_delay_seconds: float = 1.0
-    daily_request_limit: int = 100
-    enable_request_logging: bool = True
-    enable_structured_outputs: bool = True
-
-    if "OracleAPI" in parser:
-        api_key = parser["OracleAPI"].get("api_key")
-        if not api_key:
-            api_key = None
-            logger.info(f"API key not configured or is empty in '{config_file_path}'.")
-
-        model_name = parser["OracleAPI"].get("model_name")
-        if not model_name:
-            model_name = None 
-            
-        provider = parser["OracleAPI"].get("provider", "auto")
-        if provider not in ["auto", "xai", "groq", "openai", "anthropic", "together", "perplexity"]:
-            logger.warning(f"Invalid 'provider' in '{config_file_path}'. Using default 'auto'.")
-            provider = "auto"
-            
-        context_level_from_file = parser["OracleAPI"].get("context_level")
-        if context_level_from_file in ["low", "medium", "high"]:
-            context_level = context_level_from_file
-        elif context_level_from_file:
-            logger.warning(f"Invalid 'context_level' in '{config_file_path}'. Using default '{context_level}'.")
-        
-        # Load safety settings (same as before)
-        try:
-            max_tokens = parser["OracleAPI"].getint("max_tokens", fallback=500)
-            if max_tokens <= 0 or max_tokens > 4000:
-                logger.warning(f"max_tokens value {max_tokens} in config is outside safe range. Using 500.")
-                max_tokens = 500
-        except ValueError:
-            logger.warning(f"Invalid max_tokens value in config. Using default 500.")
-            max_tokens = 500
-            
-        try:
-            timeout_seconds = parser["OracleAPI"].getint("timeout_seconds", fallback=30)
-            if timeout_seconds <= 0 or timeout_seconds > 120:
-                logger.warning(f"timeout_seconds value {timeout_seconds} in config is outside safe range. Using 30.")
-                timeout_seconds = 30
-        except ValueError:
-            logger.warning(f"Invalid timeout_seconds value in config. Using default 30.")
-            timeout_seconds = 30
-            
-        try:
-            max_retries = parser["OracleAPI"].getint("max_retries", fallback=2)
-            if max_retries < 0 or max_retries > 5:
-                logger.warning(f"max_retries value {max_retries} in config is outside safe range. Using 2.")
-                max_retries = 2
-        except ValueError:
-            logger.warning(f"Invalid max_retries value in config. Using default 2.")
-            max_retries = 2
-            
-        try:
-            retry_delay_seconds = parser["OracleAPI"].getfloat("retry_delay_seconds", fallback=1.0)
-            if retry_delay_seconds < 0 or retry_delay_seconds > 10:
-                logger.warning(f"retry_delay_seconds value {retry_delay_seconds} in config is outside safe range. Using 1.0.")
-                retry_delay_seconds = 1.0
-        except ValueError:
-            logger.warning(f"Invalid retry_delay_seconds value in config. Using default 1.0.")
-            retry_delay_seconds = 1.0
-            
-        try:
-            daily_request_limit = parser["OracleAPI"].getint("daily_request_limit", fallback=100)
-            if daily_request_limit < 0 or daily_request_limit > 1000:
-                logger.warning(f"daily_request_limit value {daily_request_limit} in config is outside safe range. Using 100.")
-                daily_request_limit = 100
-        except ValueError:
-            logger.warning(f"Invalid daily_request_limit value in config. Using default 100.")
-            daily_request_limit = 100
-            
-        enable_request_logging = parser["OracleAPI"].getboolean("enable_request_logging", fallback=True)
-        enable_structured_outputs = parser["OracleAPI"].getboolean("enable_structured_outputs", fallback=True)
-
-    else:
-        logger.warning(f"[OracleAPI] section not found in '{config_file_path}'. LLM features may be unavailable.")
-
-    return LLMConfig(
-        api_key=api_key, 
-        model_name=model_name, 
-        provider=provider, 
-        context_level=context_level,
-        max_tokens=max_tokens,
-        timeout_seconds=timeout_seconds,
-        max_retries=max_retries,
-        retry_delay_seconds=retry_delay_seconds,
-        daily_request_limit=daily_request_limit,
-        enable_request_logging=enable_request_logging,
-        enable_structured_outputs=enable_structured_outputs
-    )
-
-# Backward compatibility function
-def load_oracle_config(config_file_name: str = LEGACY_CONFIG_FILENAME) -> LLMConfig:
-    """Legacy function for backward compatibility. Use load_llm_config() for new code."""
-    if config_file_name == LEGACY_CONFIG_FILENAME:
-        return load_legacy_oracle_config(config_file_name)
-    else:
-        return load_llm_config(config_file_name)
 
 if __name__ == "__main__":
     # Example usage and test

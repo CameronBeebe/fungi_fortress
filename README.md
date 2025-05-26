@@ -36,6 +36,10 @@ A terminal-based strategy/simulation game written in Python using the curses lib
     ```bash
     pip install groq
     ```
+*   **LLM SDKs:** For LLM features, the following are installed via `requirements.txt`:
+    *   `openai`: For XAI (Grok), OpenAI (GPT), and other OpenAI-compatible APIs.
+    *   `groq`: For Groq API.
+    *   `requests`: Used for some direct API calls (e.g., Anthropic).
 
 ## How to Run
 
@@ -49,17 +53,12 @@ A terminal-based strategy/simulation game written in Python using the curses lib
     *   Copy `llm_config.ini.example` to `llm_config.ini`
     *   Set your API key as an environment variable (for security):
         ```bash
-        # For XAI (Grok models):
-        export XAI_API_KEY="your-xai-api-key-here"
-        
-        # For OpenAI (GPT models):
-        export OPENAI_API_KEY="your-openai-api-key-here"
-        
-        # For Anthropic (Claude models):
-        export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
-        
-        # For Groq (fast open-source models):
-        export GROQ_API_KEY="your-groq-api-key-here"
+        # For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
+        # For OpenAI:         export OPENAI_API_KEY="your-openai-api-key-here"
+        # For Anthropic:      export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
+        # For Groq:           export GROQ_API_KEY="your-groq-api-key-here"
+        # For Together:       export TOGETHER_API_KEY="your-together-api-key-here"
+        # For Perplexity:     export PERPLEXITY_API_KEY="your-perplexity-api-key-here"
         ```
     *   The game automatically detects which API key to use based on your chosen model
     *   **Security:** API keys are stored in environment variables, never in files
@@ -144,12 +143,13 @@ Fungi Fortress features an AI-powered Oracle that provides guidance, lore, and i
 
 ### Recent Improvements (Latest Update)
 
+- **✅ Dynamic Text Streaming**: Oracle responses now stream in real-time for a more engaging experience.
 - **✅ Enhanced Error Handling**: Improved parsing of malformed LLM responses with graceful degradation
-- **✅ Comprehensive Test Suite**: 150+ tests covering unit tests, integration tests, and live API validation
+- **✅ Comprehensive Test Suite**: Over 170 tests covering unit tests, integration tests, and live API validation
 - **✅ Response Format Support**: Handles both structured JSON responses and legacy text format seamlessly  
 - **✅ Provider Auto-Detection**: Automatically selects the correct API based on model name patterns
 - **✅ Structured Output**: Supports XAI's structured JSON schema for more reliable responses
-- **✅ Integration Tests**: Added `test_integration_game.py` and `test_integration_xai_direct.py` for full pipeline validation
+- **✅ Integration Tests**: Added `test_integration_game.py` and `tests/test_integration_xai_direct.py` for full pipeline validation
 
 ### Supported LLM Providers
 
@@ -207,69 +207,28 @@ max_retries = 2              # Retry attempts (reliability)
 
 ```bash
 # Add to your shell profile (.bashrc, .zshrc, etc.) for persistence:
-export XAI_API_KEY="xai-your-actual-api-key-here"
+export XAI_API_KEY="your-xai-api-key-here"
 
 # Or set for current session only:
-export XAI_API_KEY="xai-your-actual-api-key-here"
+export XAI_API_KEY="your-xai-api-key-here"
 ```
-
-The game will automatically detect which API key to use based on your chosen provider and model.
-
-### Cost-Effective Gaming
-
-Since the Oracle is designed for interactive storytelling rather than intensive research tasks, it works well with:
-
-- **Smaller, faster models** (gpt-4o-mini, claude-3-5-haiku, llama-3.1-8b-instant)
-- **Cost-efficient providers** (Groq for open-source models, XAI for competitive pricing)
-- **Flexible switching** between providers based on your budget and preferences
-
-### Safety Features
-
-- **Daily request limits** prevent unexpected charges
-- **Token limits** control response length and costs  
-- **Smart retry logic** handles temporary failures gracefully
-- **Real-time monitoring** shows usage and costs
-- **Emergency controls** for immediate cost management
-- **Robust error handling** with fallback responses
-- **Request tracking** and logging for debugging
 
 ### Testing Infrastructure
 
 The LLM integration includes comprehensive testing:
 
 ```bash
-# Run all tests including LLM integration tests
+# Run all tests (most use mocks, safe for CI)
 pytest
 
-# Run only LLM-specific tests
+# Run only LLM-specific interface tests (uses mocks)
 pytest tests/test_llm_interface.py -v
 
-# Run integration tests (requires API key)
-pytest tests/test_integration_game.py tests/test_integration_xai_direct.py -v
+# Run specific integration tests that may require API keys (check .gitignore for these files)
+# Example for XAI live endpoint tests:
+pytest tests/test_integration_xai_direct.py -v
 ```
 
-**Test Coverage**:
-- 24 unit tests for LLM interface logic
-- 3 integration tests for live API validation  
-- Provider detection and auto-switching tests
-- Error handling and malformed response tests
-- Cost control and safety feature tests
-
-### Setup Verification
-
-After configuring your `llm_config.ini`, verify everything works:
-
-```bash
-python verify_llm_setup.py
-```
-
-This tool tests provider detection, verifies configuration, and provides optimization tips.
-
-### Provider Flexibility Benefits
-
-- **No vendor lock-in**: Switch providers anytime by updating your config
-- **Use your existing credits**: Works with whatever LLM service you already pay for
-- **Cost optimization**: Choose the most cost-effective option for your usage
-- **Performance tuning**: Select faster models for real-time gameplay or more sophisticated models for complex storytelling
-
-The Oracle's multi-provider architecture ensures you're never locked into a single LLM service, giving you the freedom to use whichever models and credits work best for your gaming experience. 
+**Test Organization**:
+- Unit and integration tests (using mocks) are located in the `tests/` directory.
+- Tests designed for live API validation (e.g., `tests/test_integration_xai_direct.py`) are configured in `.gitignore` to prevent accidental key exposure and should be run with caution.

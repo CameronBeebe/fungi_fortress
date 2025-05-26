@@ -116,23 +116,16 @@ class InputHandler:
             oracle_name = current_oracle.name if current_oracle else "The Oracle"
 
             # --- Paging Input (handled across multiple states) ---
-            # Define max_content_h roughly as it's calculated in renderer for paging logic
-            # This is an approximation; ideally, this comes from a shared constant or renderer directly.
-            dialog_h_approx = 22 # Updated to match the new increased height in renderer (was 18)
-            # Content calculation: dialog_h - 6 (reserved space for input/prompts) - 3 (title and spacing) = 13 lines
-            lines_per_page = dialog_h_approx - 9  # More conservative calculation for content area
-            if lines_per_page < 1: lines_per_page = 1
+            # The variables dialog_h_approx and lines_per_page are no longer needed here
+            # as scrolling is now one line at a time.
 
             page_changed = False
-            if key == curses.KEY_DOWN: # Down arrow for next page
-                # Need to know total wrapped lines to avoid over-scrolling.
-                # This is complex without re-wrapping text here. For now, assume renderer handles boundary.
-                # A simpler approach for input: just increment/decrement and let renderer cap it.
-                self.game_state.oracle_dialogue_page_start_index += lines_per_page
-                # Renderer will cap this if it goes too far. We might want to get total_lines from somewhere.
+            if key == curses.KEY_DOWN: # Down arrow for next line
+                self.game_state.oracle_dialogue_page_start_index += 1
+                # Renderer will cap this if it goes too far.
                 page_changed = True
-            elif key == curses.KEY_UP: # Up arrow for previous page
-                self.game_state.oracle_dialogue_page_start_index -= lines_per_page
+            elif key == curses.KEY_UP: # Up arrow for previous line
+                self.game_state.oracle_dialogue_page_start_index -= 1
                 if self.game_state.oracle_dialogue_page_start_index < 0:
                     self.game_state.oracle_dialogue_page_start_index = 0
                 page_changed = True
@@ -178,8 +171,8 @@ class InputHandler:
                     if current_oracle and self._handle_offering(current_oracle):
                         # Offering successful, now check API key
                         has_real_api_key = False # Default to false
-                        if self.game_state.oracle_config:
-                            has_real_api_key = self.game_state.oracle_config.is_real_api_key_present
+                        if self.game_state.llm_config:
+                            has_real_api_key = self.game_state.llm_config.is_real_api_key_present
 
                         if has_real_api_key:
                             self.game_state.oracle_interaction_state = "AWAITING_PROMPT"

@@ -1,5 +1,5 @@
 from .lore import lore_base
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 
 class Inventory:
     """Represents the player/colony's inventory, holding resources and special items.
@@ -113,6 +113,27 @@ class Inventory:
         """
         for res in self.resources_gained:
             self.resources_gained[res] = 0
+
+    def can_afford(self, cost: List[Tuple[str, int]]) -> bool:
+        """Checks if the inventory has enough resources for a given cost.
+
+        Args:
+            cost (List[Tuple[str, int]]): A list of tuples, where each tuple is
+                                         (resource_name, amount_needed).
+
+        Returns:
+            bool: True if all resources are affordable, False otherwise.
+        """
+        for resource_name, amount_needed in cost:
+            if resource_name in self.resources:
+                if self.resources[resource_name] < amount_needed:
+                    return False # Not enough of this standard resource
+            elif resource_name in self.special_items:
+                if self.special_items[resource_name] < amount_needed:
+                    return False # Not enough of this special item
+            else:
+                return False # Unknown resource/item in cost
+        return True
 
 # Removed global dictionaries (resources, resources_gained, special_items) and add_resource function
 # These are now encapsulated within the Inventory class to centralize inventory management

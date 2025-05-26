@@ -251,11 +251,13 @@ class Renderer:
                     pulse_phase = (self.game_state.tick % 30) / 30.0  # 0.0 to 1.0
                     
                     # Check if this is part of mycelial network (uses specific colors)
-                    is_mycelial = (tile._color_override in [5, 13, 16, 201, 206])
-                    
+                    # Use tile.color property which correctly resolves override or entity color
+                    is_mycelial_color_val = tile.color # Get the resolved color
+                    is_mycelial = (is_mycelial_color_val in [5, 13, 16, 201, 206]) and tile._color_override is not None
+
                     if is_mycelial:
                         # For mycelial network, use foreground colors only with pulsing effects
-                        final_color_pair_index = tile._color_override
+                        final_color_pair_index = is_mycelial_color_val
                         
                         # Add visual interest with bold/normal alternation based on game tick
                         if pulse_phase < 0.5:
@@ -267,31 +269,23 @@ class Renderer:
                         # (use pulse foreground color instead of background)
                         final_color_pair_index = 13  # Magenta foreground 
                 elif tile.highlight_ticks > 0:
-                    # Use tile's color_override if set, otherwise use default highlight color
-                    if tile._color_override is not None:
-                        # For mycelial network path visualization with propagation effect
-                        is_mycelial_path = (tile._color_override in [5, 13, 16, 201, 206])
-                        
-                        if is_mycelial_path:
-                            # Always use foreground colors, never background colors for the network
-                            final_color_pair_index = tile._color_override
-                            
-                            # Create wave-like propagation effect based on position and time
-                            tick_offset = (self.game_state.tick + tile.x + tile.y) % 20
-                            
-                            # Add bold attribute for part of the cycle for visual "pulse"
-                            if tick_offset < 10:
-                                final_attr = curses.A_BOLD
-                            else:
-                                final_attr = curses.A_NORMAL
+                    final_color_pair_index = tile.color # Use the property here, it handles None _color_override
+                    # Specific visual treatment for mycelial path highlights (which set _color_override)
+                    if tile._color_override in [5, 13, 16, 201, 206]: # Check if it was a mycelial-specific override
+                        tick_offset = (self.game_state.tick + tile.x + tile.y) % 20
+                        if tick_offset < 10:
+                            final_attr = curses.A_BOLD
                         else:
-                            # Non-mycelial highlight - use assigned color
-                            final_color_pair_index = tile._color_override
-                    else:
-                        final_color_pair_index = 15 # Fallback to bright white if no override
+                            final_attr = curses.A_NORMAL
+                    # If not a mycelial-specific override, final_color_pair_index is already correctly set
+                    # by tile.color (either to another override or entity's default, or fallback like 15 if that logic was there).
+                    # The original fallback to 15 if _color_override was None is now handled by tile.color returning entity.color.
+                    # If a generic highlight (non-mycelial) needs a *different* default color than entity.color,
+                    # that logic would need to be added here, e.g.,
+                    # else: final_color_pair_index = 15 # A generic highlight color if not mycelial and no specific override
 
                 # 2. Check for Flicker (Overrides Generic Effects for these entities)
-                if entity.is_mycelial:
+                if entity.is_mycelial: # This applies to entities marked as mycelial, not just paths
                     flicker_colors = [14, 6] # Bright Red, Magenta
                     flicker_speed = 15
                     flicker_index = (self.game_state.tick // flicker_speed) % len(flicker_colors)
@@ -476,10 +470,44 @@ class Renderer:
         if self.game_state.show_oracle_dialog:
             self.show_oracle_dialog_screen()
         
+        # --- Render Active Pulses ---
+        self._render_active_pulses()
+        
         # --- Refresh Windows --- 
         self.map_win.refresh()
         self.ui_win.refresh()
         self.log_win.refresh()
+
+    def _render_active_pulses(self):
+        """Renders all active mycelial pulses on the map."""
+        if not hasattr(self.game_state, 'active_pulses') or not self.game_state.active_pulses:
+            return
+
+        # Get camera offsets for rendering
+        cam_x, cam_y, _, _ = self._get_camera_bounds()
+
+        for pulse in self.game_state.active_pulses:
+            pulse_color_pair = curses.color_pair(pulse["pulse_color"]) 
+            for r_x, r_y in pulse["tiles_to_render"]:
+                # Apply camera offset for rendering
+                screen_x, screen_y = r_x - cam_x, r_y - cam_y
+                # Check if the tile is within the visible map window
+                if 0 <= screen_y < MAP_HEIGHT and 0 <= screen_x < MAP_WIDTH:
+                    try:
+                        # Get the character currently at that position to overlay the pulse color
+                        # If the tile has a specific highlight from path reveal, that takes precedence for char/attr
+                        tile_to_pulse = self.game_state.get_tile(r_x, r_y)
+                        char_to_draw = tile_to_pulse.entity.char if tile_to_pulse and tile_to_pulse.entity else ' '
+                        base_attr = curses.A_NORMAL
+                        if tile_to_pulse and tile_to_pulse.highlight_ticks > 0 and tile_to_pulse._color_override is not None:
+                             # If still under initial path reveal, use its color but pulse char might dominate
+                             # This part might need tweaking based on desired visual layering
+                            pass # Color already set by pulse_color_pair
+                        
+                        # Draw the pulse segment
+                        self.map_win.addch(screen_y, screen_x, char_to_draw, pulse_color_pair | base_attr)
+                    except curses.error: # Ignore errors if drawing outside window (should be caught by bounds check)
+                        pass 
 
     def clear_screen(self):
         """Force clears the entire terminal screen and all managed windows.
@@ -501,6 +529,13 @@ class Renderer:
         self.log_win.refresh()
         # Force an immediate screen update
         curses.doupdate()
+
+    def _get_camera_bounds(self) -> tuple[int, int, int, int]:
+        """Returns the current camera bounds (x, y, width, height).
+        Assumes no scrolling for now, so camera is at (0,0) and covers the full map window.
+        """
+        # TODO: Implement actual camera logic if scrolling is added.
+        return 0, 0, MAP_WIDTH, MAP_HEIGHT
 
     def show_inventory_screen(self):
         """Displays the inventory overlay window.
@@ -671,213 +706,198 @@ class Renderer:
             curses.doupdate()
 
     def show_oracle_dialog_screen(self):
-        """Displays the Oracle dialog window.
+        """Shows the Oracle dialogue window.
 
-        The content of the window changes based on game_state.oracle_interaction_state:
-        - "AWAITING_OFFERING": Shows offering cost and prompts Y/N.
-        - "SHOWING_CANNED_RESPONSE": Shows pre-defined dialogue.
-        - "SHOWING_CANNED_RESPONSE_FINAL_NO_API": Shows the final "come back later" message if no API key.
-        - "AWAITING_PROMPT": (Phase 2) Shows chat history and input prompt.
-        - "AWAITING_LLM_RESPONSE": (Phase 2) Shows "Oracle is contemplating..."
-        - "SHOWING_LLM_RESPONSE": (Phase 2) Shows LLM's narrative response.
+        Displays current dialogue, prompt buffer, and handles scrolling.
+        If an LLM response is being streamed, it will show the accumulating text.
+        Uses `self.game_state.oracle_current_dialogue` (now List[Tuple[str,str]]) and
+        `self.game_state.oracle_prompt_buffer`.
         """
-        if not self.is_size_ok or not self.ui_win: # Assuming ui_win is used as a base for dialog size
+        if not self.ui_win: return 
+
+        dialog_h = 28 # Increased from 22
+        dialog_w = 60  
+        dialog_y = (self.max_y - dialog_h) // 2
+        dialog_x = (self.max_x - dialog_w - UI_WIDTH) // 2 
+        
+        try:
+            dialog_win = curses.newwin(dialog_h, dialog_w, dialog_y, dialog_x)
+            dialog_win.erase()
+            dialog_win.border()
+            dialog_win.nodelay(True) 
+        except curses.error:
+            self.screen.addstr(0, 0, "Error: Could not create Oracle dialog window.")
             return
 
-        # Define dialog window dimensions (increased height to accommodate more content and better spacing)
-        # Let's try to center it on the map area, or a portion of it.
-        dialog_h = 22  # Height of the dialog box (increased from 18 to accommodate more lines and better spacing)
-        dialog_w = 60  # Width of the dialog box
+        title = f"~ {self.game_state.active_oracle_entity_id or 'The Oracle'} ~"
+        title_x = (dialog_w - len(title)) // 2
+        dialog_win.addstr(0, title_x, title, curses.A_BOLD)
+
+        content_x = 2
+        content_y_start = 2
+        content_w = dialog_w - 4 
+        max_content_h = (dialog_h - 6)
+
+        current_dialogue_entries = self.game_state.oracle_current_dialogue
+        total_lines = len(current_dialogue_entries)
         
-        # Calculate top-left corner for centering (approximately)
-        # Ensure it doesn't go off-screen if map area is too small
-        map_area_h = MAP_HEIGHT 
-        map_area_w = MAP_WIDTH
-        start_y = (map_area_h - dialog_h) // 2
-        start_x = (map_area_w - dialog_w) // 2
-        
-        # Ensure positive coordinates if map is smaller than dialog (should not happen with constants)
-        start_y = max(0, start_y)
-        start_x = max(0, start_x)
+        # Cap scroll index (this logic seems fine)
+        if self.game_state.oracle_dialogue_page_start_index > total_lines - max_content_h and total_lines > max_content_h:
+            self.game_state.oracle_dialogue_page_start_index = total_lines - max_content_h
+        if self.game_state.oracle_dialogue_page_start_index < 0:
+            self.game_state.oracle_dialogue_page_start_index = 0
 
-        try:
-            # Create a new window for the dialog box each time it's shown for simplicity
-            # This window will be drawn on top of map_win typically.
-            dialog_win = curses.newwin(dialog_h, dialog_w, start_y, start_x)
-            dialog_win.erase() # Clear the window
-            dialog_win.border() # Draw a border
+        visible_lines = current_dialogue_entries[self.game_state.oracle_dialogue_page_start_index : 
+                                                 self.game_state.oracle_dialogue_page_start_index + max_content_h]
 
-            # Content drawing starts from inside the border (y=1, x=1)
-            content_y_start_for_dialogue = 1 # Initial y for drawing title etc.
-            content_x = 1 # Initial x for drawing all content within border
-            max_content_w = dialog_w - 2 # Account for border
+        current_draw_y = content_y_start
+        # Enumerate visible_lines to get a local index (0 for the first visible entry)
+        for local_entry_idx, entry_tuple in enumerate(visible_lines):
+            if current_draw_y >= content_y_start + max_content_h: # Safety break
+                break
             
-            # Display the name of the Oracle if known
-            oracle_name_display = "Oracle" # Default
-            if self.game_state.active_oracle_entity_id:
-                oracle_name_display = str(self.game_state.active_oracle_entity_id)
-            
-            dialog_win.addstr(content_y_start_for_dialogue, content_x, f"--- {oracle_name_display} ---", curses.A_BOLD)
-            content_y_start_for_dialogue += 2 # Move below the title and a blank line for actual dialogue content
+            text_line, style_tag = ("", "NORMAL") 
+            if isinstance(entry_tuple, tuple) and len(entry_tuple) == 2:
+                text_line, style_tag = entry_tuple
+            elif isinstance(entry_tuple, str): 
+                text_line = entry_tuple 
+                if ( "Oracle contemplates" in text_line or
+                     "communes with the mycelial network" in text_line or
+                     "Ancient knowledge" in text_line or
+                     "The Oracle's consciousness" in text_line or
+                     ">" in text_line # Player query also often italicized or distinct
+                   ):
+                    style_tag = "ITALIC"
 
-            # Calculate available height for the scrollable dialogue text
-            # Reserve more space at bottom for input field and prompts
-            # prompt_y will be at dialog_h - 2, input field at dialog_h - 4, content ends at dialog_h - 6
-            max_content_h = (dialog_h - 6) - content_y_start_for_dialogue + 1 
-            if max_content_h < 1: max_content_h = 1 # Ensure at least 1 line if window is tiny
+            attributes = curses.A_NORMAL
+            if style_tag == "ITALIC":
+                attributes = curses.A_DIM 
+            elif style_tag == "BOLD": 
+                attributes = curses.A_BOLD
 
-            state = self.game_state.oracle_interaction_state
-            current_dialogue_entries = self.game_state.oracle_current_dialogue
-            
-            # --- Prepare all dialogue lines by wrapping them ---
-            all_wrapped_lines = []
-            for entry in current_dialogue_entries:
-                # Each entry in oracle_current_dialogue might be a single string or already a list of lines
-                # For simplicity, ensure we treat it as a single block of text to be wrapped.
-                # If entries are pre-split for other reasons, this might need adjustment.
-                # For now, assume each item in current_dialogue_entries is one "paragraph" or message.
-                if isinstance(entry, str):
-                    wrapped_entry_lines = self._wrap_text_for_dialog(entry, max_content_w)
-                    all_wrapped_lines.extend(wrapped_entry_lines)
-                elif isinstance(entry, list): # If it's already a list of lines (e.g. from canned responses)
-                    for sub_line in entry:
-                         wrapped_sub_lines = self._wrap_text_for_dialog(sub_line, max_content_w)
-                         all_wrapped_lines.extend(wrapped_sub_lines)
-                else: # Should not happen
-                    all_wrapped_lines.append(f"(Invalid dialogue entry: {type(entry)})")
+            wrapped_sub_lines = self._wrap_text_for_dialog(text_line, content_w)
 
+            for sub_line_idx, sub_line in enumerate(wrapped_sub_lines):
+                if current_draw_y >= content_y_start + max_content_h:
+                    break
+                
+                current_line_text_to_display = sub_line
+                current_line_x_offset = 0
 
-            # --- Paging Logic ---
-            page_start_index = self.game_state.oracle_dialogue_page_start_index
-            total_lines = len(all_wrapped_lines)
-            # Ensure page_start_index is valid
-            if page_start_index >= total_lines and total_lines > 0:
-                page_start_index = total_lines - 1 
-            if page_start_index < 0: # Should not happen if input handler is correct
-                page_start_index = 0
-            self.game_state.oracle_dialogue_page_start_index = page_start_index # Update game_state if corrected
-            
-            lines_to_display_on_page = all_wrapped_lines[page_start_index : page_start_index + max_content_h]
+                # Check if this is the first sub-line of the first visible (focused) entry
+                is_focused_line = (local_entry_idx == 0 and sub_line_idx == 0)
 
-            current_draw_y = content_y_start_for_dialogue
-            for line_text in lines_to_display_on_page:
-                if current_draw_y <= (dialog_h - 6): # Ensure we don't write over reserved space for input/prompts
+                if is_focused_line:
                     try:
-                        dialog_win.addstr(current_draw_y, content_x, line_text)
+                        # Draw the indicator ">"
+                        dialog_win.addstr(current_draw_y, content_x, ">", attributes)
+                    except curses.error:
+                        pass # Ignore error if indicator can't be drawn
+                    current_line_x_offset = 2 # Indent text by 2 characters (for "> ")
+
+                    # If the line was full width, we need to truncate it to fit after the indicator
+                    max_len_for_indented_text = content_w - current_line_x_offset
+                    if len(sub_line) > max_len_for_indented_text:
+                        current_line_text_to_display = sub_line[:max_len_for_indented_text]
+                    # else, sub_line is short enough or already fits, use as is.
+
+                try:
+                    dialog_win.addstr(current_draw_y, content_x + current_line_x_offset, current_line_text_to_display, attributes)
+                except curses.error: 
+                    pass 
+                current_draw_y += 1
+        
+        # After rendering historical/committed dialogue, render the live streaming buffer if active
+        if self.game_state.oracle_streaming_active and hasattr(self.game_state, 'oracle_streaming_line_buffer'):
+            live_text, live_style = self.game_state.oracle_streaming_line_buffer
+            if live_text: # Only render if there's text in the live buffer
+                live_attributes = curses.A_NORMAL
+                if live_style == "ITALIC":
+                    live_attributes = curses.A_DIM
+                elif live_style == "BOLD":
+                    live_attributes = curses.A_BOLD
+                
+                # Wrap the live text using the renderer's own wrapper
+                wrapped_live_sub_lines = self._wrap_text_for_dialog(live_text, content_w)
+                
+                for sub_line in wrapped_live_sub_lines:
+                    if current_draw_y >= content_y_start + max_content_h:
+                        break # Stop if we run out of dialogue box space
+                    try:
+                        dialog_win.addstr(current_draw_y, content_x, sub_line, live_attributes)
                     except curses.error: 
                         pass 
                     current_draw_y += 1
 
-            # --- Calculate prompt positions with better spacing ---
-            input_field_y = dialog_h - 4    # Input field area (2 lines from bottom)
-            prompt_y = dialog_h - 2          # Main prompt line (1 line from bottom)
+        if total_lines > max_content_h or (self.game_state.oracle_streaming_active and live_text): # Adjust scrollbar logic if live text is also present
+            # Determine if scroll up indicator is needed
+            if self.game_state.oracle_dialogue_page_start_index > 0:
+                dialog_win.addstr(content_y_start, dialog_w - 3, "^", curses.A_REVERSE) 
+            # Determine if scroll down indicator is needed
+            # Consider live text not yet in total_lines for scroll down indicator
+            effective_total_lines = total_lines
+            if self.game_state.oracle_streaming_active and self.game_state.oracle_streaming_line_buffer[0]:
+                # Estimate lines the live buffer will take, could be 1 or more after wrapping
+                # For simplicity, assume it adds at least one more potential line if not empty.
+                effective_total_lines += 1 
 
-            # --- Paging Info Display ---
-            paging_info_parts = []
-            if page_start_index > 0:
-                paging_info_parts.append("[↑]")
-            if page_start_index + max_content_h < total_lines:
-                paging_info_parts.append("[↓]")
+            if self.game_state.oracle_dialogue_page_start_index < effective_total_lines - max_content_h:
+                dialog_win.addstr(content_y_start + max_content_h - 1, dialog_w - 3, "v", curses.A_REVERSE)
+
+        prompt_y = dialog_h - 3
+        dialog_win.hline(prompt_y -1, 1, curses.ACS_HLINE, dialog_w - 2)
+        
+        interaction_state = self.game_state.oracle_interaction_state
+        prompt_prefix = ""
+        display_prompt_buffer = True
+
+        if interaction_state == "AWAITING_OFFERING":
+            prompt_prefix = "Offer? (Y/N): "
+        elif interaction_state == "AWAITING_PROMPT":
+            prompt_prefix = "Your Query: "
+        elif interaction_state == "AWAITING_LLM_RESPONSE":
+            prompt_prefix = "Query Sent..."
+            display_prompt_buffer = False 
+        elif interaction_state == "STREAMING_RESPONSE":
+            prompt_prefix = "Oracle Speaks..." 
+            display_prompt_buffer = False
+        elif interaction_state == "SHOWING_CANNED_RESPONSE" or self.game_state.oracle_no_api_second_stage_pending:
+            prompt_prefix = "(Press Enter)"
+            display_prompt_buffer = False
+        else: 
+            prompt_prefix = "Oracle: "
+            display_prompt_buffer = False
+
+        dialog_win.addstr(prompt_y, content_x, prompt_prefix)
+        
+        if display_prompt_buffer:
+            prompt_text = self.game_state.oracle_prompt_buffer
+            max_prompt_len = content_w - len(prompt_prefix) -1 
             
-            paging_display_str = " ".join(paging_info_parts)
+            if len(prompt_text) > max_prompt_len:
+                prompt_text_to_show = "..." + prompt_text[-(max_prompt_len-3):]
+            else:
+                prompt_text_to_show = prompt_text
 
-
-            if state == "AWAITING_OFFERING":
-                # Offering text (which is usually short) is part of current_dialogue_entries and handled above.
-                # Display player's current relevant resources for offering
-                # This part needs to be drawn *after* the main dialogue, respecting its paged height.
-                # The `current_draw_y` variable now holds the y position *after* the last dialogue line was drawn.
-
-                resource_lines_to_show = []
-                for res, needed in self.game_state.oracle_offering_cost.items():
-                    current_amount = self.game_state.inventory.resources.get(res, 0)
-                    resource_lines_to_show.append(f"  - {res.replace('_', ' ').capitalize()}: {current_amount} (Need {needed})")
-
-                # Check if there's enough vertical space for "Your current holdings:" + resource lines
-                # Resources must fit between current_draw_y and input_field_y - 1
-                resource_area_start_y = current_draw_y 
-                
-                required_lines_for_resources = 1 + len(resource_lines_to_show) # "Holdings:" + each resource line
-                if (input_field_y - 1) - resource_area_start_y + 1 >= required_lines_for_resources:
-                    dialog_win.addstr(resource_area_start_y, content_x, "Your current holdings:")
-                    resource_area_start_y +=1
-                    for r_line in resource_lines_to_show:
-                        if resource_area_start_y < input_field_y - 1:  # Ensure we don't overlap with input area
-                            dialog_win.addstr(resource_area_start_y, content_x + 1, r_line) # Indent resource lines
-                            resource_area_start_y +=1
-                
-                final_prompt_text = "Accept offering? (Y/N)"
-                if paging_display_str: # Add paging if offering dialogue itself is paged (unlikely but possible)
-                    final_prompt_text = f"{paging_display_str} {final_prompt_text}"
-                dialog_win.addstr(prompt_y, content_x, final_prompt_text)
-
-            elif state == "SHOWING_CANNED_RESPONSE" or state == "SHOWING_LLM_RESPONSE":
-                base_prompt = "(Enter to continue, ESC to exit)"
-                if paging_display_str:
-                    dialog_win.addstr(prompt_y, content_x, f"{paging_display_str} {base_prompt}")
-                else: # If no paging needed, simplify the prompt for single page views
-                    dialog_win.addstr(prompt_y, content_x, base_prompt)
+            dialog_win.addstr(prompt_y, content_x + len(prompt_prefix), prompt_text_to_show)
             
-            elif state == "SHOWING_CANNED_RESPONSE_FINAL_NO_API":
-                # Specific prompt for the final stage of the no-API key canned response
-                final_no_api_prompt = "(ESC to depart)"
-                if paging_display_str: # Unlikely to have paging here, but good to be thorough
-                    dialog_win.addstr(prompt_y, content_x, f"{paging_display_str} {final_no_api_prompt}")
-                else:
-                    dialog_win.addstr(prompt_y, content_x, final_no_api_prompt)
+            if (self.game_state.tick // 5) % 2 == 0: 
+                cursor_x_pos = content_x + len(prompt_prefix) + len(prompt_text_to_show)
+                if cursor_x_pos < dialog_w -1: 
+                    try:
+                        dialog_win.addch(prompt_y, cursor_x_pos, '_', curses.A_BLINK)
+                    except curses.error: 
+                        pass 
 
-            elif state == "AWAITING_PROMPT":
-                # Paging info (for dialogue history) - display on separate line if present
-                if paging_display_str:
-                    dialog_win.addstr(input_field_y - 1, content_x, paging_display_str)
+        dialog_win.refresh()
 
-                # Input field for player's query - now guaranteed to have dedicated space
-                # Wrap the prompt buffer to prevent overflow
-                prompt_with_cursor = f"> {self.game_state.oracle_prompt_buffer}_"
-                max_input_width = max_content_w - 2  # Leave some margin
-                
-                if len(prompt_with_cursor) <= max_input_width:
-                    # Single line input
-                    dialog_win.addstr(input_field_y, content_x, prompt_with_cursor)
-                else:
-                    # Multi-line input wrapping
-                    wrapped_input = self._wrap_text_for_dialog(prompt_with_cursor, max_input_width)
-                    current_input_y = input_field_y
-                    for line in wrapped_input[-2:]:  # Show last 2 lines of input to keep cursor visible
-                        if current_input_y <= prompt_y - 1:  # Don't overlap with prompt line
-                            dialog_win.addstr(current_input_y, content_x, line)
-                            current_input_y += 1
-
-                # General instruction for prompt state on the main prompt line
-                if not paging_display_str: # Only show instruction if no paging buttons shown above
-                    dialog_win.addstr(prompt_y, content_x, "Type query, Enter when ready. ESC to leave.")
-                else:
-                    # If paging is shown above input, just show a shorter prompt
-                    dialog_win.addstr(prompt_y, content_x, "Enter when ready. ESC to leave.")
-
-            elif state == "AWAITING_LLM_RESPONSE":
-                # Show a more informative message with progress indication
-                elapsed_time = self.game_state.tick - getattr(self.game_state, 'oracle_query_start_tick', self.game_state.tick)
-                dots = "." * (elapsed_time % 4)  # Animate dots 0, 1, 2, 3, 0, 1, 2, 3...
-                progress_msg = f"The Oracle is contemplating{dots:4s} (ESC to cancel)"
-                dialog_win.addstr(prompt_y, content_x, progress_msg)
-            
-            # General exit prompt if not explicitly handled and no paging (less relevant now with paging info)
-            if not paging_display_str and state not in ["SHOWING_CANNED_RESPONSE", "AWAITING_OFFERING", "SHOWING_LLM_RESPONSE", "AWAITING_PROMPT", "AWAITING_LLM_RESPONSE", "SHOWING_CANNED_RESPONSE_FINAL_NO_API"]:
-                 dialog_win.addstr(prompt_y, content_x, "(Press ESC to exit dialog)")
-
-
-            dialog_win.refresh()
-
-        except curses.error as e:
-            # If dialog window creation/drawing fails, log it but don't crash
-            self.game_state.add_debug_message(f"Renderer: Oracle dialog curses error: {e}")
-            # Potentially try to fall back to a simpler message on main screen if possible
-            # For now, just ensures the game doesn't crash if dialog can't be drawn.
-            pass
-            
     def _wrap_text_for_dialog(self, text: str, max_width: int) -> List[str]:
         """Simple text wrapper for dialog lines."""
+        # If the text already fits, and game_logic.py presumably already formatted it,
+        # return it as a single line to prevent re-wrapping by the renderer.
+        if len(text) <= max_width:
+            return [text] if text else [""] # Ensure at least one line even for empty input text
+
         words = text.split(' ')
         lines = []
         current_line = ""

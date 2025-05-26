@@ -28,6 +28,8 @@ class Dwarf:
         task_ticks (int): The number of game ticks remaining for the current task.
         mining_skill (int): The dwarf's proficiency in mining/chopping tasks, affecting speed.
         task_queue (list[Task]): A queue of tasks waiting to be assigned to this dwarf.
+        action_progress (int): The progress of the current action for the dwarf.
+        previous_state (str): The previous state of the dwarf.
     """
     def __init__(self, x: int, y: int, id: int) -> None:
         self.x: int = x
@@ -44,6 +46,11 @@ class Dwarf:
         self.mining_skill: int = random.randint(1, 3)
         # Ensure Task type hint is valid
         self.task_queue: list['Task'] = []
+        self.action_progress: int = 0
+        self.previous_state: str = 'idle'
+
+    def __str__(self):
+        return f"Dwarf {self.id} at ({self.x}, {self.y}) - State: {self.state}, Task: {self.task.type if self.task else 'None'}"
 
 class Animal:
     """Represents a simple animal entity on the map.

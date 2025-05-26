@@ -93,23 +93,21 @@ llm_config.ini~
 
 # Legacy Oracle configuration files (deprecated)
 # These files have been replaced by llm_config.ini
-# oracle_config.ini - Legacy configuration file for users
-# oracle_config.ini~ - Legacy backup files
-# oracle_config.ini.example - Legacy configuration template for users
 
 # LLM request tracking and logs (generated files)
 oracle_request_tracking.json
-oracle_interactions.log
+# oracle_interactions.log # This will be llm_interactions.log, handled below
 
 # Other log files
 *.log
 debug.log
 logs/
+llm_interactions.log # Add the new general LLM log file name
 
 # === KEEP THESE FILES (examples and documentation) ===
 # verify_llm_setup.py        - Setup verification tool for users
 
 # === TEST FILES WITH API KEYS (NEVER commit) ===
-test_xai_direct.py
-test_integration_xai_direct.py
-tests/test_integration_xai_direct.py 
+# These files might use real API keys for testing live endpoints.
+# Ensure they are ALWAYS ignored by git.
+tests/test_integration_xai_direct.py # Located in tests/ 

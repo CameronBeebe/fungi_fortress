@@ -81,4 +81,4 @@ python -m pytest tests/test_security.py -v
 - The auto-detection is based on model names
 
 **Still having issues?**
-- Run `python verify_llm_setup.py` for detailed diagnostics 
+- Run `python verify_llm_setup.py` for detailed diagnostics. This script tests API key validity, provider detection, and basic XAI API communication directly. Note that the main game uses a more abstracted interface for LLM calls. 

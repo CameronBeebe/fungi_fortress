@@ -134,6 +134,121 @@ def a_star(map_grid: MapGrid, start: Tuple[int, int], goal: Tuple[int, int], adj
                     heapq.heappush(open_set, (f_score[neighbor], neighbor))
     return None
 
+def a_star_for_illumination(map_grid: MapGrid, start: Tuple[int, int], goal: Tuple[int, int]) -> Optional[List[Tuple[int, int]]]:
+    """Finds the shortest path for illumination, treating water as walkable.
+
+    Args:
+        map_grid: The 2D list representing the map, containing Tile objects.
+                  Expected to have a `walkable` property on each tile.
+        start (Tuple[int, int]): The starting coordinates (x, y).
+        goal (Tuple[int, int]): The target coordinates (x, y).
+
+    Returns:
+        Optional[List[Tuple[int, int]]]: A list of (x, y) tuples representing the path
+                                        from start (exclusive) to the end point (inclusive).
+                                        Returns an empty list if start == goal.
+                                        Returns None if no path is found.
+    """
+    def heuristic(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    if not (0 <= start[0] < len(map_grid[0]) and 0 <= start[1] < len(map_grid)):
+        return None
+    # For illumination, start tile doesn't strictly need to be walkable by characters
+    # if not map_grid[start[1]][start[0]].walkable:
+    #     return None
+
+    if start == goal:
+        return []
+
+    open_set = [(0, start)]
+    came_from: Dict[Tuple[int, int], Optional[Tuple[int, int]]] = {}
+    g_score = {start: 0}
+    f_score = {start: heuristic(start, goal)}
+
+    width, height = len(map_grid[0]), len(map_grid)
+    directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+
+    while open_set:
+        current = heapq.heappop(open_set)[1]
+        if current == goal:
+            path = []
+            while current in came_from:
+                path.append(current)
+                current = came_from[current]
+            return path[::-1]
+
+        for dx, dy in directions:
+            neighbor = (current[0] + dx, current[1] + dy)
+            if 0 <= neighbor[0] < width and 0 <= neighbor[1] < height:
+                tile = map_grid[neighbor[1]][neighbor[0]]
+                # MODIFICATION: Allow pathing over water for illumination
+                if tile.walkable or (tile.entity and tile.entity.name == "Water"):
+                    tentative_g_score = g_score[current] + 1
+                    if tentative_g_score < g_score.get(neighbor, float('inf')):
+                        came_from[neighbor] = current
+                        g_score[neighbor] = tentative_g_score
+                        f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
+                        heapq.heappush(open_set, (f_score[neighbor], neighbor))
+    return None
+
+def find_path_on_network(network_graph: Dict[Tuple[int, int], List[Tuple[int, int]]],
+                           start_node: Tuple[int, int],
+                           end_node: Tuple[int, int]) -> Optional[List[Tuple[int, int]]]:
+    """Finds the shortest path between two nodes in a network graph using BFS.
+
+    Args:
+        network_graph: The adjacency list representation of the network.
+        start_node: The starting node coordinates (x, y).
+        end_node: The target node coordinates (x, y).
+
+    Returns:
+        A list of (x, y) tuples representing the path from start_node to end_node (inclusive).
+        Returns None if no path is found or if start/end nodes are not in the graph.
+    """
+    if start_node not in network_graph or end_node not in network_graph:
+        return None # Start or end node doesn't exist in the network
+
+    if start_node == end_node:
+        return [start_node] # Path to self is just the node itself
+
+    queue: List[Tuple[Tuple[int, int], List[Tuple[int, int]]]] = [(start_node, [start_node])] # (current_node, path_so_far)
+    visited: Set[Tuple[int, int]] = {start_node}
+
+    while queue:
+        current, path = queue.pop(0)
+
+        for neighbor in network_graph.get(current, []):
+            if neighbor == end_node:
+                return path + [neighbor] # Path found
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append((neighbor, path + [neighbor]))
+    
+    return None # No path found
+
+def bresenham_line(x0: int, y0: int, x1: int, y1: int) -> List[Tuple[int, int]]:
+    """Generates coordinates for a line between two points using Bresenham's algorithm."""
+    points = []
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx - dy
+
+    while True:
+        points.append((x0, y0))
+        if x0 == x1 and y0 == y1:
+            break
+        e2 = 2 * err
+        if e2 > -dy:
+            err -= dy
+            x0 += sx
+        if e2 < dx:
+            err += dx
+            y0 += sy
+    return points
+
 # Comments:
 # - Updated a_star to support adjacent=True, finding the nearest walkable tile next to goal.
 # - Removed redundant checks; now unified for all pathing needs.

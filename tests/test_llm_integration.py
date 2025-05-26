@@ -8,7 +8,7 @@ from fungi_fortress.game_logic import GameLogic
 from fungi_fortress.input_handler import InputHandler
 from fungi_fortress.tiles import Tile, ENTITY_REGISTRY
 from fungi_fortress.entities import GameEntity
-from fungi_fortress.config_manager import OracleConfig
+from fungi_fortress.config_manager import LLMConfig
 from fungi_fortress import llm_interface # Import the module itself
 
 # Minimal setup for testing
@@ -33,9 +33,9 @@ def game_state_fixture() -> GameState:
         # Patch network generation as well
         with patch('fungi_fortress.game_state.generate_mycelial_network') as mock_gen_net:
             mock_gen_net.return_value = {} # Empty network
-            # Create a default OracleConfig for the fixture
-            default_oracle_config = OracleConfig(api_key="fixture_test_key", model_name="fixture_model", context_level="medium")
-            gs = GameState(oracle_config=default_oracle_config)
+            # Create a default LLMConfig for the fixture
+            default_llm_config = LLMConfig(api_key="fixture_test_key", model_name="fixture_model", context_level="medium")
+            gs = GameState(llm_config=default_llm_config)
             gs.dwarves = [Dwarf(1, 1, 0)] # Ensure at least one dwarf exists
             gs.characters = [] # Start with no characters unless added by test
             gs.event_queue = [] # Ensure empty event queue
@@ -165,7 +165,7 @@ def test_llm_prompt_context_levels(
 ):
     """Tests that the LLM prompt is constructed correctly based on context_level."""
     gs = game_state_fixture
-    gs.oracle_config.context_level = context_level
+    gs.llm_config.context_level = context_level
 
     test_player_query = "What is the meaning of this mushroom?"
     event_data: GameEvent = {

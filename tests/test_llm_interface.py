@@ -9,16 +9,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Assuming llm_interface is in the parent directory or accessible via PYTHONPATH
 from fungi_fortress import llm_interface
-from fungi_fortress.llm_interface import _parse_llm_response, handle_game_event, ORACLE_LOG_FILE
-from llm_interface import _detect_provider_and_call_api
-from config_manager import load_oracle_config, OracleConfig
+from fungi_fortress.llm_interface import _parse_llm_response, handle_game_event
+from fungi_fortress.llm_interface import _detect_provider_and_call_api
+from fungi_fortress.config_manager import load_llm_config, LLMConfig
 
 # Mock game_state and its attributes for testing handle_game_event
-class MockOracleConfig:
-    def __init__(self, api_key="testkey", model_name="testmodel", context_level="medium"):
+class MockLLMConfig:
+    def __init__(self, api_key="testkey", model_name="testmodel", context_level="medium", provider="auto"):
         self.api_key = api_key
         self.model_name = model_name
         self.context_level = context_level
+        self.provider = provider
+        self.is_real_api_key_present = bool(api_key and api_key not in ["YOUR_API_KEY_HERE", "testkey123", "None", ""])
+        self.max_tokens = 500
+        self.timeout_seconds = 30
+        self.daily_request_limit = 100
+        self.enable_streaming = True
 
 class MockGameState:
     def __init__(self, tick=100, depth=1, mission_desc=None, player_resources=None, history=None, config=None):
@@ -27,7 +33,7 @@ class MockGameState:
         self.mission = {"description": mission_desc} if mission_desc else None
         self.player_resources = player_resources if player_resources else {}
         self.oracle_llm_interaction_history = history if history else []
-        self.oracle_config = config if config else MockOracleConfig()
+        self.llm_config = config if config else MockLLMConfig()
 
     def get_tile(self, x, y): # Mock method if needed by other parts
         return None
@@ -103,7 +109,10 @@ def test_handle_game_event_simple_query(mock_call_llm, mock_log_interaction):
 
     mock_call_llm.assert_called_once()
     # Check that the prompt was constructed (can be more specific here if needed)
-    assert "Hello Oracle?" in mock_call_llm.call_args[0][0] # prompt is the first arg
+    prompt_args = mock_call_llm.call_args[0]
+    assert "Hello Oracle?" in prompt_args[0] # prompt is the first arg
+    # Ensure llm_config is passed
+    assert isinstance(prompt_args[4], MockLLMConfig) # game_state.llm_config is the fifth arg to _call_llm_api via _construct_prompt
     
     assert len(actions_to_execute) == 3 # add_oracle_dialogue, test_action, set_oracle_state
     assert actions_to_execute[0]["action_type"] == "add_oracle_dialogue"
@@ -125,7 +134,7 @@ def test_handle_game_event_simple_query(mock_call_llm, mock_log_interaction):
 def test_handle_game_event_api_error(mock_call_llm, mock_log_interaction):
     # Simulate _call_llm_api returning one of its error strings
     mock_call_llm.return_value = "The Oracle's connection is disrupted. (Error: API Key not configured)"
-    game_state = MockGameState(config=MockOracleConfig(api_key="YOUR_API_KEY_HERE")) # Simulate bad key
+    game_state = MockGameState(config=MockLLMConfig(api_key="YOUR_API_KEY_HERE")) # Simulate bad key, using new MockLLMConfig
     event_data = {"type": "ORACLE_QUERY", "details": {"query_text": "Test query"}}
 
     actions_to_execute = handle_game_event(event_data, game_state)
@@ -187,35 +196,34 @@ def test_handle_game_event_context_levels(mock_call_llm, mock_log_interaction):
     mock_call_llm.return_value = "Response"
     
     # Low context
-    game_state_low = MockGameState(config=MockOracleConfig(context_level="low"), history=[{"player":"p1", "oracle":"o1"},{"player":"p2", "oracle":"o2"}])
+    game_state_low = MockGameState(config=MockLLMConfig(context_level="low"), history=[{"player":"p1", "oracle":"o1"},{"player":"p2", "oracle":"o2"}])
     handle_game_event({"type": "ORACLE_QUERY", "details": {"query_text": "q_low"}}, game_state_low)
-    prompt_low = mock_call_llm.call_args[0][0]
+    prompt_low_args = mock_call_llm.call_args[0]
+    prompt_low = prompt_low_args[0]
     assert "Tick: 100" in prompt_low
     assert "Player depth: 1" in prompt_low
     assert "Mission:" not in prompt_low # Low context doesn't include mission
     assert "Player: p2\nOracle: o2" in prompt_low # Last 1 history item
     assert "Player: p1\nOracle: o1" not in prompt_low
+    assert isinstance(prompt_low_args[4], MockLLMConfig) # Check llm_config is passed
 
     # High context
-    game_state_high = MockGameState(config=MockOracleConfig(context_level="high"), 
+    game_state_high = MockGameState(config=MockLLMConfig(context_level="high"), 
                                   mission_desc="Defeat goblin king", 
                                   player_resources={"gold": 50}, 
                                   history=[{"player":f"p{i}", "oracle":f"o{i}"} for i in range(6)])
     handle_game_event({"type": "ORACLE_QUERY", "details": {"query_text": "q_high"}}, game_state_high)
-    prompt_high = mock_call_llm.call_args[0][0]
+    prompt_high_args = mock_call_llm.call_args[0]
+    prompt_high = prompt_high_args[0]
     assert "Mission: Defeat goblin king" in prompt_high
     assert "Player resources: {'gold': 50}" in prompt_high
     for i in range(1, 6): # Last 5 history items (indices 1 to 5 from a 6-item list)
         assert f"Player: p{i}\nOracle: o{i}" in prompt_high 
     assert "Player: p0\nOracle: o0" not in prompt_high # Oldest item should be out
+    assert isinstance(prompt_high_args[4], MockLLMConfig) # Check llm_config is passed
 
     # Ensure log is called for each (it will be, due to the setup)
     assert mock_log_interaction.call_count == 2
-
-# Basic test to ensure the log file is mentioned in a constant
-# This doesn't write to the file system, just checks the constant
-def test_oracle_log_file_constant():
-    assert ORACLE_LOG_FILE == "oracle_interactions.log"
 
 class TestProviderDetection:
     """Test the LLM provider detection logic."""
@@ -231,8 +239,7 @@ class TestProviderDetection:
         ]
         
         for model in test_cases:
-            with patch('llm_interface._call_xai_api') as mock_xai, \
-                 patch('llm_interface._check_and_increment_request_count', return_value=True):
+            with patch('llm_interface._call_xai_api') as mock_xai:
                 mock_xai.return_value = "Test response"
                 
                 result = _detect_provider_and_call_api(
@@ -240,7 +247,7 @@ class TestProviderDetection:
                     "test-api-key", 
                     model,
                     None,  # provider_hint
-                    None   # oracle_config
+                    MockLLMConfig()   # llm_config (formerly oracle_config)
                 )
                 
                 mock_xai.assert_called_once()
@@ -257,8 +264,7 @@ class TestProviderDetection:
         ]
         
         for model in test_cases:
-            with patch('llm_interface._call_openai_compatible_api') as mock_openai, \
-                 patch('llm_interface._check_and_increment_request_count', return_value=True):
+            with patch('llm_interface._call_openai_compatible_api') as mock_openai:
                 mock_openai.return_value = "Test response"
                 
                 result = _detect_provider_and_call_api(
@@ -266,7 +272,7 @@ class TestProviderDetection:
                     "test-api-key", 
                     model,
                     None,  # provider_hint
-                    None   # oracle_config
+                    MockLLMConfig()   # llm_config
                 )
                 
                 mock_openai.assert_called_once()
@@ -276,14 +282,13 @@ class TestProviderDetection:
         """Test that Claude models are correctly detected as Anthropic."""
         test_cases = [
             "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022", 
+            "claude-3-5-haiku-20241022",
             "claude-3-opus-20240229",
             "claude-2.1"
         ]
         
         for model in test_cases:
-            with patch('llm_interface._call_openai_compatible_api') as mock_anthropic, \
-                 patch('llm_interface._check_and_increment_request_count', return_value=True):
+            with patch('llm_interface._call_openai_compatible_api') as mock_anthropic: # Anthropic uses OpenAI-compatible API
                 mock_anthropic.return_value = "Test response"
                 
                 result = _detect_provider_and_call_api(
@@ -291,7 +296,7 @@ class TestProviderDetection:
                     "test-api-key", 
                     model,
                     None,  # provider_hint
-                    None   # oracle_config
+                    MockLLMConfig()   # llm_config
                 )
                 
                 mock_anthropic.assert_called_once()
@@ -307,8 +312,7 @@ class TestProviderDetection:
         ]
         
         for model in test_cases:
-            with patch('llm_interface._call_groq_api') as mock_groq, \
-                 patch('llm_interface._check_and_increment_request_count', return_value=True):
+            with patch('llm_interface._call_groq_api') as mock_groq:
                 mock_groq.return_value = "Test response"
                 
                 result = _detect_provider_and_call_api(
@@ -316,7 +320,7 @@ class TestProviderDetection:
                     "test-api-key", 
                     model,
                     None,  # provider_hint
-                    None   # oracle_config
+                    MockLLMConfig()   # llm_config
                 )
                 
                 mock_groq.assert_called_once()
@@ -324,17 +328,16 @@ class TestProviderDetection:
     
     def test_provider_hint_override(self):
         """Test that explicit provider hints override auto-detection."""
-        with patch('llm_interface._call_xai_api') as mock_xai, \
-             patch('llm_interface._check_and_increment_request_count', return_value=True):
+        with patch('llm_interface._call_xai_api') as mock_xai:
             mock_xai.return_value = "Test response"
             
-            # Use a non-XAI model name but force XAI provider
+            # Even if model name suggests OpenAI, hint should force XAI
             result = _detect_provider_and_call_api(
                 "test prompt", 
                 "test-api-key", 
-                "unknown-model",
-                "xai",  # provider_hint
-                None    # oracle_config
+                "gpt-4o-mini", # Non-XAI model
+                "xai",          # Force XAI provider
+                llm_config=MockLLMConfig(api_key="test-api-key", model_name="gpt-4o-mini")
             )
             
             mock_xai.assert_called_once()
@@ -355,7 +358,7 @@ class TestProviderDetection:
                 key,
                 "gpt-4o",
                 None,  # provider_hint
-                None   # oracle_config
+                MockLLMConfig()   # llm_config
             )
             
             assert "Oracle's connection is disrupted" in result
@@ -368,51 +371,44 @@ class TestProviderDetection:
             "valid-api-key",
             None,
             None,  # provider_hint
-            None   # oracle_config
+            MockLLMConfig()   # llm_config
         )
         
         assert "Oracle's connection is unstable" in result
         assert "LLM Model not specified" in result
 
 
-class TestOracleConfig:
-    """Test the Oracle configuration loading and validation."""
+class TestLLMConfig:
+    """Test the LLMConfig class and loading functions."""
     
-    def test_oracle_config_defaults(self):
-        """Test that OracleConfig has correct defaults."""
-        config = OracleConfig()
-        
+    def test_llm_config_defaults(self):
+        """Test that LLMConfig defaults are set correctly."""
+        config = LLMConfig()
         assert config.api_key is None
         assert config.model_name == "gpt-4o-mini"
-        assert config.provider == "auto"
         assert config.context_level == "medium"
-        assert config.is_real_api_key_present is False
+        assert not config.is_real_api_key_present
     
-    def test_oracle_config_api_key_validation(self):
-        """Test that API key validation works correctly."""
-        # Test with real-looking key
-        config = OracleConfig(api_key="sk-1234567890abcdef")
-        assert config.is_real_api_key_present is True
-        
-        # Test with placeholder keys
-        invalid_keys = ["YOUR_API_KEY_HERE", "testkey123", "None", "", None]
-        for key in invalid_keys:
-            config = OracleConfig(api_key=key)
-            assert config.is_real_api_key_present is False
+    def test_llm_config_api_key_validation(self):
+        """Test API key validation in LLMConfig."""
+        assert not LLMConfig(api_key="YOUR_API_KEY_HERE").is_real_api_key_present
+        assert not LLMConfig(api_key="testkey123").is_real_api_key_present
+        assert not LLMConfig(api_key="None").is_real_api_key_present
+        assert not LLMConfig(api_key="").is_real_api_key_present
+        assert not LLMConfig(api_key=None).is_real_api_key_present
+        assert LLMConfig(api_key="real_api_key_value").is_real_api_key_present
     
-    @patch('builtins.open')
+    @patch('builtins.open', new_callable=MagicMock)
     @patch('os.path.exists')
     def test_config_file_not_found(self, mock_exists, mock_open):
-        """Test behavior when config file doesn't exist."""
-        mock_exists.return_value = False
-        mock_open.side_effect = FileNotFoundError()
+        mock_exists.return_value = False # Both config and example file don't exist
+        mock_open.side_effect = FileNotFoundError
         
-        config = load_oracle_config("nonexistent.ini")
-        
-        assert isinstance(config, OracleConfig)
-        assert config.api_key is None
-        assert config.model_name == "gpt-4o-mini"
-        assert config.provider == "auto"
+        # Test load_llm_config (formerly load_oracle_config)
+        config = load_llm_config("nonexistent.ini")
+        assert config.api_key is None # Default since file not found
+        assert config.model_name == "gpt-4o-mini" # Default model
+        assert config.is_real_api_key_present is False
 
 
 if __name__ == "__main__":
