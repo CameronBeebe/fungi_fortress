@@ -131,6 +131,27 @@ This project uses `pytest` for testing and `mypy` for static type checking.
 *   **Improve Test Coverage:** Write comprehensive unit and integration tests for core game logic, map generation, entities, and utilities.
 *   **Enhance Type Hinting:** Add type hints throughout the codebase and resolve any issues reported by `mypy` to improve code robustness and maintainability.
 
+### Detailed Technical TODOs
+
+*   **Event System (`events.py`):**
+    *   Implement the `trigger_event` function to handle game event initiation.
+    *   Implement the `check_events` function for ongoing event condition checking.
+*   **Interactions (`interactions.py`):**
+    *   Develop and implement the UI and core functionality for the Dwarven Sporeforge interaction (`interact_dwarven_sporeforge_logic`).
+*   **Map Generation & Entities (`map_generation.py`, `tiles.py`):**
+    *   Define a "mineral_deposit" entity in the `ENTITY_REGISTRY` and integrate its spawning into grotto map generation.
+    *   Define a walkable "shallow_water" entity in the `ENTITY_REGISTRY` and implement its use for river fords in surface map generation. This could also help address pathfinding issues across water.
+*   **LLM Integration (`llm_interface.py`):**
+    *   Implement true streaming support for Anthropic models in `_detect_provider_and_call_api_streaming` instead of the current non-streaming fallback.
+    *   Expand `handle_game_event` to process a wider variety of game events (e.g., dynamic event generation, NPC behavior adaptations) using LLM capabilities.
+    *   Refine LLM prompt context by selectively adding more detailed and relevant game state information to `handle_oracle_query_streaming` and `handle_oracle_query_non_streaming`.
+    *   Standardize LLM provider detection: Ensure the logic in `_detect_provider_and_call_api` (for non-streaming calls) is consistent with `config_manager.detect_provider_from_model`, ideally by calling the centralized function.
+    *   Consider creating a dedicated `_call_anthropic_api` function for non-streaming Anthropic calls if it offers unique features or requires specific error handling beyond the generic OpenAI-compatible wrapper.
+*   **Gameplay Features:**
+    *   Further develop dwarf task management (e.g., more complex tasks, dwarf skills affecting outcomes beyond mining).
+    *   Expand shop functionality (e.g., dynamic pricing, wider item variety).
+    *   Flesh out the Mycelial Network mechanics beyond path illumination (e.g., resource transfer, environmental effects).
+
 ## Contributing
 
 Contributions are welcome! Please feel free to open issues or submit pull requests. (Further contribution guidelines TBD).
