@@ -41,7 +41,7 @@ dev = [
 ]
 
 [project.scripts]
-fungi = "fungi_fortress.main:main"
+fungi = "main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
