@@ -23,6 +23,7 @@ from .entities import ResourceNode, Structure # Ensure these are imported
 
 # Import a_star_for_illumination and find_path_on_network
 from .utils import bresenham_line, a_star_for_illumination, find_path_on_network
+from .spice import linger_ticks, pulse_sends
 
 if TYPE_CHECKING:
     # Avoid circular import - these types are only needed for hints
@@ -445,7 +446,8 @@ def highlight_path_to_nexus(game: 'GameState', magic_fungi_location: Tuple[int, 
     
     path_colors = [16, 206, 13, 5] # Bright Magenta, Pink, Dark Magenta, Cyan/Blue
     water_highlight_color = 6 # Magenta for water
-    reveal_duration = 75 # Duration for the initial static path reveal
+    exposure = getattr(getattr(game, "player", None), "spore_exposure", 0)
+    reveal_duration = linger_ticks(exposure)
 
     # Apply a static highlight for the initial reveal
     all_highlighted_tiles_on_path = set()
@@ -521,7 +523,8 @@ def initiate_nexus_pulse(game: 'GameState', path_nodes: List[Tuple[int, int]], f
     if path_length == 0:
         return
 
-    num_sends = 3 + (path_length // 5)  # e.g., 3 base pulses, +1 for every 5 path segments
+    exposure = getattr(getattr(game, "player", None), "spore_exposure", 0)
+    num_sends = pulse_sends(path_length, exposure)
     pulse_speed = 3  # Ticks per tile
     pulse_length = 3 # How many tiles the pulse occupies visually
     pulse_color = 201 # Example: Pinkish color for the pulse itself

@@ -21,6 +21,45 @@ from .oracle_logic import get_canned_response
 if TYPE_CHECKING:
     from .game_state import GameState, InteractionEventDetails
 
+
+def bridge_stand(game_state, dwarf, target_x: int, target_y: int):
+    """Tile the dwarf stands on to bridge this water.
+
+    Ordered bridges count as walkable for this check. Water the dwarf still
+    could not reach after those orders is not queued.
+    """
+    planned = set()
+    for task in getattr(game_state.task_manager, "tasks", []):
+        if task.type == "build_bridge" and task.resource_x is not None:
+            planned.add((task.resource_x, task.resource_y))
+    active = getattr(dwarf, "task", None)
+    if active is not None and active.type == "build_bridge" and active.resource_x is not None:
+        planned.add((active.resource_x, active.resource_y))
+    planned.discard((target_x, target_y))
+
+    opened = []
+    height = len(game_state.map)
+    width = len(game_state.map[0]) if height else 0
+    for x, y in planned:
+        if not (0 <= y < height and 0 <= x < width):
+            continue
+        tile = game_state.map[y][x]
+        if not tile.walkable:
+            tile.walkable = True
+            opened.append(tile)
+    try:
+        path = a_star(game_state.map, (dwarf.x, dwarf.y), (target_x, target_y), adjacent=True)
+    finally:
+        for tile in opened:
+            tile.walkable = False
+
+    if path:
+        return path[-1]
+    if path is not None and abs(dwarf.x - target_x) + abs(dwarf.y - target_y) == 1:
+        return (dwarf.x, dwarf.y)
+    return None
+
+
 class InputHandler:
     """Processes user input based on the current game state.
 
@@ -569,25 +608,16 @@ class InputHandler:
                 task_type = 'build_bridge'
                 target_x, target_y = cursor_pos
 
-                # Find adjacent walkable tile for dwarf to stand
-                path = a_star(self.game_state.map, (dwarf.x, dwarf.y), (target_x, target_y), adjacent=True)
-
-                if path is not None and len(path) > 0:
-                    adjacent_x, adjacent_y = path[-1] # Adjacent tile to work from
+                stand = bridge_stand(self.game_state, dwarf, target_x, target_y)
+                if stand is not None:
+                    adjacent_x, adjacent_y = stand
                     task = Task(adjacent_x, adjacent_y, task_type, target_x, target_y)
                     if self.game_state.task_manager.add_task(task):
                         self.game_state.add_debug_message(f"Bridge building task assigned for ({target_x}, {target_y}) via ({adjacent_x}, {adjacent_y})")
                     else:
-                        self.game_state.add_debug_message(f"Failed to add bridge task (manager full?)")
-                elif path is not None and len(path) == 0 and abs(dwarf.x - target_x) + abs(dwarf.y - target_y) == 1:
-                    # Dwarf is already adjacent
-                    task = Task(dwarf.x, dwarf.y, task_type, target_x, target_y)
-                    if self.game_state.task_manager.add_task(task):
-                        self.game_state.add_debug_message(f"Bridge building task assigned for ({target_x}, {target_y}) from current pos")
-                    else:
-                        self.game_state.add_debug_message(f"Failed to add bridge task (manager full?)")
+                        self.game_state.add_debug_message("Failed to add bridge task (manager full?)")
                 else:
-                     self.game_state.add_debug_message(f"No adjacent walkable path to water tile at ({target_x}, {target_y}) for bridge building.")
+                    self.game_state.add_debug_message(f"No adjacent walkable path to water tile at ({target_x}, {target_y}) for bridge building.")
 
             # --- Else, try building a Structure (Original Logic) ---
             else:
@@ -770,6 +800,8 @@ class InputHandler:
                          break
 
                 if active_sub_level_name:
+                    from .world_seed import leave_depth
+                    leave_depth(self.game_state)
                     self.game_state.sub_levels[active_sub_level_name]["active"] = False
                     self.game_state.map = self.game_state.main_map
                     
@@ -851,9 +883,11 @@ class InputHandler:
                             "Will you make this offering? (Y/N)"
                         ]
                         self.game_state.add_debug_message(f"Initiated Oracle dialog with {talk_target.name}. Awaiting offering.")
-                    elif isinstance(talk_target, NPC): # Handle other NPCs
-                        # Simple interaction for other NPCs for now
-                        self.game_state.add_debug_message(f"You talk to {talk_target.name}. They grunt noncommittally.")
+                    elif isinstance(talk_target, NPC):
+                        from .world_judge import consider_encounter, speech_lines
+                        consider_encounter(self.game_state, talk_target)
+                        for line in speech_lines(talk_target):
+                            self.game_state.add_debug_message(line)
                     return True # Input handled
 
             # If not adjacent or no direct target, try to assign a 'talk' task

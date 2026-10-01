@@ -16,6 +16,8 @@ from .tiles import Tile, ENTITY_REGISTRY
 # Removed: from items import special_items
 from .entities import GameEntity, Structure, Sublevel, ResourceNode # For legend/hints
 from .characters import Oracle # For type hinting if needed, and for checking entity type
+from .spice import GLIMPSE, VOICE, band_for
+from .world_judge import glance
 from .oracle_logic import get_canned_response # Though input_handler mostly sets dialogue
 
 if TYPE_CHECKING:
@@ -337,8 +339,12 @@ class Renderer:
         for npc in self.game_state.characters:
              if npc.alive and 0 <= npc.y < map_h and 0 <= npc.x < map_w:
                 try:
-                     # Use first letter of NPC name? Or a generic 'C'?
-                     npc_char = npc.name[0].upper() if npc.name else 'C'
+                     kind = (getattr(npc, "data", None) or {}).get("kind")
+                     if kind == "revealed":
+                         band = getattr(npc, "revealed_band", None) or band_for(self.game_state.player.spore_exposure)
+                         npc_char = "?" if band == GLIMPSE else "~" if band == VOICE else (npc.name[0].upper() if npc.name else "?")
+                     else:
+                         npc_char = npc.name[0].upper() if npc.name else "C"
                      self.map_win.addch(npc.y, npc.x, npc_char, npc_color)
                 except curses.error: pass
 
@@ -376,8 +382,26 @@ class Renderer:
         add_ui_line(f"Tick: {self.game_state.tick}")
         add_ui_line(f"Depth: {self.game_state.depth}")
         add_ui_line(f"Spore Exposure: {self.game_state.player.spore_exposure}") # Add spore exposure display
+        dose = band_for(self.game_state.player.spore_exposure)
+        grade = getattr(self.game_state, "spice_grade", 1)
+        add_ui_line(f"Dose: {dose}  Grade: {grade}")
         add_ui_line(f"Location: {self.game_state.player.location}") # Use property
         add_ui_line(f"Cursor: ({self.game_state.cursor_x},{self.game_state.cursor_y})")
+        person = next(
+            (
+                npc for npc in self.game_state.characters
+                if getattr(npc, "alive", True)
+                and npc.x == self.game_state.cursor_x
+                and npc.y == self.game_state.cursor_y
+            ),
+            None,
+        )
+        if person is not None:
+            title, detail = glance(person, self.game_state.player.spore_exposure)
+            add_ui_line(f"Here: {title}")
+            if detail and current_row < ui_h - 2:
+                for line in wrap_text(detail, ui_w - 3):
+                    add_ui_line(f"  {line}")
         cursor_tile = self.game_state.get_tile(self.game_state.cursor_x, self.game_state.cursor_y)
         if cursor_tile:
             entity_at_cursor = cursor_tile.entity
@@ -408,6 +432,9 @@ class Renderer:
         current_row += 1
         add_ui_line("Mission:")
         if self.game_state.mission:
+             title = self.game_state.mission.get("title") or getattr(self.game_state, "world_title", "")
+             if title:
+                 add_ui_line(f" {title[:ui_w-2]}")
              obj_str = ", ".join(self.game_state.mission.get("objectives",["None"]))
              add_ui_line(f" Obj: {obj_str[:ui_w-6]}")
              comp_str = "Complete" if self.game_state.mission_complete else "In Progress"

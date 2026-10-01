@@ -11,22 +11,13 @@ import sys # Import sys for stdout/stderr
 import logging # Import logging
 import os # Import os for environment variables
 
-# --- Basic File Logger Setup for Initialization ---
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) # Get the directory of the current script
-LOG_FILENAME = os.path.join(SCRIPT_DIR, "llm_interactions.log") # Create an absolute path for the log file
-# Ensure the directory for the log file exists if it's not in the current directory
-# For now, assume it's in the current directory or a path accessible from it.
-logging.basicConfig(
-    filename=LOG_FILENAME,
-    level=logging.INFO, # Ensure INFO level is captured
-    format='%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s', # Changed module to name for clarity
-    filemode='w', # Overwrite log each run
-    force=True # Add force=True to ensure re-configuration if already configured by another module (Python 3.8+)
-)
+try:
+    from fungi_fortress.play_log import start_play_log
+except ImportError:
+    from play_log import start_play_log
 
-# Initial log message to confirm logger is working
-logging.info("--- Fungi Fortress Game Starting --- Logger Initialized.")
-# --- End Logger Setup ---
+PLAY_LOG_PATH = start_play_log()
+logging.info("--- Fungi Fortress Game Starting ---")
 
 
 # Set ESC key delay to 25ms instead of default 1000ms (fallback for older Python)
@@ -146,6 +137,14 @@ def main(stdscr: curses.window):
     game_state.cursor_x, game_state.cursor_y = spawn_x, spawn_y
     game_state.add_debug_message(f"Spawned at ({spawn_x}, {spawn_y})")
     logging.info(f"Player character spawned at ({spawn_x}, {spawn_y}).")
+
+    stdscr.erase()
+    stdscr.addstr(0, 0, "Growing a world...")
+    stdscr.refresh()
+    from fungi_fortress.world_seed import grow_world
+    world_note = grow_world(game_state)
+    game_state.add_debug_message(world_note)
+    logging.info(world_note)
 
     # Target 10 FPS for game logic updates
     target_logic_time = 1.0 / 10.0

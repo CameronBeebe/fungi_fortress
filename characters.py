@@ -48,6 +48,10 @@ class Dwarf:
         self.task_queue: list['Task'] = []
         self.action_progress: int = 0
         self.previous_state: str = 'idle'
+        # Local perception cache. Jev is asked again only when this scene changes.
+        self.mind_scene: str | None = None
+        self.mind_choice: str | None = None
+        self.mind_note: str = ""
 
     def __str__(self):
         return f"Dwarf {self.id} at ({self.x}, {self.y}) - State: {self.state}, Task: {self.task.type if self.task else 'None'}"

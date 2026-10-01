@@ -4,16 +4,10 @@ from typing import List, Dict, Tuple, Optional, Any, TypedDict, TYPE_CHECKING
 import logging # Import logging
 import os # Import os for path manipulation
 
-# --- Setup Game Logic Logger ---
-log_dir = os.path.dirname(__file__) # Get directory of current file (game_state.py)
-game_log_path = os.path.join(log_dir, 'game_logic.log') # Path relative to this file
-game_logic_file_handler = logging.FileHandler(game_log_path, mode='w')
-game_logic_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-
-game_logic_logger = logging.getLogger('GameLogicLogger')
-game_logic_logger.addHandler(game_logic_file_handler)
-game_logic_logger.setLevel(logging.DEBUG) # Or logging.INFO
-# --- End Logger Setup ---
+# File output is attached in play_log.start_play_log. This logger must not
+# open game_logic.log itself: that used to truncate the file on import.
+game_logic_logger = logging.getLogger("GameLogicLogger")
+game_logic_logger.setLevel(logging.DEBUG)
 
 # Update constants import to relative
 from .constants import MAP_WIDTH, MAP_HEIGHT, STARTING_RESOURCES, STARTING_SPECIAL_ITEMS, STARTING_PLAYER_STATS
@@ -255,6 +249,11 @@ class GameState:
         # --- End Oracle Spawn ---
 
         self.active_pulses: List[ActivePulse] = [] # For mycelial network pulse effects
+        self.world_title: str = ""
+        self.world_premise: str = ""
+        self.spice_grade: int = 1
+        self.depth_seed = None
+        self.in_depth: bool = False
 
     def add_debug_message(self, msg: str) -> None:
         """Adds a message to the debug log, keeping only the most recent 8.
@@ -263,16 +262,11 @@ class GameState:
         Args:
             msg (str): The debug message string to add.
         """
-        # Truncate extremely long messages to prevent rendering issues
-        max_msg_length = 100
-        if len(msg) > max_msg_length:
-            msg = msg[:max_msg_length-3] + "..."
-            
-        self.debug_log.append(msg)
-        if len(self.debug_log) > 8: 
+        game_logic_logger.info(msg)
+        shown = msg if len(msg) <= 100 else msg[:97] + "..."
+        self.debug_log.append(shown)
+        if len(self.debug_log) > 8:
             self.debug_log.pop(0)
-        
-        game_logic_logger.debug(f"[GS_DebugLog] {msg}") # Log to file
 
     def get_locations_of_type(self, entity_name: str) -> List[Tuple[int, int]]:
         """Find all coordinates (x, y) of a given entity type name on the current map."""

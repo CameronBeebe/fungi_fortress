@@ -194,6 +194,10 @@ def interact_mycelial_nexus_logic(game_state: 'GameState', tile: 'Tile', structu
          game_state.cursor_x, game_state.cursor_y = fallback_x, fallback_y
 
     game_state.add_debug_message(f"Entered {sub_level_name}.")
+    game_state.add_debug_message("The stair opens...")
+    from .world_seed import enter_depth, grow_depth
+    game_state.add_debug_message(grow_depth(game_state))
+    enter_depth(game_state)
     # --- End Adapted Logic ---
 
 def interact_dwarven_sporeforge_logic(game_state: 'GameState', tile: 'Tile', structure: 'Structure'):

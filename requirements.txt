@@ -13,6 +13,10 @@ groq>=0.4.0                   # For Groq API support
 openai>=1.0.0                 # For OpenAI and XAI API support  
 requests>=2.25.0              # For HTTP requests to LLM APIs
 
+# Jev is called over HTTPS with the Python standard library (see jev_client.py).
+# The TypeSafe SDK and DSPy are intentionally not listed. Both are days old,
+# DSPy needs Python >= 3.10, and an unpinned extra would float typesafe-sdk.
+
 # Development Dependencies
 pytest>=7.0                   # For running tests
 mypy>=1.0                     # For static type checking
