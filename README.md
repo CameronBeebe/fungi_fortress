@@ -24,51 +24,78 @@ A terminal-based strategy/simulation game written in Python using the curses lib
 
 ## Requirements
 
-*   Python 3.7+
+*   Python 3.10+
 *   **curses:**
     *   **Linux/macOS:** Typically included with Python or available through system package managers (e.g., `sudo apt-get install libncursesw5-dev` on Debian/Ubuntu, often pre-installed on macOS).
-    *   **Windows:** You need to install the `windows-curses` package:
-        ```bash
-        pip install windows-curses
-        ```
-        *(Note: This project is primarily developed/tested on Unix-like systems. Windows compatibility via `windows-curses` may vary.)*
-*   **groq:** Current LLM integration testing using the X.AI API (used by the Oracle for LLM features) with groq.
-    ```bash
-    pip install groq
-    ```
-*   **LLM SDKs:** For LLM features, the following are installed via `requirements.txt`:
+    *   **Windows:** Automatically installed via `windows-curses` package dependency.
+*   **LLM SDKs:** For LLM features, the following are installed via package dependencies:
     *   `openai`: For XAI (Grok), OpenAI (GPT), and other OpenAI-compatible APIs.
     *   `groq`: For Groq API.
-    *   `requests`: Used for some direct API calls (e.g., Anthropic).
+    *   `requests`: Used for HTTP requests to LLM APIs.
 
-## How to Run
+## Installation
+
+### From Source (Recommended for Development)
 
 1.  **Clone the repository:**
     ```bash
     git clone <repository-url>
     cd fungi-fortress
     ```
-2.  **Set up API Key (Optional, for LLM features):**
-    This game can use a Large Language Model (LLM) for certain features. To enable these:
-    *   Copy `llm_config.ini.example` to `llm_config.ini`
-    *   Set your API key as an environment variable (for security):
-        ```bash
-        # For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
-        # For OpenAI:         export OPENAI_API_KEY="your-openai-api-key-here"
-        # For Anthropic:      export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
-        # For Groq:           export GROQ_API_KEY="your-groq-api-key-here"
-        # For Together:       export TOGETHER_API_KEY="your-together-api-key-here"
-        # For Perplexity:     export PERPLEXITY_API_KEY="your-perplexity-api-key-here"
-        ```
-    *   The game automatically detects which API key to use based on your chosen model
-    *   **Security:** API keys are stored in environment variables, never in files
 
-3.  **Ensure requirements are met** (see above, especially for `curses` on Windows).
-4.  **Run the game:**
+2.  **Create and activate a virtual environment:**
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+
+3.  **Install the package in editable mode:**
+    ```bash
+    pip install -e ".[dev]"
+    ```
+    This installs the game along with development dependencies (pytest, mypy).
+
+### Quick Install (End Users)
+
+```bash
+pip install git+<repository-url>
+```
+
+## How to Run
+
+After installation, you can run the game using any of these methods:
+
+1.  **Using the console command:**
+    ```bash
+    fungi
+    ```
+
+2.  **As a Python module:**
+    ```bash
+    python -m fungi_fortress
+    ```
+
+3.  **Direct execution (development):**
     ```bash
     python main.py
     ```
-    *(Alternatively, if running as an installed module later: `python -m fungi_fortress.main`)*
+
+### Optional: Set up API Key for LLM features
+
+This game can use a Large Language Model (LLM) for certain features. To enable these:
+
+*   Copy `llm_config.ini.example` to `llm_config.ini` in the repository root
+*   Set your API key as an environment variable (for security):
+    ```bash
+    # For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
+    # For OpenAI:         export OPENAI_API_KEY="your-openai-api-key-here"
+    # For Anthropic:      export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
+    # For Groq:           export GROQ_API_KEY="your-groq-api-key-here"
+    # For Together:       export TOGETHER_API_KEY="your-together-api-key-here"
+    # For Perplexity:     export PERPLEXITY_API_KEY="your-perplexity-api-key-here"
+    ```
+*   The game automatically detects which API key to use based on your chosen model
+*   **Security:** API keys are stored in environment variables, never in files
 
 ## Basic Controls
 
