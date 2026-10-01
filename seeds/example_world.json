@@ -1,0 +1,69 @@
+{
+  "title": "The Pale Cap",
+  "premise": "A pale fungus has started answering the dwarves by name. The Spore-Keepers want it harvested. Something under the forge wants it kept.",
+  "characters": [
+    {
+      "id": "luma",
+      "name": "Luma Capkeeper",
+      "kind": "kin",
+      "description": "A young Spore-Keeper who marks fungus with chalk and refuses to burn any of it.",
+      "faction": "Spore-Keepers",
+      "motive": "Prove the pale cap can be harvested without waking the grotto.",
+      "secret": "She has already eaten one cap and can hear the nexus humming.",
+      "voice": "Short sentences. She names fungi the way other dwarves name tools."
+    },
+    {
+      "id": "bram",
+      "name": "Bram Cinder",
+      "kind": "kin",
+      "description": "Forgehand who smells of hot stone and keeps his gloves on indoors.",
+      "faction": "Sporeforge",
+      "motive": "Get enough stone to brace the forge before the next bloom.",
+      "secret": "He buried a cracked spore-axe under the forge rather than report it.",
+      "voice": "Gruff, practical, interrupts with counts of stone and hours."
+    },
+    {
+      "id": "vesper",
+      "name": "Vesper Thread",
+      "kind": "revealed",
+      "description": "A tall shimmer at the edge of sight, stitched from hyphae and clockwork pollen.",
+      "faction": "The Under-Choir",
+      "motive": "The dose is a key. Bring the bright fungi and the door will know you.",
+      "secret": "Below the nexus is a cathedral of spice, and the choir there speaks in grades of the same mushroom.",
+      "voice": "Slow, plural, as if several mouths share one sentence."
+    }
+  ],
+  "places": [
+    {
+      "id": "pale_bed",
+      "name": "Pale Cap Bed",
+      "description": "A low patch of white fungi that leans toward anyone who speaks."
+    },
+    {
+      "id": "forge_mouth",
+      "name": "Forge Mouth",
+      "description": "The hot threshold of the Sporeforge, stained with old spore ash."
+    }
+  ],
+  "quests": [
+    {
+      "id": "harvest_pale",
+      "title": "Harvest the Pale Cap",
+      "summary": "Luma wants eight common fungi gathered before anyone burns the pale bed.",
+      "giver_id": "luma",
+      "requirements": [
+        {"kind": "collect", "resource": "fungi", "count": 8}
+      ]
+    },
+    {
+      "id": "brace_forge",
+      "title": "Brace the Forge",
+      "summary": "Bram needs twelve stone brought to the forge mouth.",
+      "giver_id": "bram",
+      "requirements": [
+        {"kind": "collect", "resource": "stone", "count": 12},
+        {"kind": "reach", "place": "forge_mouth"}
+      ]
+    }
+  ]
+}

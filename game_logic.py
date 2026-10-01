@@ -759,44 +759,27 @@ class GameLogic:
                             continue
                         break
 
-        # Assign pending tasks to idle dwarves
-        pending_tasks = list(self.game_state.task_manager.tasks)
-        if pending_tasks: # Add this check
-            self.game_state.add_debug_message(f"Pending tasks to assign: {len(pending_tasks)}")
-
-        for task_idx, task in enumerate(pending_tasks):
-            self.game_state.add_debug_message(f"Attempting to assign Task {task_idx}: {task.type} at ({task.x},{task.y}) for target ({task.resource_x},{task.resource_y})")
-            assigned = False
-            for dwarf in self.game_state.dwarves:
-                self.game_state.add_debug_message(f"  Checking Dwarf {dwarf.id} ({dwarf.state}) at ({dwarf.x},{dwarf.y}) for task {task.type}")
-                if dwarf.state == 'idle' and not dwarf.task:
-                    self.game_state.add_debug_message(f"    Dwarf {dwarf.id} is idle. Finding path to ({task.x},{task.y})...")
-                    # Find path to task
-                    path = a_star(self.game_state.map, (dwarf.x, dwarf.y), (task.x, task.y))
-                    self.game_state.add_debug_message(f"    Path for Dwarf {dwarf.id} to Task {task.type}: {path}")
-                    if path is not None: # Path can be empty list if start == goal, which is fine.
-                        dwarf.task = task
-                        dwarf.path = path # Corrected line: use path directly
-                        dwarf.state = 'moving'
-                        self.game_state.task_manager.remove_task(task)
-                        self.game_state.add_debug_message(f"  SUCCESS: Assigned Task {task.type} to Dwarf {dwarf.id}. Path: {dwarf.path}")
-                        assigned = True
-                        break 
-                    else:
-                        self.game_state.add_debug_message(f"    No path found for Dwarf {dwarf.id} to task {task.type} at ({task.x},{task.y}).")
-            
-            if not assigned:
-                self.game_state.add_debug_message(f"  FAILED: Task {task.type} at ({task.x},{task.y}) could not be assigned to any dwarf.")
+        # Player orders are carried out directly. Jev is not on this path.
+        from .dwarf_mind import assign_work
+        assign_work(self.game_state)
 
         # Update dwarves
         for dwarf in self.game_state.dwarves:
             self._update_dwarf(dwarf)
 
+        from .world_judge import note_arrivals
+        note_arrivals(self.game_state)
+
         # Spread mycelium on surface based on underground network
         surface_mycelium(self.game_state)
 
         # Check mission completion
-        check_mission_completion(self.game_state, self.game_state.mission)
+        if (
+            not self.game_state.mission_complete
+            and self.game_state.mission.get("seed_quest_id")
+            and check_mission_completion(self.game_state, self.game_state.mission)
+        ):
+            complete_mission(self.game_state, self.game_state.mission)
 
     def _update_active_pulses(self):
         """Updates the state of all active mycelial pulses."""
@@ -1008,10 +991,80 @@ class GameLogic:
         self.game_state.oracle_streaming_delay_counter = 0
         self.game_state.oracle_streaming_line_buffer = ("", "NORMAL") # Reset line buffer
 
+    def _settle_arrival(self, dwarf):
+        """The dwarf is standing on the task tile. Start the work, or finish a move."""
+        if not dwarf.task:
+            self.game_state.add_debug_message(f"D{dwarf.id} finished moving but had no task. Setting to IDLE.")
+            dwarf.state = 'idle'
+            return
+        if dwarf.task.type == 'move':
+            self.game_state.add_debug_message(f"D{dwarf.id} completed MOVE task to ({dwarf.x},{dwarf.y}). Setting state to IDLE.")
+            dwarf.state = 'idle'
+            dwarf.task = None
+            dwarf.action_progress = 0
+            return
+        if dwarf.task.type == 'talk':
+            self.game_state.add_debug_message(f"D{dwarf.id} reached destination for TALK task at ({dwarf.x},{dwarf.y}) targeting ({dwarf.task.resource_x},{dwarf.task.resource_y}).")
+            target_entity = None
+            if dwarf.task.resource_x is not None and dwarf.task.resource_y is not None:
+                for char in self.game_state.characters:
+                    if char.x == dwarf.task.resource_x and char.y == dwarf.task.resource_y:
+                        target_entity = char
+                        break
+            if target_entity:
+                if isinstance(target_entity, Oracle):
+                    self.game_state.active_oracle_entity_id = target_entity.name
+                    self.game_state.show_oracle_dialog = True
+                    self.game_state.paused = True
+                    self.game_state.oracle_interaction_state = "AWAITING_OFFERING"
+                    offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in self.game_state.oracle_offering_cost.items()])
+                    self.game_state.oracle_current_dialogue = [
+                        (f"{target_entity.name} desires an offering to share deeper insights:", "NORMAL"),
+                        (f"({offering_cost_str}).", "NORMAL"),
+                        ("Will you make this offering? (Y/N)", "NORMAL")
+                    ]
+                    self.game_state.add_debug_message(f"D{dwarf.id} initiated Oracle dialogue with {target_entity.name}. Awaiting offering.")
+                elif isinstance(target_entity, NPC):
+                    self.game_state.add_debug_message(f"D{dwarf.id} talks to {target_entity.name}. They grunt noncommittally.")
+                else:
+                    self.game_state.add_debug_message(f"D{dwarf.id} tried to talk to non-NPC/Oracle entity: {target_entity.name if hasattr(target_entity, 'name') else 'Unknown Entity'}")
+            else:
+                self.game_state.add_debug_message(f"D{dwarf.id} could not find target entity for TALK task at ({dwarf.task.resource_x},{dwarf.task.resource_y}).")
+            dwarf.state = 'idle'
+            dwarf.task = None
+            dwarf.action_progress = 0
+            return
+        task_type_to_action_state = {
+            "mine": "mining",
+            "chop": "chopping",
+            "build": "building",
+            "fish": "fishing",
+            "fight": "fighting",
+            "enter": "entering",
+            "build_bridge": "building_bridge",
+        }
+        action_state = task_type_to_action_state.get(dwarf.task.type)
+        if action_state:
+            self.game_state.add_debug_message(f"D{dwarf.id} reached destination for {dwarf.task.type} task. Setting state to {action_state}.")
+            dwarf.state = action_state
+            dwarf.action_progress = 0
+        else:
+            self.game_state.add_debug_message(f"WARNING: D{dwarf.id} reached destination for unknown task type '{dwarf.task.type}'. Setting to idle.")
+            dwarf.state = 'idle'
+            dwarf.task = None
+            dwarf.action_progress = 0
+
     def _update_dwarf(self, dwarf):
-        # Log if state changed or if dwarf is active
-        if dwarf.state != dwarf.previous_state or (dwarf.state != 'idle' or dwarf.task or dwarf.path):
-            self.game_state.add_debug_message(f"Updating D{dwarf.id}. Prev State: {dwarf.previous_state}, New State: {dwarf.state}, Task: {dwarf.task.type if dwarf.task else 'None'}, Path len: {len(dwarf.path) if dwarf.path else 0}")
+        # Log when the dwarf's situation changes. An unchanged moving dwarf used to
+        # write this line every tick and bury the useful lines.
+        path_len = len(dwarf.path) if dwarf.path else 0
+        task_type = dwarf.task.type if dwarf.task else None
+        situation = (dwarf.state, task_type, path_len)
+        if situation != getattr(dwarf, "_tick_log", None):
+            dwarf._tick_log = situation
+            self.game_state.add_debug_message(
+                f"Updating D{dwarf.id}. Prev State: {dwarf.previous_state}, New State: {dwarf.state}, Task: {task_type or 'None'}, Path len: {path_len}"
+            )
 
         # Only log extensively if the dwarf is not idle or has a task/path
         # if dwarf.state != 'idle' or dwarf.task or dwarf.path: # This condition is now part of the above log
@@ -1019,7 +1072,11 @@ class GameLogic:
 
         original_state_for_tick = dwarf.state # Store state at start of this update for comparison later
 
-        if dwarf.state == 'moving' and dwarf.path:
+        # Already standing on the work tile. An empty path used to leave the
+        # dwarf in "moving" forever, so a chop ordered from beside a tree never started.
+        if dwarf.state == 'moving' and dwarf.task and not dwarf.path:
+            self._settle_arrival(dwarf)
+        elif dwarf.state == 'moving' and dwarf.path:
             # Move towards target
             next_pos = dwarf.path[0]
             next_tile = self.game_state.get_tile(next_pos[0], next_pos[1])
@@ -1029,73 +1086,7 @@ class GameLogic:
                 dwarf.path.pop(0)
                 
                 if not dwarf.path:
-                    # Reached destination
-                    if dwarf.task:
-                        if dwarf.task.type == 'move':
-                            self.game_state.add_debug_message(f"D{dwarf.id} completed MOVE task to ({dwarf.x},{dwarf.y}). Setting state to IDLE.")
-                            dwarf.state = 'idle'
-                            dwarf.task = None # Clear the completed move task
-                            dwarf.action_progress = 0
-                        elif dwarf.task.type == 'talk':
-                            # Handle talk completion directly
-                            self.game_state.add_debug_message(f"D{dwarf.id} reached destination for TALK task at ({dwarf.x},{dwarf.y}) targeting ({dwarf.task.resource_x},{dwarf.task.resource_y}).")
-                            target_entity = None
-                            if dwarf.task.resource_x is not None and dwarf.task.resource_y is not None:
-                                for char in self.game_state.characters:
-                                    if char.x == dwarf.task.resource_x and char.y == dwarf.task.resource_y:
-                                        target_entity = char
-                                        break
-                            
-                            if target_entity:
-                                if isinstance(target_entity, Oracle):
-                                    self.game_state.active_oracle_entity_id = target_entity.name
-                                    self.game_state.show_oracle_dialog = True
-                                    self.game_state.paused = True
-                                    self.game_state.oracle_interaction_state = "AWAITING_OFFERING"
-                                    offering_cost_str = ", ".join([f"{qty} {res.replace('_', ' ')}" for res, qty in self.game_state.oracle_offering_cost.items()])
-                                    self.game_state.oracle_current_dialogue = [
-                                        (f"{target_entity.name} desires an offering to share deeper insights:", "NORMAL"),
-                                        (f"({offering_cost_str}).", "NORMAL"),
-                                        ("Will you make this offering? (Y/N)", "NORMAL")
-                                    ]
-                                    self.game_state.add_debug_message(f"D{dwarf.id} initiated Oracle dialogue with {target_entity.name}. Awaiting offering.")
-                                elif isinstance(target_entity, NPC):
-                                    self.game_state.add_debug_message(f"D{dwarf.id} talks to {target_entity.name}. They grunt noncommittally.")
-                                else:
-                                    self.game_state.add_debug_message(f"D{dwarf.id} tried to talk to non-NPC/Oracle entity: {target_entity.name if hasattr(target_entity, 'name') else 'Unknown Entity'}")
-                            else:
-                                self.game_state.add_debug_message(f"D{dwarf.id} could not find target entity for TALK task at ({dwarf.task.resource_x},{dwarf.task.resource_y}).")
-
-                            dwarf.state = 'idle'
-                            dwarf.task = None
-                            dwarf.action_progress = 0
-                        else:
-                            # For other tasks (chop, mine, etc.), transition to that action state
-                            task_type_to_action_state = {
-                                "mine": "mining",
-                                "chop": "chopping",
-                                "build": "building",
-                                "fish": "fishing",
-                                "fight": "fighting",
-                                "enter": "entering",
-                                "move": "moving", # Should be caught above, but keep for safety
-                                "build_bridge": "building_bridge"
-                            }
-                            action_state = task_type_to_action_state.get(dwarf.task.type)
-
-                            if action_state:
-                                self.game_state.add_debug_message(f"D{dwarf.id} reached destination for {dwarf.task.type} task. Setting state to {action_state}.")
-                                dwarf.state = action_state
-                                dwarf.action_progress = 0
-                            else:
-                                self.game_state.add_debug_message(f"WARNING: D{dwarf.id} reached destination for unknown task type '{dwarf.task.type}'. Setting to idle.")
-                                dwarf.state = 'idle'
-                                dwarf.task = None # Clear unknown task
-                                dwarf.action_progress = 0
-                    else:
-                        # No task, should be idle (this case might be redundant if task is always set for moving)
-                        self.game_state.add_debug_message(f"D{dwarf.id} finished moving but had no task. Setting to IDLE.")
-                        dwarf.state = 'idle'
+                    self._settle_arrival(dwarf)
             else:
                 # Path blocked, recalculate
                 self.game_state.add_debug_message(f"D{dwarf.id} path blocked at {next_pos[0]},{next_pos[1]}. Current pos: ({dwarf.x},{dwarf.y})")
@@ -1257,16 +1248,27 @@ class GameLogic:
             self.game_state.add_debug_message(f"D{dwarf.id} chopping task has no resource_x/resource_y defined.")
 
     def _complete_building(self, dwarf, tile):
-        """Complete building action."""
-        structure_name = dwarf.task.structure_type
-        structure = ENTITY_REGISTRY.get(structure_name)
-        
-        if structure and self.game_state.inventory.can_afford(structure.cost):
-            for resource, amount in structure.cost:
-                self.game_state.inventory.remove_resource(resource, amount)
-            
-            tile.entity = structure
-            self.game_state.add_debug_message(f"D{dwarf.id} built {structure_name}")
+        """Place the ordered structure on its target tile and pay the listed cost."""
+        structure_name = getattr(dwarf.task, "building", None)
+        structure = ENTITY_REGISTRY.get(structure_name) if structure_name else None
+        spec = self.game_state.buildings.get(structure_name, {}) if structure_name else {}
+        cost = [(res, qty) for res, qty in spec.get("resources", {}).items()]
+        cost += [(item, qty) for item, qty in spec.get("special_items", {}).items()]
+        target = tile
+        if dwarf.task.resource_x is not None and dwarf.task.resource_y is not None:
+            target = self.game_state.get_tile(dwarf.task.resource_x, dwarf.task.resource_y) or tile
+
+        if not structure or not spec:
+            self.game_state.add_debug_message(f"D{dwarf.id} cannot build unknown structure '{structure_name}'.")
+            return
+        if not self.game_state.inventory.can_afford(cost):
+            self.game_state.add_debug_message(f"D{dwarf.id} cannot afford {structure_name}. Needs {cost}")
+            return
+        for resource, amount in cost:
+            self.game_state.inventory.remove_resource(resource, amount)
+        target.entity = structure
+        where = (dwarf.task.resource_x, dwarf.task.resource_y)
+        self.game_state.add_debug_message(f"D{dwarf.id} built {structure_name} at {where}")
 
     def _complete_fishing(self, dwarf, tile):
         """Complete fishing action."""

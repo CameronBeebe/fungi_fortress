@@ -125,8 +125,7 @@ def check_mission_completion(game: 'GameState', mission: dict) -> bool:
             if any(c.name == value and c.alive for c in game.characters):
                 return False
         elif req == "reach":
-            # Check player location (string comparison is fine here)
-            if game.player.location != value:
+            if not _reach_met(game, value, mission):
                 return False
         elif req == "deliver":
             # Ensure resources are required and location is met
@@ -174,8 +173,39 @@ def check_mission_completion(game: 'GameState', mission: dict) -> bool:
         # Add checks for other requirement types if needed
         # ...
 
-    # If all checks passed
+    if mission.get("success"):
+        from .world_judge import judge_mission
+        return judge_mission(game, mission)
     return True
+
+
+def _reach_met(game: 'GameState', place_name: str, mission: dict) -> bool:
+    """A place is reached when the player is there, a dwarf stands on a matching
+    tile, or a dwarf stands beside the quest giver or a character of that name.
+    """
+    if getattr(game.player, "location", None) == place_name:
+        return True
+    givers = set(mission.get("required_npcs") or [])
+    for npc in game.characters:
+        if not getattr(npc, "alive", True):
+            continue
+        if npc.name != place_name and npc.name not in givers:
+            continue
+        for dwarf in game.dwarves:
+            if abs(dwarf.x - npc.x) + abs(dwarf.y - npc.y) <= 1:
+                return True
+    if not getattr(game, "map", None):
+        return False
+    height = len(game.map)
+    width = len(game.map[0]) if height else 0
+    for y in range(height):
+        for x in range(width):
+            tile = game.get_tile(x, y) if hasattr(game, "get_tile") else game.map[y][x]
+            if not tile or getattr(getattr(tile, "entity", None), "name", None) != place_name:
+                continue
+            if any(d.x == x and d.y == y for d in game.dwarves):
+                return True
+    return False
 
 def complete_mission(game: 'GameState', mission: dict):
     """Updates the game state upon successful mission completion.
@@ -202,7 +232,8 @@ def complete_mission(game: 'GameState', mission: dict):
         else:
             game.inventory.add_resource(reward, 1)  # Assuming special items use the same method
     game.mission_complete = True
-    game.add_debug_message("Mission completed!")
+    title = mission.get("title") or mission_desc
+    game.add_debug_message(f"Mission complete: {title}")
 
 # Comment out or remove the __main__ block
 # if __name__ == "__main__":

@@ -1,0 +1,45 @@
+{
+  "title": "The Choir Beneath",
+  "premise": "The stair opens onto a cathedral of spice. The air is thick enough to spend. A choir of one voice asks for the bright mushroom, and will pay in a stronger grade of the same sight.",
+  "characters": [
+    {
+      "id": "warden",
+      "name": "Sera Vellum",
+      "kind": "kin",
+      "description": "A keeper of the nave who still remembers being a dwarf and counts the caps aloud.",
+      "faction": "Nave Wardens",
+      "motive": "Three bright fungi will keep the choir from taking the nave apart.",
+      "secret": "She trades the caps upward and keeps one for herself, to stay solid.",
+      "voice": "Formal, tired, names quantities before names of people."
+    },
+    {
+      "id": "choir",
+      "name": "The Nave Choir",
+      "kind": "revealed",
+      "description": "Many small lights arranged like a rose window, speaking as one mouth.",
+      "faction": "The Under-Choir",
+      "motive": "A higher grade of spice wants a body. Feed the window and the architecture will hold.",
+      "secret": "The next stair opens only for someone who has already been welcomed on the surface.",
+      "voice": "Harmonized. Sentences arrive a heartbeat late, as if from farther down."
+    }
+  ],
+  "places": [
+    {
+      "id": "nave",
+      "name": "Spice Nave",
+      "description": "A vaulted hall whose ribs are hyphae and whose windows are caps of light."
+    }
+  ],
+  "quests": [
+    {
+      "id": "feed_the_window",
+      "title": "Feed the Window",
+      "summary": "Sera needs three magic fungi laid at the spice nave before the choir unravels the stone.",
+      "giver_id": "warden",
+      "requirements": [
+        {"kind": "collect", "resource": "magic_fungi", "count": 3},
+        {"kind": "reach", "place": "nave"}
+      ]
+    }
+  ]
+}
