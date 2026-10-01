@@ -11,10 +11,15 @@ import sys # Import sys for stdout/stderr
 import logging # Import logging
 import os # Import os for environment variables
 
-try:
-    from fungi_fortress.play_log import start_play_log
-except ImportError:
-    from play_log import start_play_log
+from fungi_fortress.play_log import start_play_log
+from fungi_fortress.game_state import GameState
+from fungi_fortress.renderer import Renderer
+from fungi_fortress.input_handler import InputHandler
+from fungi_fortress.game_logic import GameLogic
+from fungi_fortress.map_generation import generate_map, generate_mycelial_network
+from fungi_fortress.characters import Dwarf
+from fungi_fortress.tiles import ENTITY_REGISTRY
+from fungi_fortress.config_manager import load_llm_config, LLMConfig
 
 PLAY_LOG_PATH = start_play_log()
 logging.info("--- Fungi Fortress Game Starting ---")
@@ -23,29 +28,6 @@ logging.info("--- Fungi Fortress Game Starting ---")
 # Set ESC key delay to 25ms instead of default 1000ms (fallback for older Python)
 # This must be set before any curses initialization
 os.environ.setdefault("ESCDELAY", "25")
-
-# Use absolute imports from the package
-try:
-    # Try package imports first (when run as module)
-    from fungi_fortress.game_state import GameState
-    from fungi_fortress.renderer import Renderer
-    from fungi_fortress.input_handler import InputHandler
-    from fungi_fortress.game_logic import GameLogic
-    from fungi_fortress.map_generation import generate_map, generate_mycelial_network
-    from fungi_fortress.characters import Dwarf
-    from fungi_fortress.tiles import ENTITY_REGISTRY
-    from fungi_fortress.config_manager import load_llm_config, LLMConfig
-except ImportError as e:
-    logging.error(f"Package import failed: {e}. Falling back to relative imports.")
-    # Fall back to relative imports (when run directly)
-    from .game_state import GameState
-    from .renderer import Renderer
-    from .input_handler import InputHandler
-    from .game_logic import GameLogic
-    from .map_generation import generate_map, generate_mycelial_network
-    from .characters import Dwarf
-    from .tiles import ENTITY_REGISTRY
-    from .config_manager import load_llm_config, LLMConfig
 
 def main(stdscr: curses.window):
     """Initializes and runs the main game loop.
@@ -88,11 +70,7 @@ def main(stdscr: curses.window):
     logging.info("Core game components initialized.")
 
     # Initialize map and first dwarf/player state if needed
-    try:
-        from fungi_fortress.constants import MAP_WIDTH, MAP_HEIGHT
-    except ImportError:
-        logging.warning("Failed to import constants from package, trying direct import.")
-        from constants import MAP_WIDTH, MAP_HEIGHT
+    from fungi_fortress.constants import MAP_WIDTH, MAP_HEIGHT
     map_width, map_height = MAP_WIDTH, MAP_HEIGHT
     logging.info(f"Map dimensions set to {map_width}x{map_height}.")
 

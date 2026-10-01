@@ -8,8 +8,8 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 # --- Path configuration for LLM config files ---
-# Assumes config files are in the same directory as this script (package root)
-PACKAGE_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Config files should be in the repo root (parent of the package)
+PACKAGE_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CONFIG_FILENAME = "llm_config.ini"
 # --- End Path configuration ---
 

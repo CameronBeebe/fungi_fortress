@@ -20,7 +20,7 @@ import re
 # Add the parent directory to the path to import our modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config_manager import load_llm_config, get_api_key_from_env, LLMConfig
+from fungi_fortress.config_manager import load_llm_config, get_api_key_from_env, LLMConfig
 
 
 class TestAPIKeySecurity:
@@ -162,7 +162,7 @@ max_tokens = 500
         try:
             with patch.dict(os.environ, {'XAI_API_KEY': test_api_key}, clear=True):
                 # Mock the config loading to use our temporary file
-                with patch('config_manager.os.path.join') as mock_join:
+                with patch('fungi_fortress.config_manager.os.path.join') as mock_join:
                     mock_join.return_value = temp_config_path
                     config = load_llm_config()
                     
@@ -188,7 +188,7 @@ model_name = gpt-4o-mini
             # Clear environment variables
             with patch.dict(os.environ, {}, clear=True):
                 # Mock the config loading to use our temporary file
-                with patch('config_manager.os.path.join') as mock_join:
+                with patch('fungi_fortress.config_manager.os.path.join') as mock_join:
                     mock_join.return_value = temp_config_path
                     config = load_llm_config()
                     
@@ -203,7 +203,7 @@ model_name = gpt-4o-mini
         test_api_key = "xai-secret-key-should-not-appear-in-logs"
         
         with patch.dict(os.environ, {'XAI_API_KEY': test_api_key}):
-            with patch('config_manager.logger') as mock_logger:
+            with patch('fungi_fortress.config_manager.logger') as mock_logger:
                 get_api_key_from_env("xai")
                 
                 # Check all logging calls
@@ -246,7 +246,7 @@ model_name = {model_name}
                 
                 with patch.dict(os.environ, {env_var: "test-key"}, clear=True):
                     # Mock the config loading to use our temporary file
-                    with patch('config_manager.os.path.join') as mock_join:
+                    with patch('fungi_fortress.config_manager.os.path.join') as mock_join:
                         mock_join.return_value = temp_config_path
                         config = load_llm_config()
                         

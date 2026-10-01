@@ -8,7 +8,7 @@ from fungi_fortress.dwarf_mind import assign_work
 from fungi_fortress.game_logic import GameLogic
 from fungi_fortress.world_seed import apply_world_seed, grow_world, load_world_seed, parse_world_seed
 
-SEED_PATH = os.path.join(os.path.dirname(__file__), "..", "seeds", "example_world.json")
+SEED_PATH = os.path.join(os.path.dirname(__file__), "..", "fungi_fortress", "seeds", "example_world.json")
 
 
 class Entity:
