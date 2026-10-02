@@ -24,61 +24,70 @@ A terminal-based strategy/simulation game written in Python using the curses lib
 
 ## Requirements
 
-*   Python 3.10+
+*   Python 3.10+ (3.12 recommended)
+*   **Terminal:** Minimum 70 columns × 45 rows for proper display
+*   **C compiler** (for `noise` package):
+    *   **macOS:** `xcode-select --install`
+    *   **Linux:** Usually pre-installed (`gcc`/`build-essential`)
+    *   **Windows:** Visual C++ Build Tools or similar
 *   **curses:**
-    *   **Linux/macOS:** Typically included with Python or available through system package managers (e.g., `sudo apt-get install libncursesw5-dev` on Debian/Ubuntu, often pre-installed on macOS).
-    *   **Windows:** Automatically installed via `windows-curses` package dependency.
-*   **LLM SDKs:** For LLM features, the following are installed via package dependencies:
-    *   `openai`: For XAI (Grok), OpenAI (GPT), and other OpenAI-compatible APIs.
-    *   `groq`: For Groq API.
-    *   `requests`: Used for HTTP requests to LLM APIs.
+    *   **Linux/macOS:** Included with Python
+    *   **Windows:** Automatically installed via `windows-curses` dependency
 
 ## Installation
 
-### From Source (Recommended for Development)
+### Using uv (Recommended - Fast!)
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository-url>
-    cd fungi-fortress
-    ```
-
-2.  **Create and activate a virtual environment:**
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
-    ```
-
-3.  **Install the package in editable mode:**
-    ```bash
-    pip install -e ".[dev]"
-    ```
-    This installs the game along with development dependencies (pytest, mypy).
-
-### Quick Install (End Users)
+[uv](https://github.com/astral-sh/uv) is a fast Python package manager that handles virtual environments and dependencies automatically.
 
 ```bash
-pip install git+<repository-url>
+# Install uv if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone the repository
+git clone <repository-url>
+cd fungi-fortress
+
+# Install dependencies (creates .venv automatically, uses uv.lock for exact versions)
+uv sync
+
+# Run the game
+uv run fungi
+```
+
+### Using pip (Traditional Method)
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd fungi-fortress
+
+# Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install the package with dev dependencies
+pip install -e ".[dev]"
+
+# Run the game
+fungi
 ```
 
 ## How to Run
 
-After installation, you can run the game using any of these methods:
+After installation with **uv**:
+```bash
+uv run fungi                    # Console command (recommended)
+uv run python -m fungi_fortress # As module
+uv run python main.py          # Direct script
+```
 
-1.  **Using the console command:**
-    ```bash
-    fungi
-    ```
-
-2.  **As a Python module:**
-    ```bash
-    python -m fungi_fortress
-    ```
-
-3.  **Direct execution (development):**
-    ```bash
-    python main.py
-    ```
+After installation with **pip** (in activated venv):
+```bash
+fungi                    # Console command (recommended)
+python -m fungi_fortress # As module
+python main.py          # Direct script
+```
 
 ### Optional: Set up API Key for LLM features
 
@@ -128,24 +137,57 @@ When consulting an Oracle:
 
 This project uses `pytest` for testing and `mypy` for static type checking.
 
-1.  **Install Development Dependencies:**
-    Ensure you have installed the necessary packages:
-    ```bash
-    pip install -r requirements.txt
-    ```
-    *(This includes `pytest` and `mypy` marked as development dependencies).*
+### Running Tests
 
-2.  **Running Tests:**
-    Execute tests from the root directory:
-    ```bash
-    pytest
-    ```
+With **uv**:
+```bash
+# Run all tests
+uv run pytest -q
 
-3.  **Running Type Checks:**
-    Run the type checker from the root directory:
-    ```bash
-    mypy .
-    ```
+# Run with verbose output
+uv run pytest -v
+
+# Run specific test file
+uv run pytest tests/test_game_logic.py
+```
+
+With **pip** (in activated venv):
+```bash
+# Run all tests
+pytest -q
+
+# Run with verbose output
+pytest -v
+
+# Run specific test file
+pytest tests/test_game_logic.py
+```
+
+### Running Type Checks
+
+With **uv**:
+```bash
+uv run mypy fungi_fortress/
+```
+
+With **pip** (in activated venv):
+```bash
+mypy fungi_fortress/
+```
+
+### Development Setup
+
+**Using uv** (recommended):
+```bash
+uv sync  # Installs all dependencies including dev tools
+```
+
+**Using pip**:
+```bash
+pip install -e ".[dev]"
+```
+
+This installs pytest, mypy, and other development tools.
 
 ## Known Issues
 

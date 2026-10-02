@@ -110,4 +110,6 @@ llm_interactions.log # Add the new general LLM log file name
 # === TEST FILES WITH API KEYS (NEVER commit) ===
 # These files might use real API keys for testing live endpoints.
 # Ensure they are ALWAYS ignored by git.
-tests/test_integration_xai_direct.py # Located in tests/ 
+tests/test_integration_xai_direct.py # Located in tests/
+.venv/
+
