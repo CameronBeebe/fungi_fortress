@@ -19,6 +19,7 @@ def build_oracle_messages(
     player_query: str,
     game_context: dict[str, Any],
     history: list[dict[str, str]],
+    enable_structured_outputs: bool = False,
 ) -> list[dict]:
     """Build message list for Oracle query.
     
@@ -27,17 +28,39 @@ def build_oracle_messages(
         player_query: Player's question
         game_context: Dict with tick, depth, mission, resources, etc.
         history: Recent conversation history
+        enable_structured_outputs: Whether to request JSON schema format
         
     Returns:
         List of message dicts for LLM API
     """
-    # System message
+    # System message with action instructions
     system_content = (
         f"You are {oracle_name}, a wise, ancient, and somewhat cryptic Oracle "
         f"in the Fungi Fortress. Respond to the player's query with insightful, "
         f"thematic, and sometimes enigmatic guidance. Your responses should be "
         f"a single paragraph."
     )
+    
+    # Add action instructions based on output format
+    if enable_structured_outputs:
+        system_content += (
+            "\n\nYour entire response MUST be a single JSON object. This JSON object must have two keys: "
+            "'narrative' (string) and 'actions' (array). "
+            "The 'narrative' should contain your textual response to the player. "
+            "The 'actions' array should contain any game actions to execute. Each action in the array "
+            "must be an object with 'action_type' (string) and 'details' (object) keys. "
+            "Example: "
+            '{"narrative": "A strange energy emanates from the east.", "actions": [{"action_type": "add_message", "details": {"text": "Energy pulse detected."}}]} '
+            "If no actions are needed, provide an empty array for 'actions'."
+        )
+    else:
+        system_content += (
+            "\n\nIf you wish to suggest a game event or action, embed it in your response using the format: "
+            "ACTION::action_type::{\"json_key\": \"json_value\"}. For example: "
+            "ACTION::add_message::{\"text\": \"A strange energy emanates from the east.\"} or "
+            "ACTION::spawn_character::{\"type\": \"Mystic Fungoid\", \"name\": \"Glimmercap\", \"x\": 10, \"y\": 12}. "
+            "Use double quotes in JSON and ensure the JSON is valid. Actions are optional - only include them if meaningful to your response."
+        )
     
     # Build context string
     context_parts = []
@@ -84,6 +107,7 @@ def query_oracle_streaming(
     game_context: dict[str, Any],
     history: list[dict[str, str]],
     max_tokens: Optional[int] = None,
+    enable_structured_outputs: bool = False,
 ) -> Iterator[str]:
     """Query the Oracle with streaming response.
     
@@ -94,6 +118,7 @@ def query_oracle_streaming(
         game_context: Game state context
         history: Recent conversation history
         max_tokens: Max tokens to generate
+        enable_structured_outputs: Whether to request JSON schema format
         
     Yields:
         Response chunks as they arrive
@@ -101,7 +126,7 @@ def query_oracle_streaming(
     Raises:
         llm_client.LLMError: On API errors
     """
-    messages = build_oracle_messages(oracle_name, player_query, game_context, history)
+    messages = build_oracle_messages(oracle_name, player_query, game_context, history, enable_structured_outputs)
     
     logger.info(f"Oracle query (streaming): {player_query[:50]}...")
     
@@ -122,6 +147,7 @@ def query_oracle(
     game_context: dict[str, Any],
     history: list[dict[str, str]],
     max_tokens: Optional[int] = None,
+    enable_structured_outputs: bool = False,
 ) -> str:
     """Query the Oracle with non-streaming response.
     
@@ -132,6 +158,7 @@ def query_oracle(
         game_context: Game state context
         history: Recent conversation history
         max_tokens: Max tokens to generate
+        enable_structured_outputs: Whether to request JSON schema format
         
     Returns:
         Complete Oracle response
@@ -139,7 +166,7 @@ def query_oracle(
     Raises:
         llm_client.LLMError: On API errors
     """
-    messages = build_oracle_messages(oracle_name, player_query, game_context, history)
+    messages = build_oracle_messages(oracle_name, player_query, game_context, history, enable_structured_outputs)
     
     logger.info(f"Oracle query (non-streaming): {player_query[:50]}...")
     

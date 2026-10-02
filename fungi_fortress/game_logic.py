@@ -669,14 +669,17 @@ class GameLogic:
                             self.game_state.oracle_streaming_delay_counter = 0
                         
                         # Start the enhanced streaming generator
+                        # API key comes from llm_config, not action details (security)
                         self.game_state.oracle_streaming_generator = llm_interface.process_enhanced_oracle_streaming(
                             streaming_details["prompt"],
-                            streaming_details["api_key"],
+                            None,  # api_key - ignored, comes from llm_config
                             streaming_details["model_name"],
                             streaming_details["provider_hint"],
                             streaming_details["llm_config"], # was oracle_config
                             streaming_details["player_query"],
-                            oracle_name
+                            oracle_name,
+                            streaming_details.get("game_context"),
+                            streaming_details.get("history"),
                         )
                         self.game_state.oracle_streaming_active = True
                         self.game_state.oracle_streaming_buffer = ""
