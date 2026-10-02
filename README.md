@@ -4,14 +4,19 @@ A terminal-based strategy/simulation game written in Python using the curses lib
 
 ## 🤖 LLM Integration Status
 
-**✅ PRODUCTION-READY** - The Oracle LLM integration is now fully ready for live API usage with comprehensive safety features:
+**✅ PRODUCTION-READY + OFFLINE MODE** - The Oracle LLM integration is fully ready for both live API usage and offline play:
 
-- **🛡️ Cost Controls**: Daily request limits, token limits, timeout protection
-- **⚡ Reliability**: Smart retry logic, graceful error handling, provider auto-detection  
-- **🔧 Multi-Provider**: Supports XAI (Grok), OpenAI (GPT), Anthropic (Claude), Groq
-- **📊 Monitoring**: Real-time usage tracking, detailed logging, emergency controls
+- **🎮 Offline Mode**: Built-in mock provider - fully playable with no API key required
+- **⚡ Unified Client**: Single OpenAI-compatible interface for all providers
+- **🔧 Multi-Provider**: Supports XAI (Grok), OpenAI (GPT), Anthropic (Claude), Groq, Together, Perplexity
+- **🛡️ Typed Errors**: Clear error handling with player-friendly messages
+- **📊 Battle-Tested**: 40+ new tests for client, mock provider, Oracle integration, and error handling
 
-**Quick Setup**: Copy `llm_config.ini.example` → `llm_config.ini`, set your API key as an environment variable, and play! See [LLM Oracle Integration](#llm-oracle-integration) below for details.
+**Quick Setup**: 
+- **No API key?** Just play! The game uses a deterministic mock Oracle.
+- **Have an API key?** Set it as an environment variable (e.g., `export OPENAI_API_KEY="sk-..."`), and the game auto-detects your provider.
+
+See [LLM Oracle Integration](#llm-oracle-integration) below for details.
 
 ## Features (Current)
 
@@ -91,20 +96,22 @@ python main.py          # Direct script
 
 ### Optional: Set up API Key for LLM features
 
-This game can use a Large Language Model (LLM) for certain features. To enable these:
+**The game is fully playable without an API key** - the built-in mock Oracle provides deterministic responses.
 
-*   Copy `llm_config.ini.example` to `llm_config.ini` in the repository root
+To use live LLM providers:
+
 *   Set your API key as an environment variable (for security):
     ```bash
-    # For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
     # For OpenAI:         export OPENAI_API_KEY="your-openai-api-key-here"
+    # For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
     # For Anthropic:      export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
     # For Groq:           export GROQ_API_KEY="your-groq-api-key-here"
     # For Together:       export TOGETHER_API_KEY="your-together-api-key-here"
     # For Perplexity:     export PERPLEXITY_API_KEY="your-perplexity-api-key-here"
     ```
-*   The game automatically detects which API key to use based on your chosen model
-*   **Security:** API keys are stored in environment variables, never in files
+*   Optionally, copy `llm_config.ini.example` to `llm_config.ini` to configure model and parameters
+*   The game automatically detects which provider to use based on your model name
+*   **No API key?** The game automatically uses the mock provider (offline mode)
 
 ## Basic Controls
 
@@ -227,19 +234,22 @@ Contributions are welcome! Please feel free to open issues or submit pull reques
 
 ## LLM Oracle Integration
 
-Fungi Fortress features an AI-powered Oracle that provides guidance, lore, and interactive storytelling through Large Language Model (LLM) integration. The Oracle system is designed to be **flexible and provider-agnostic**, allowing players to use their preferred LLM service and API credits.
+Fungi Fortress features an AI-powered Oracle that provides guidance, lore, and interactive storytelling. The Oracle system supports **both offline and online modes**:
 
-**🚀 PRODUCTION-READY** - The LLM integration is fully stable with comprehensive safety features, extensive testing, and robust error handling for live API usage.
+- **🎮 Offline Mode**: Built-in mock Oracle provides deterministic, in-character responses with no API needed
+- **🌐 Online Mode**: Connect to any OpenAI-compatible LLM provider for dynamic responses
+
+**🚀 PRODUCTION-READY + OFFLINE-READY** - The unified LLM client is stable, tested, and works great whether you're online or offline.
 
 ### Recent Improvements (Latest Update)
 
-- **✅ Dynamic Text Streaming**: Oracle responses now stream in real-time for a more engaging experience.
-- **✅ Enhanced Error Handling**: Improved parsing of malformed LLM responses with graceful degradation
-- **✅ Comprehensive Test Suite**: Over 170 tests covering unit tests, integration tests, and live API validation
-- **✅ Response Format Support**: Handles both structured JSON responses and legacy text format seamlessly  
-- **✅ Provider Auto-Detection**: Automatically selects the correct API based on model name patterns
-- **✅ Structured Output**: Supports XAI's structured JSON schema for more reliable responses
-- **✅ Integration Tests**: Added `test_integration_game.py` and `tests/test_integration_xai_direct.py` for full pipeline validation
+- **✅ Unified Client Architecture**: Single, clean interface for all LLM interactions
+- **✅ Mock Provider**: Fully playable offline with deterministic Oracle responses
+- **✅ Typed Error Handling**: Clear exceptions with player-friendly messages
+- **✅ Comprehensive Test Suite**: 205+ tests passing, including 40 new tests for the unified client
+- **✅ Provider Auto-Detection**: Automatically selects the correct API based on model name
+- **✅ Streaming Support**: Real-time Oracle responses for engaging gameplay
+- **✅ OpenAI-Compatible**: Works with OpenAI, XAI (Grok), Anthropic (Claude), Groq, Together, Perplexity
 
 ### Supported LLM Providers
 
