@@ -103,8 +103,6 @@ oracle_request_tracking.json
 debug.log
 logs/
 llm_interactions.log # Add the new general LLM log file name
-
-# === KEEP THESE FILES (examples and documentation) ===
 # verify_llm_setup.py        - Setup verification tool for users
 
 # === TEST FILES WITH API KEYS (NEVER commit) ===
