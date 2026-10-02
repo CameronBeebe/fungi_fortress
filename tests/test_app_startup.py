@@ -6,65 +6,45 @@ from unittest.mock import MagicMock, patch
 
 
 def test_app_startup_smoke():
-    """Test that app.py initialization doesn't crash.
+    """Test that app.game_loop doesn't crash on startup.
     
-    Catches regressions like the round-2 AttributeError: 'LLMConfig' object has no attribute 'provider'
-    that occurred during startup at app.py:65.
+    Catches regressions like:
+    - Round-2: AttributeError: 'LLMConfig' object has no attribute 'provider' at app.py:65
+    - Missing _handle_action attribute
+    
+    Calls actual app.game_loop with mocked curses that returns ESC to quit immediately.
     """
-    # Mock curses to avoid needing a terminal
-    with patch('curses.initscr') as mock_initscr, \
+    from fungi_fortress import app
+    
+    # Create a mock stdscr that returns ESC on getch
+    mock_stdscr = MagicMock()
+    mock_stdscr.getmaxyx.return_value = (40, 120)
+    mock_stdscr.timeout.return_value = None
+    mock_stdscr.nodelay.return_value = None
+    mock_stdscr.getch.return_value = 27  # ESC key
+    
+    # Mock curses functions
+    with patch('curses.set_escdelay'), \
          patch('curses.curs_set'), \
          patch('curses.start_color'), \
          patch('curses.use_default_colors'), \
          patch('curses.init_pair'), \
          patch('curses.color_pair', return_value=0), \
-         patch('curses.noecho'), \
-         patch('curses.cbreak'), \
-         patch('curses.newwin') as mock_newwin:
+         patch('curses.newwin', return_value=mock_stdscr):
         
-        # Create a mock screen
-        mock_screen = MagicMock()
-        mock_screen.getmaxyx.return_value = (40, 120)
-        mock_screen.nodelay.return_value = None
-        mock_screen.getch.return_value = ord('q')  # Simulate quit immediately
-        mock_initscr.return_value = mock_screen
-        
-        # Create a mock window
-        mock_win = MagicMock()
-        mock_win.getmaxyx.return_value = (40, 120)
-        mock_newwin.return_value = mock_win
-        
-        # Try to import and initialize game components
         try:
-            from fungi_fortress.game_state import GameState
-            from fungi_fortress.game_logic import GameLogic
-            from fungi_fortress.config_manager import LLMConfig
+            # Call the actual game_loop - it should initialize everything and then
+            # immediately quit when getch returns ESC
+            game_logic, input_handler = app.game_loop(mock_stdscr)
             
-            # Initialize with mock config (no API key)
-            llm_config = LLMConfig(
-                api_key=None,
-                model_name="mock-model",
-                enable_streaming=False,
-                context_level="low"
-            )
-            
-            # Create game state and logic
-            game_state = GameState(llm_config=llm_config)
-            game_logic = GameLogic(game_state)
-            
-            # Verify basic initialization succeeded
-            assert game_state is not None
+            # Verify it initialized successfully
             assert game_logic is not None
-            assert game_state.tick == 0
-            
-            # Try one update cycle
-            game_logic.update()
-            assert game_state.tick == 1
+            assert input_handler is not None
+            assert game_logic.game_state is not None
             
             print("✓ App startup smoke test passed")
-            print(f"  - GameState initialized")
-            print(f"  - GameLogic initialized")
-            print(f"  - One update cycle completed")
+            print(f"  - app.game_loop completed without crash")
+            print(f"  - GameLogic and InputHandler initialized")
             
         except AttributeError as e:
             if "'LLMConfig' object has no attribute 'provider'" in str(e):
