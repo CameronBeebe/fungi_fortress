@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from .characters import NPC
 from .constants import STARTING_RESOURCES
+from . import llm_client, llm_world
 
 COLLECTABLE = frozenset(STARTING_RESOURCES)
 MAX_CHARACTERS = 12
@@ -176,20 +177,30 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
     model is missing or both attempts come back invalid.
     """
     if complete is None:
-        creds = _llm_credentials(game)
-        if creds is None:
+        # Try to get an LLM client from game config
+        client = _get_llm_client(game)
+        if client is None:
             _install_prepared(game)
             return "No language-model key found. Using a prepared grove."
-        provider, api_key, model = creds
-
-        def complete(prompt: str, _provider=provider, _key=api_key, _model=model) -> str:
-            return _chat(_provider, _key, _model, prompt)
+        
+        def complete(prompt: str, _client=client) -> str:
+            return llm_world.generate_world_seed(_client, prompt, max_tokens=4000)
 
     rejection = ""
     for _attempt in range(2):
         prompt = _seed_prompt(rejection)
         try:
-            seed = parse_world_seed(_extract_json(complete(prompt)))
+            if callable(complete):
+                result = complete(prompt)
+                # If complete returns a string (old-style _chat), parse it
+                if isinstance(result, str):
+                    seed_dict = llm_world._extract_json(result)
+                else:
+                    # If complete returns a dict (new-style), use it directly
+                    seed_dict = result
+                seed = parse_world_seed(seed_dict)
+            else:
+                seed = parse_world_seed(llm_world._extract_json(complete(prompt)))
         except (ValueError, json.JSONDecodeError, OSError) as exc:
             rejection = str(exc)
             continue
@@ -222,91 +233,39 @@ def _seed_prompt(rejection: str = "") -> str:
     return rules
 
 
-def _llm_credentials(game: Any) -> tuple[str, str, str] | None:
+def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
+    """Get an LLM client from game configuration or environment.
+    
+    Returns None if no valid API key is available.
+    """
     config = getattr(game, "llm_config", None)
-    if config is not None and getattr(config, "is_real_api_key_present", False) and config.api_key:
-        provider = config.provider or "auto"
-        model = config.model_name or "grok-3-mini"
-        if provider == "auto":
-            from .config_manager import detect_provider_from_model
-            provider = detect_provider_from_model(model)
-        return provider, config.api_key, model
-
-    for provider, env_name, model in (
-        ("xai", "XAI_API_KEY", "grok-3-mini"),
-        ("openai", "OPENAI_API_KEY", "gpt-4o-mini"),
-        ("groq", "GROQ_API_KEY", "llama-3.3-70b-versatile"),
+    if config is not None:
+        try:
+            client = config.create_llm_client()
+            # Only return if it's not using mock (i.e., has a real key)
+            if not client.is_mock():
+                return client
+        except Exception:
+            pass
+    
+    # Try environment variables as fallback
+    for env_name, model in (
+        ("XAI_API_KEY", "grok-3-mini"),
+        ("OPENAI_API_KEY", "gpt-4o-mini"),
+        ("GROQ_API_KEY", "llama-3.3-70b-versatile"),
     ):
         key = os.environ.get(env_name, "").strip()
         if key:
-            return provider, key, model
+            return llm_client.create_client_from_config(
+                model=model,
+                provider="auto",
+                api_key=key,
+                max_tokens=4000,
+                timeout_seconds=45,
+                temperature=0.8,
+            )
+    
     return None
-
-
-def _chat(provider: str, api_key: str, model: str, prompt: str) -> str:
-    import urllib.error
-    import urllib.request
-
-    urls = {
-        "xai": "https://api.x.ai/v1/chat/completions",
-        "openai": "https://api.openai.com/v1/chat/completions",
-        "groq": "https://api.groq.com/openai/v1/chat/completions",
-    }
-    if provider not in urls:
-        raise ValueError(f"no world-growth client for {provider}")
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": "You write one JSON object and nothing else."},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.8,
-        "max_tokens": 4000,
-        "response_format": {"type": "json_object"},
-    }
-    if "grok-3-mini" in model.lower():
-        payload["reasoning_effort"] = "low"
-    request = urllib.request.Request(
-        urls.get(provider, urls["xai"]),
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=45) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:240]
-        raise ValueError(f"language model HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise ValueError(f"language model unreachable: {exc.reason}") from exc
-    try:
-        content = body["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise ValueError("language model returned no text") from exc
-    if not content or not str(content).strip():
-        raise ValueError("language model returned an empty world")
-    return str(content)
-
-
-def _extract_json(raw: str) -> dict[str, Any]:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        if text.endswith("```"):
-            text = text[: text.rfind("```")]
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError("response did not contain a JSON object")
-    parsed = json.loads(text[start : end + 1])
-    if not isinstance(parsed, dict):
-        raise ValueError("world seed must be an object")
-    return parsed
 
 
 def _install_prepared(game: Any) -> None:
@@ -371,19 +330,29 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
         return f"{existing.title}. {existing.quests[0].title}."
 
     if complete is None:
-        creds = _llm_credentials(game)
-        if creds is None:
+        # Try to get an LLM client from game config
+        client = _get_llm_client(game)
+        if client is None:
             game.depth_seed = load_world_seed(_PREPARED_DEPTH)
             return f"{game.depth_seed.title}. The stair uses a prepared depth."
-        provider, api_key, model = creds
-
-        def complete(prompt: str, _provider=provider, _key=api_key, _model=model) -> str:
-            return _chat(_provider, _key, _model, prompt)
+        
+        def complete(prompt: str, _client=client) -> str:
+            return llm_world.generate_world_seed(_client, prompt, max_tokens=4000)
 
     rejection = ""
     for _attempt in range(2):
         try:
-            seed = parse_world_seed(_extract_json(complete(_depth_prompt(rejection))))
+            if callable(complete):
+                result = complete(_depth_prompt(rejection))
+                # If complete returns a string (old-style _chat), parse it
+                if isinstance(result, str):
+                    seed_dict = llm_world._extract_json(result)
+                else:
+                    # If complete returns a dict (new-style), use it directly
+                    seed_dict = result
+                seed = parse_world_seed(seed_dict)
+            else:
+                seed = parse_world_seed(llm_world._extract_json(complete(_depth_prompt(rejection))))
         except (ValueError, json.JSONDecodeError, OSError) as exc:
             rejection = str(exc)
             continue

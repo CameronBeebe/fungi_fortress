@@ -4,6 +4,8 @@ import os
 import logging
 from dataclasses import dataclass
 
+from . import llm_client
+
 # Get a logger instance for LLM interactions
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,21 @@ class LLMConfig:
         if self.daily_request_limit < 0 or self.daily_request_limit > 1000:
             logger.warning(f"daily_request_limit value {self.daily_request_limit} is outside safe range (0-1000, 0=unlimited). Using 100.")
             self.daily_request_limit = 100
+    
+    def create_llm_client(self) -> llm_client.LLMClient:
+        """Create an LLM client from this configuration.
+        
+        Returns:
+            Configured LLMClient instance (may be mock if no valid API key)
+        """
+        return llm_client.create_client_from_config(
+            model=self.model_name or "gpt-4o-mini",
+            provider=self.provider,
+            api_key=self.api_key,
+            max_tokens=self.max_tokens,
+            timeout_seconds=self.timeout_seconds,
+            temperature=0.7,
+        )
 
 def get_api_key_from_env(provider: str) -> Optional[str]:
     """Get API key from environment variables based on provider.
