@@ -1,4 +1,5 @@
 import random
+import logging
 from typing import TYPE_CHECKING, Dict, List, Tuple, Optional, cast
 
 # Update constants import to relative
@@ -736,7 +737,9 @@ class GameLogic:
             occupied_positions[pos].append(entity)
         
         # Spread stacked entities
-        for pos, entities in occupied_positions.items():
+        # Use list() to create a snapshot - prevents "dictionary changed size during iteration"
+        # error when adding new positions while iterating
+        for pos, entities in list(occupied_positions.items()):
             if len(entities) > 1:
                 for i, entity in enumerate(entities[1:], 1):
                     # Try to find nearby empty position
@@ -994,17 +997,17 @@ class GameLogic:
     def _settle_arrival(self, dwarf):
         """The dwarf is standing on the task tile. Start the work, or finish a move."""
         if not dwarf.task:
-            self.game_state.add_debug_message(f"D{dwarf.id} finished moving but had no task. Setting to IDLE.")
+            logging.info(f"D{dwarf.id} finished moving but had no task. Setting to IDLE.")
             dwarf.state = 'idle'
             return
         if dwarf.task.type == 'move':
-            self.game_state.add_debug_message(f"D{dwarf.id} completed MOVE task to ({dwarf.x},{dwarf.y}). Setting state to IDLE.")
+            logging.info(f"D{dwarf.id} completed MOVE task to ({dwarf.x},{dwarf.y}). Setting state to IDLE.")
             dwarf.state = 'idle'
             dwarf.task = None
             dwarf.action_progress = 0
             return
         if dwarf.task.type == 'talk':
-            self.game_state.add_debug_message(f"D{dwarf.id} reached destination for TALK task at ({dwarf.x},{dwarf.y}) targeting ({dwarf.task.resource_x},{dwarf.task.resource_y}).")
+            logging.info(f"D{dwarf.id} reached destination for TALK task at ({dwarf.x},{dwarf.y}) targeting ({dwarf.task.resource_x},{dwarf.task.resource_y}).")
             target_entity = None
             if dwarf.task.resource_x is not None and dwarf.task.resource_y is not None:
                 for char in self.game_state.characters:
@@ -1023,7 +1026,7 @@ class GameLogic:
                         (f"({offering_cost_str}).", "NORMAL"),
                         ("Will you make this offering? (Y/N)", "NORMAL")
                     ]
-                    self.game_state.add_debug_message(f"D{dwarf.id} initiated Oracle dialogue with {target_entity.name}. Awaiting offering.")
+                    logging.info(f"D{dwarf.id} initiated Oracle dialogue with {target_entity.name}. Awaiting offering.")
                 elif isinstance(target_entity, NPC):
                     self.game_state.add_debug_message(f"D{dwarf.id} talks to {target_entity.name}. They grunt noncommittally.")
                 else:
@@ -1045,7 +1048,7 @@ class GameLogic:
         }
         action_state = task_type_to_action_state.get(dwarf.task.type)
         if action_state:
-            self.game_state.add_debug_message(f"D{dwarf.id} reached destination for {dwarf.task.type} task. Setting state to {action_state}.")
+            logging.info(f"D{dwarf.id} reached destination for {dwarf.task.type} task. Setting state to {action_state}.")
             dwarf.state = action_state
             dwarf.action_progress = 0
         else:
@@ -1062,7 +1065,7 @@ class GameLogic:
         situation = (dwarf.state, task_type, path_len)
         if situation != getattr(dwarf, "_tick_log", None):
             dwarf._tick_log = situation
-            self.game_state.add_debug_message(
+            logging.info(
                 f"Updating D{dwarf.id}. Prev State: {dwarf.previous_state}, New State: {dwarf.state}, Task: {task_type or 'None'}, Path len: {path_len}"
             )
 

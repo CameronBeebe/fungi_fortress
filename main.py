@@ -7,9 +7,11 @@ Uses curses.wrapper to ensure proper terminal cleanup.
 """
 import curses
 import time
-import sys # Import sys for stdout/stderr
-import logging # Import logging
-import os # Import os for environment variables
+import sys
+import logging
+import os
+import traceback
+from datetime import datetime
 
 from fungi_fortress.play_log import start_play_log
 from fungi_fortress.game_state import GameState
@@ -40,7 +42,7 @@ def main(stdscr: curses.window):
     Args:
         stdscr: The main curses window object provided by curses.wrapper.
     """
-    logging.info("Curses main function started.") # Log start of main
+    logging.info("Curses main function started.")
 
     # Set ESC key delay to 25ms for faster ESC key response (Python 3.9+)
     if hasattr(curses, 'set_escdelay'):
@@ -158,17 +160,13 @@ def main(stdscr: curses.window):
             other_overlays_active = game_state.show_inventory or game_state.in_shop or game_state.show_legend
             
             if not (paused_without_oracle or other_overlays_active):
-                # logging.debug("Updating game logic...") # This can be very verbose
                 game_logic.update()
                 needs_render = True
-            # else:
-                # logging.debug("Game logic update skipped due to pause/overlay.")
             last_logic_time = current_time - (elapsed_since_logic % target_logic_time)  # Maintain fixed timestep
         
         # Render at higher framerate, but only if needed
         elapsed_since_render = current_time - last_render_time
         if elapsed_since_render >= target_render_time and needs_render:
-            # logging.debug("Rendering game screen...") # This can be very verbose
             # Don't clear the entire screen, let the renderer handle its windows
             if game_state.show_inventory:
                 renderer.show_inventory_screen()
@@ -199,18 +197,36 @@ if __name__ == "__main__":
     try:
         curses.wrapper(main)
     except Exception as e:
-        logging.exception("Unhandled exception in curses.wrapper or main function.")
+        # Ensure curses cleanup happens
+        try:
+            curses.endwin()
+        except:
+            pass
+        
+        # Write full traceback to crash log
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+        crash_log_path = os.path.join(log_dir, "fungi_crash.log")
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        tb_str = traceback.format_exc()
+        
+        with open(crash_log_path, "a") as f:
+            f.write(f"\n{'='*80}\n")
+            f.write(f"CRASH at {timestamp}\n")
+            f.write(f"{'='*80}\n")
+            f.write(tb_str)
+            f.write(f"\n{'='*80}\n\n")
+        
+        # Print error info to stderr after curses ends
+        print(f"\n{'='*80}", file=sys.stderr)
         print(f"FATAL ERROR: {e}", file=sys.stderr)
-        # Attempt to shutdown logging gracefully even on fatal error
+        print(f"{'='*80}", file=sys.stderr)
+        print(f"\nFull crash log written to: {crash_log_path}", file=sys.stderr)
+        print("\nLast traceback frames:", file=sys.stderr)
+        print("".join(traceback.format_tb(sys.exc_info()[2])[-3:]), file=sys.stderr)
+        print(f"{type(e).__name__}: {e}", file=sys.stderr)
+        print(f"{'='*80}\n", file=sys.stderr)
+        
         logging.shutdown()
         sys.exit(1)
-
-# Comments:
-# - Removed redundant curses setup.
-# - Passed stdscr to Renderer.
-# - Called renderer.render().
-# - Added basic initial map generation and dwarf placement.
-# - Added logic to handle overlay states (inventory, shop, legend).
-# - Removed sys.path manipulation.
-# - Added type hints for stdscr and key variables.
-# - Removed try/except block around constants import.

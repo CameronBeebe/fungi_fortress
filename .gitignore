@@ -113,3 +113,4 @@ llm_interactions.log # Add the new general LLM log file name
 tests/test_integration_xai_direct.py # Located in tests/
 .venv/
 
+logs/
