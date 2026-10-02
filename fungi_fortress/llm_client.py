@@ -242,7 +242,14 @@ class LLMClient:
             config: Client configuration. If None, uses mock provider.
             use_mock: Force use of mock provider even if config is provided.
         """
-        self._use_mock = use_mock or config is None or not config.api_key
+        # Check if we should use mock
+        should_mock = (
+            use_mock 
+            or config is None 
+            or not config.api_key 
+            or config.api_key in ("YOUR_API_KEY_HERE", "testkey123")
+        )
+        self._use_mock = should_mock
         
         if self._use_mock:
             self._provider = MockLLMProvider()
