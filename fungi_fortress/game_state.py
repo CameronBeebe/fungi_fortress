@@ -238,10 +238,6 @@ class GameState:
         # --- Initialize Event Queue ---
         self.event_queue = []
 
-        # --- Bridge Wood Reservation System ---
-        # Tracks wood reserved for each queued bridge task by (resource_x, resource_y)
-        self.bridge_wood_reservations: Dict[Tuple[int, int], int] = {}
-
         self.add_debug_message(f"Map initialized: {len(self.main_map)}x{len(self.main_map[0]) if self.main_map else 0}")
         self.add_debug_message(f"Dwarves spawned: {len(self.dwarves)}")
         self.add_debug_message(f"Fungi locations cached: {len(self.magic_fungi_locations)}")
@@ -425,34 +421,35 @@ class GameState:
     # --- Bridge Wood Reservation Management ---
     
     def get_reserved_wood(self) -> int:
-        """Returns the total amount of wood reserved for pending bridge tasks."""
-        return sum(self.bridge_wood_reservations.values())
+        """Computes total wood reserved for pending bridge tasks.
+        
+        Counts wood needed for all build_bridge tasks that are either:
+        - Queued in the task_manager
+        - Currently assigned to a dwarf
+        
+        This ensures reservations stay in sync with actual tasks and cannot leak.
+        """
+        from .game_logic import BRIDGE_WOOD_COST
+        
+        reserved = 0
+        
+        # Count queued tasks
+        for task in self.task_manager.tasks:
+            if task.type == "build_bridge":
+                reserved += BRIDGE_WOOD_COST
+        
+        # Count assigned tasks
+        for dwarf in self.dwarves:
+            if dwarf.task and dwarf.task.type == "build_bridge":
+                reserved += BRIDGE_WOOD_COST
+        
+        return reserved
     
     def get_available_wood(self) -> int:
-        """Returns wood available after accounting for reservations."""
+        """Returns wood available after accounting for bridge reservations."""
         total_wood = self.inventory.resources.get("wood", 0)
         reserved = self.get_reserved_wood()
         return total_wood - reserved
-    
-    def reserve_bridge_wood(self, bridge_pos: Tuple[int, int], amount: int) -> bool:
-        """Reserves wood for a bridge at the given position.
-        
-        Args:
-            bridge_pos: (x, y) coordinates of the bridge segment
-            amount: Amount of wood to reserve
-            
-        Returns:
-            True if reservation was successful, False if insufficient wood
-        """
-        if self.get_available_wood() >= amount:
-            self.bridge_wood_reservations[bridge_pos] = amount
-            return True
-        return False
-    
-    def release_bridge_wood(self, bridge_pos: Tuple[int, int]):
-        """Releases the wood reservation for a bridge at the given position."""
-        if bridge_pos in self.bridge_wood_reservations:
-            del self.bridge_wood_reservations[bridge_pos]
     
     # --- End Bridge Wood Reservation Management ---
 

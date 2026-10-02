@@ -622,17 +622,11 @@ class InputHandler:
                         adjacent_x, adjacent_y = stand
                         task = Task(adjacent_x, adjacent_y, task_type, target_x, target_y)
                         
-                        # Reserve the wood before adding the task
-                        if self.game_state.reserve_bridge_wood((target_x, target_y), BRIDGE_WOOD_COST):
-                            if self.game_state.task_manager.add_task(task):
-                                self.game_state.add_debug_message(f"Bridge building task assigned for ({target_x}, {target_y}) via ({adjacent_x}, {adjacent_y})")
-                            else:
-                                # Task manager full, release the reservation
-                                self.game_state.release_bridge_wood((target_x, target_y))
-                                self.game_state.add_debug_message("Failed to add bridge task (manager full?)")
+                        # Wood is reserved automatically when task is added to queue
+                        if self.game_state.task_manager.add_task(task):
+                            self.game_state.add_debug_message(f"Bridge building task assigned for ({target_x}, {target_y}) via ({adjacent_x}, {adjacent_y})")
                         else:
-                            # This shouldn't happen since we checked available_wood above
-                            self.game_state.add_debug_message("Failed to reserve wood for bridge (internal error)")
+                            self.game_state.add_debug_message("Failed to add bridge task (manager full?)")
                     else:
                         # Not enough wood available
                         total_wood = self.game_state.inventory.resources.get("wood", 0)

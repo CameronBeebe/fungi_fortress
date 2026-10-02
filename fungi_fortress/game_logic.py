@@ -1304,7 +1304,7 @@ class GameLogic:
         """Complete building a bridge segment.
         
         Handles:
-        - Wood deduction and reservation release on success
+        - Wood deduction on success (reservation released automatically when task completes)
         - Cancellation of dependent bridge segments on failure
         - Clear player messaging for all outcomes
         """
@@ -1342,22 +1342,21 @@ class GameLogic:
             self._handle_bridge_failure(bridge_pos, f"target is {target_bridge_tile.entity.name}, not Water")
             return
 
-        # Success: deduct wood, build bridge, release reservation
+        # Success: deduct wood and build bridge
+        # Reservation released automatically when dwarf.task is cleared
         self.game_state.inventory.remove_resource("wood", BRIDGE_WOOD_COST)
         target_bridge_tile.entity = bridge_entity_data
-        self.game_state.release_bridge_wood(bridge_pos)
         self.game_state.add_debug_message(f"D{dwarf.id} built bridge segment at {bridge_pos}")
 
     def _handle_bridge_failure(self, failed_bridge_pos: Tuple[int, int], reason: str):
-        """Handle bridge building failure by releasing reservation and cancelling dependent tasks.
+        """Handle bridge building failure by cancelling dependent tasks.
+        
+        Wood reservations are released automatically when tasks are removed.
         
         Args:
             failed_bridge_pos: Position of the bridge that failed to build
             reason: Human-readable reason for the failure
         """
-        # Release the reservation for the failed bridge
-        self.game_state.release_bridge_wood(failed_bridge_pos)
-        
         # Find and cancel tasks that depend on this bridge
         # A task depends on this bridge if it cannot be reached without it
         cancelled_tasks = []
@@ -1396,9 +1395,9 @@ class GameLogic:
                     if path is None:
                         # This task is now unreachable, cancel it
                         cancelled_tasks.append(task)
-                        self.game_state.release_bridge_wood(task_bridge_pos)
         
         # Remove cancelled tasks from the task manager
+        # Reservations released automatically when tasks are removed
         for task in cancelled_tasks:
             self.game_state.task_manager.remove_task(task)
         
