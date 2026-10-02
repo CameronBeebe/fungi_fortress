@@ -214,7 +214,7 @@ seed_dict = llm_world.generate_world_seed(
 )
 ```
 
-The client automatically extracts JSON from markdown code fences.
+The `llm_world.generate_world_seed` function automatically extracts JSON from markdown code fences when parsing world seed responses.
 
 ## Testing
 

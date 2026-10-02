@@ -1,7 +1,7 @@
 """Smoke test to exercise all hotkey command paths.
 
 This test doesn't validate correct behavior, just checks that hotkeys
-don't crash. Any crashes found are marked xfail with reasons for next PR.
+don't crash.
 """
 import pytest
 import curses

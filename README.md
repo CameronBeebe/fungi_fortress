@@ -9,7 +9,7 @@ A terminal-based strategy/simulation game written in Python using the curses lib
 - **🎮 Offline Mode**: Built-in mock provider - fully playable with no API key required
 - **⚡ XAI Provider**: Direct integration with XAI (Grok) via `https://api.x.ai/v1`
 - **🛡️ Typed Errors**: Clear error handling with player-friendly messages
-- **📊 Tested**: 217+ tests passing, including client and Oracle integration tests
+- **📊 Tested**: 227 tests passing, including client and Oracle integration tests
 - **🔒 Secure**: API keys never logged or exposed (field(repr=False), env-only)
 
 **Quick Setup**: 
@@ -237,7 +237,7 @@ The unified LLM client supports both online (xAI/Grok) and offline (mock) modes.
 - **✅ XAI-Only Architecture**: Simplified to XAI (Grok) + mock provider only
 - **✅ Mock Provider**: Fully playable offline with deterministic Oracle responses and `[Offline Mode]` indicator
 - **✅ Typed Error Handling**: Clear exceptions with player-friendly messages
-- **✅ Comprehensive Test Suite**: 213+ tests passing
+- **✅ Comprehensive Test Suite**: 227 tests passing
 - **✅ Streaming Support**: Real-time Oracle responses for engaging gameplay
 - **✅ XAI-Specific Features**: `reasoning_effort` (high/low) and `response_format` (JSON Schema)
 - **✅ Security**: API keys never logged (field(repr=False), removed from action details)
