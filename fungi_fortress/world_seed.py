@@ -248,22 +248,16 @@ def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
         except Exception:
             pass
     
-    # Try environment variables as fallback
-    for env_name, model in (
-        ("XAI_API_KEY", "grok-3-mini"),
-        ("OPENAI_API_KEY", "gpt-4o-mini"),
-        ("GROQ_API_KEY", "llama-3.3-70b-versatile"),
-    ):
-        key = os.environ.get(env_name, "").strip()
-        if key:
-            return llm_client.create_client_from_config(
-                model=model,
-                provider="auto",
-                api_key=key,
-                max_tokens=4000,
-                timeout_seconds=45,
-                temperature=0.8,
-            )
+    # Try XAI_API_KEY environment variable as fallback
+    xai_key = os.environ.get("XAI_API_KEY", "").strip()
+    if xai_key:
+        return llm_client.create_client_from_config(
+            model="grok-3-mini",
+            api_key=xai_key,
+            max_tokens=4000,
+            timeout_seconds=45,
+            temperature=0.8,
+        )
     
     return None
 

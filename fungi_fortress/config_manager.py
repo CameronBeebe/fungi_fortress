@@ -2,7 +2,7 @@ import configparser
 from typing import Optional, Dict, List
 import os
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import llm_client
 
@@ -18,7 +18,7 @@ DEFAULT_CONFIG_FILENAME = "llm_config.ini"
 @dataclass
 class LLMConfig:
     """Configuration for XAI LLM interactions."""
-    api_key: Optional[str] = None
+    api_key: Optional[str] = field(default=None, repr=False)  # Redacted from repr to prevent leaks
     model_name: str = "grok-3-mini"  # Default XAI model
     context_level: str = "medium"  # Default context level (low, medium, high)
     enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
@@ -233,7 +233,6 @@ if __name__ == "__main__":
     else:
         print("  API Key: Not configured.")
     print(f"  Model Name: {config.model_name if config.model_name else 'Not specified (will use default)'}")
-    print(f"  Provider: {config.provider}")
     print(f"  Context Level: {config.context_level}")
 
     # Test with a non-existent file

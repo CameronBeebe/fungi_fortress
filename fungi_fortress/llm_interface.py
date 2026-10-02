@@ -88,7 +88,7 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
             "prompt": prompt,
             "model_name": game_state.llm_config.model_name,
             "provider_hint": "xai",  # Fixed to XAI provider
-            "llm_config": game_state.llm_config,
+            # NOTE: llm_config NOT included here to prevent API key leaks in logs
             "player_query": player_query,
             "oracle_name": oracle_name,
             "game_context": game_context,
