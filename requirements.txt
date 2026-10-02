@@ -9,8 +9,7 @@ windows-curses; sys_platform == "win32"
 noise>=1.2.0                  # For procedural map generation
 
 # LLM API integrations
-groq>=0.4.0                   # For Groq API support
-openai>=1.0.0                 # For OpenAI and XAI API support  
+openai>=1.0.0                 # For XAI (Grok) API support (OpenAI-compatible endpoint)
 requests>=2.25.0              # For HTTP requests to LLM APIs
 
 # Jev is called over HTTPS with the Python standard library (see jev_client.py).

@@ -4,17 +4,17 @@ A terminal-based strategy/simulation game written in Python using the curses lib
 
 ## 🤖 LLM Integration Status
 
-**✅ PRODUCTION-READY + OFFLINE MODE** - The Oracle LLM integration is fully ready for both live API usage and offline play:
+**✅ PRODUCTION-READY + OFFLINE MODE** - The Oracle LLM integration is fully ready for both live XAI (Grok) API usage and offline play:
 
 - **🎮 Offline Mode**: Built-in mock provider - fully playable with no API key required
-- **⚡ Unified Client**: Single OpenAI-compatible interface for all providers
-- **🔧 Multi-Provider**: Supports XAI (Grok), OpenAI (GPT), Anthropic (Claude), Groq, Together, Perplexity
+- **⚡ XAI Provider**: Direct integration with XAI (Grok) via `https://api.x.ai/v1`
 - **🛡️ Typed Errors**: Clear error handling with player-friendly messages
-- **📊 Battle-Tested**: 40+ new tests for client, mock provider, Oracle integration, and error handling
+- **📊 Battle-Tested**: 213+ tests passing, including comprehensive client and Oracle tests
+- **🔒 Secure**: API keys never logged or exposed (field(repr=False), env-only)
 
 **Quick Setup**: 
-- **No API key?** Just play! The game uses a deterministic mock Oracle.
-- **Have an API key?** Set it as an environment variable (e.g., `export OPENAI_API_KEY="sk-..."`), and the game auto-detects your provider.
+- **No API key?** Just play! The game uses a deterministic mock Oracle with `[Offline Mode]` indicator.
+- **Have an XAI key?** Set `export XAI_API_KEY="your-key"` and enjoy live Grok-powered Oracle responses.
 
 See [LLM Oracle Integration](#llm-oracle-integration) below for details.
 
@@ -100,18 +100,12 @@ python main.py          # Direct script
 
 To use live LLM providers:
 
-*   Set your API key as an environment variable (for security):
+*   Set your XAI API key as an environment variable (for security):
     ```bash
-    # For OpenAI:         export OPENAI_API_KEY="your-openai-api-key-here"
-    # For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
-    # For Anthropic:      export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
-    # For Groq:           export GROQ_API_KEY="your-groq-api-key-here"
-    # For Together:       export TOGETHER_API_KEY="your-together-api-key-here"
-    # For Perplexity:     export PERPLEXITY_API_KEY="your-perplexity-api-key-here"
+    export XAI_API_KEY="your-xai-api-key-here"
     ```
 *   Optionally, copy `llm_config.ini.example` to `llm_config.ini` to configure model and parameters
-*   The game automatically detects which provider to use based on your model name
-*   **No API key?** The game automatically uses the mock provider (offline mode)
+*   **No API key?** The game automatically uses the mock provider (offline mode) with `[Offline Mode]` indicator
 
 ## Basic Controls
 
@@ -243,24 +237,28 @@ Fungi Fortress features an AI-powered Oracle that provides guidance, lore, and i
 
 ### Recent Improvements (Latest Update)
 
-- **✅ Unified Client Architecture**: Single, clean interface for all LLM interactions
-- **✅ Mock Provider**: Fully playable offline with deterministic Oracle responses
+- **✅ XAI-Only Architecture**: Simplified to XAI (Grok) + mock provider only
+- **✅ Mock Provider**: Fully playable offline with deterministic Oracle responses and `[Offline Mode]` indicator
 - **✅ Typed Error Handling**: Clear exceptions with player-friendly messages
-- **✅ Comprehensive Test Suite**: 205+ tests passing, including 40 new tests for the unified client
-- **✅ Provider Auto-Detection**: Automatically selects the correct API based on model name
+- **✅ Comprehensive Test Suite**: 213+ tests passing
 - **✅ Streaming Support**: Real-time Oracle responses for engaging gameplay
-- **✅ OpenAI-Compatible**: Works with OpenAI, XAI (Grok), Anthropic (Claude), Groq, Together, Perplexity
+- **✅ XAI-Specific Features**: `reasoning_effort` (high/low) and `response_format` (JSON Schema)
+- **✅ Security**: API keys never logged (field(repr=False), removed from action details)
 
-### Supported LLM Providers
+### Supported LLM Provider
 
-The Oracle supports multiple LLM providers through a unified interface:
+The Oracle uses **XAI (Grok)** via `https://api.x.ai/v1`:
 
-- **XAI (Grok models)**: Access to Grok-3, Grok-2, and other Grok models via XAI's direct API
-  - **NEW**: Full support for structured JSON responses and reasoning tokens
-- **OpenAI**: GPT-4o, GPT-4o-mini, GPT-4-turbo, and GPT-3.5-turbo models  
-- **Anthropic**: Claude-3.5-Sonnet, Claude-3.5-Haiku, and Claude-3-Opus models
-- **Groq**: Fast inference for open-source models like LLaMA, Mixtral, and Gemma
-- **Auto-detection**: Automatically chooses the appropriate provider based on model name
+- **Available Models**:
+  - `grok-3-mini` (default, recommended)
+  - `grok-3-mini-fast`
+  - `grok-3`, `grok-3-beta`
+  - `grok-2-1212`
+  - `grok-beta`, `grok-vision-beta`
+
+- **XAI Features**:
+  - `reasoning_effort`: "high" for Oracle (quality), "low" for world gen (speed)
+  - `response_format`: JSON Schema for structured action parsing
 
 ### Configuration
 
@@ -269,41 +267,35 @@ Copy `llm_config.ini.example` to `llm_config.ini` and configure your settings:
 ```ini
 [LLM]
 # === API KEY CONFIGURATION ===
-# API keys are loaded from environment variables for security
-# Set these environment variables in your shell or .env file:
+# API key is loaded from environment variable for security
+# Set this in your shell or .env file:
 #
 # For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
-# For OpenAI:         export OPENAI_API_KEY="your-openai-api-key-here"
-# For Anthropic:      export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
-# For Groq:           export GROQ_API_KEY="your-groq-api-key-here"
-# For Together:       export TOGETHER_API_KEY="your-together-api-key-here"
-# For Perplexity:     export PERPLEXITY_API_KEY="your-perplexity-api-key-here"
+#
+# If not set, the game uses the built-in mock provider (offline mode)
 
-# Provider selection (auto, xai, groq, openai, anthropic, together, perplexity)
-provider = auto
-
-# Model to use - examples by provider:
-# XAI: grok-3, grok-3-beta, grok-2-1212, grok-3-mini, grok-3-mini-fast
-# OpenAI: gpt-4o, gpt-4o-mini, gpt-3.5-turbo  
-# Anthropic: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022
-# Groq: llama-3.3-70b-versatile, llama-3.1-8b-instant, gemma2-9b-it
-# Together: meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo
-# Perplexity: llama-3.1-sonar-small-128k-online
-model_name = gpt-4o-mini
+# Model to use (XAI Grok models only):
+#   grok-3-mini (default, recommended)
+#   grok-3-mini-fast, grok-3, grok-3-beta
+#   grok-2-1212, grok-beta, grok-vision-beta
+model_name = grok-3-mini
 
 # Context level for game information (low, medium, high)
+# low = tick + depth, 1 history turn
+# medium = + mission, 3 history turns
+# high = + resources, 5 history turns
 context_level = medium
 
 # === COST CONTROL SETTINGS ===
 max_tokens = 1000             # Max response length (prevents runaway costs)
-daily_request_limit = 0       # Daily API call limit (0 = unlimited)
 timeout_seconds = 60          # Request timeout (prevents hanging)
-max_retries = 2              # Retry attempts (reliability)
+enable_streaming = true       # Word-by-word streaming responses
+enable_structured_outputs = false  # JSON Schema for action parsing
 ```
 
-### Using Your API Credits
+### Using Your XAI API Key
 
-**Secure Environment Variable Setup**: API keys are now stored as environment variables for enhanced security:
+**Secure Environment Variable Setup**: API keys are stored as environment variables for security:
 
 ```bash
 # Add to your shell profile (.bashrc, .zshrc, etc.) for persistence:
@@ -312,6 +304,8 @@ export XAI_API_KEY="your-xai-api-key-here"
 # Or set for current session only:
 export XAI_API_KEY="your-xai-api-key-here"
 ```
+
+**No XAI key?** The game works perfectly offline using the mock provider!
 
 ### Testing Infrastructure
 
