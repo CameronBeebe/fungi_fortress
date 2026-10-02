@@ -21,6 +21,7 @@ class LLMConfig:
     api_key: Optional[str] = None
     model_name: str = "grok-3-mini"  # Default model
     provider: str = "auto"  # Provider: auto, xai, groq, openai, anthropic, etc.
+    base_url: Optional[str] = None  # Optional base URL override (for Ollama, OpenRouter, etc.)
     context_level: str = "medium"  # Default context level (low, medium, high)
     enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
     offering_item: Optional[str] = None # Specific item Oracle might ask for (optional)
@@ -69,6 +70,7 @@ class LLMConfig:
             model=self.model_name or "gpt-4o-mini",
             provider=self.provider,
             api_key=self.api_key,
+            base_url=self.base_url,
             max_tokens=self.max_tokens,
             timeout_seconds=self.timeout_seconds,
             temperature=0.7,
@@ -108,32 +110,21 @@ def get_api_key_from_env(provider: str) -> Optional[str]:
 def detect_provider_from_model(model_name: str) -> str:
     """Auto-detect provider based on model name.
     
+    Delegates to llm_client._detect_provider_from_model for consistency.
+    
     Args:
         model_name: The model name to analyze
         
     Returns:
         The detected provider name
+        
+    Raises:
+        ValueError: If model name doesn't match any known provider
     """
     if not model_name:
-        return "openai"  # Default fallback
-        
-    model_lower = model_name.lower()
+        raise ValueError("Model name is required for provider detection")
     
-    if "grok" in model_lower:
-        return "xai"
-    elif any(x in model_lower for x in ["gpt-", "davinci", "curie", "babbage", "ada"]):
-        return "openai"
-    elif "claude" in model_lower:
-        return "anthropic"
-    elif any(x in model_lower for x in ["llama", "mixtral", "gemma"]):
-        return "groq"
-    elif "meta-llama" in model_lower or "together" in model_lower:
-        return "together"
-    elif "sonar" in model_lower:
-        return "perplexity"
-    else:
-        logger.warning(f"Could not auto-detect provider for model '{model_name}', defaulting to openai")
-        return "openai"
+    return llm_client._detect_provider_from_model(model_name)
 
 def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfig:
     """Loads LLM configuration from the specified .ini file.
@@ -160,20 +151,40 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
         with open(config_file_path, 'r') as f:
             parser.read_file(f)
     except FileNotFoundError:
-        logger.info(f"Configuration file '{config_file_path}' not found. LLM features may be unavailable.")
-        example_config_path = os.path.join(PACKAGE_ROOT_DIR, "llm_config.ini.example")
-        if os.path.exists(example_config_path):
-            logger.info(f"Configuration file '{config_file_name}' not found.")
-            logger.info(f"To enable LLM features, please copy '{example_config_path}' to '{config_file_path}' and set your API keys in environment variables.")
-            logger.info("See README.md for more details.")
-        else:
-            logger.info(f"Configuration file '{config_file_name}' not found and no example configuration was found.")
-            logger.info("LLM features will be disabled. See README.md for manual configuration instructions if you wish to use them.")
+        logger.info(f"Configuration file '{config_file_path}' not found.")
+        
+        # Check for API keys in environment even without config file
+        # Try each provider's key to determine which one to use
+        for provider_name in ["xai", "openai", "anthropic", "groq", "together", "perplexity"]:
+            api_key = get_api_key_from_env(provider_name)
+            if api_key:
+                logger.info(f"Found {provider_name.upper()} API key in environment, using defaults for that provider")
+                # Return config with detected provider and default model
+                default_models = {
+                    "xai": "grok-3-mini",
+                    "openai": "gpt-4o-mini",
+                    "anthropic": "claude-3-5-sonnet-20241022",
+                    "groq": "llama-3.3-70b-versatile",
+                    "together": "meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo",
+                    "perplexity": "llama-3.1-sonar-large-128k-online",
+                }
+                return LLMConfig(
+                    api_key=api_key,
+                    model_name=default_models.get(provider_name, "gpt-4o-mini"),
+                    provider=provider_name,
+                    context_level="medium",
+                    max_tokens=1000,
+                    timeout_seconds=60,
+                )
+        
+        # No API keys found either
+        logger.info("No API keys found in environment. LLM will use mock provider (offline mode).")
         return LLMConfig() 
 
     # Default values
     model_name: Optional[str] = None
     provider: str = "auto"
+    base_url: Optional[str] = None
     context_level: str = "medium"
     
     # Safety settings with defaults
@@ -196,6 +207,11 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
         if provider not in ["auto", "xai", "groq", "openai", "anthropic", "together", "perplexity"]:
             logger.warning(f"Invalid 'provider' in '{config_file_path}'. Using default 'auto'.")
             provider = "auto"
+        
+        # Optional base URL override
+        base_url = parser["LLM"].get("base_url")
+        if base_url:
+            logger.info(f"Using custom base URL: {base_url}")
             
         context_level_from_file = parser["LLM"].get("context_level")
         if context_level_from_file in ["low", "medium", "high"]:
@@ -257,13 +273,32 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
         logger.warning(f"[LLM] section not found in '{config_file_path}'. LLM features may be unavailable.")
 
     # Determine actual provider for API key lookup
+    # Precedence: 1) explicit provider, 2) detect from model, 3) detect from env key
     actual_provider = provider
-    if provider == "auto" and model_name:
-        actual_provider = detect_provider_from_model(model_name)
-        logger.info(f"Auto-detected provider '{actual_provider}' for model '{model_name}'")
-    elif provider == "auto":
-        actual_provider = "openai"  # Default fallback
-        logger.info(f"No model specified, defaulting to provider '{actual_provider}'")
+    
+    if provider != "auto":
+        # Explicit provider in config wins
+        logger.info(f"Using explicit provider '{provider}' from config")
+        actual_provider = provider
+    elif model_name:
+        # Auto-detect from model name
+        try:
+            actual_provider = detect_provider_from_model(model_name)
+            logger.info(f"Auto-detected provider '{actual_provider}' for model '{model_name}'")
+        except ValueError as e:
+            logger.error(f"Provider detection failed: {e}")
+            raise
+    else:
+        # No explicit provider and no model - check which env key is set
+        for provider_name in ["xai", "openai", "anthropic", "groq", "together", "perplexity"]:
+            if get_api_key_from_env(provider_name):
+                actual_provider = provider_name
+                logger.info(f"Auto-detected provider '{actual_provider}' from environment key")
+                break
+        else:
+            # No env keys found
+            logger.info("No provider specified and no API keys in environment")
+            actual_provider = "openai"  # Default for mock
 
     # Get API key from environment variables
     api_key = get_api_key_from_env(actual_provider)
@@ -271,7 +306,8 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
     return LLMConfig(
         api_key=api_key, 
         model_name=model_name, 
-        provider=provider, 
+        provider=provider,
+        base_url=base_url,
         context_level=context_level,
         max_tokens=max_tokens,
         timeout_seconds=timeout_seconds,

@@ -324,6 +324,7 @@ def create_client_from_config(
     model: str,
     provider: str = "auto",
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
     max_tokens: int = 1000,
     timeout_seconds: int = 60,
     temperature: float = 0.7,
@@ -334,6 +335,7 @@ def create_client_from_config(
         model: Model name (e.g., 'gpt-4o-mini', 'grok-3-mini')
         provider: Provider name or 'auto' to detect from model
         api_key: API key, or None to use mock provider
+        base_url: Optional base URL override (for Ollama, OpenRouter, etc.)
         max_tokens: Maximum tokens per response
         timeout_seconds: Request timeout
         temperature: Sampling temperature
@@ -350,8 +352,9 @@ def create_client_from_config(
         logger.info("No valid API key configured, using mock provider")
         return LLMClient(use_mock=True)
     
-    # Build base URL for provider
-    base_url = _base_url_for_provider(provider)
+    # Use provided base URL or get default for provider
+    if not base_url:
+        base_url = _base_url_for_provider(provider)
     
     config = LLMClientConfig(
         base_url=base_url,
@@ -366,24 +369,36 @@ def create_client_from_config(
 
 
 def _detect_provider_from_model(model: str) -> str:
-    """Detect provider from model name."""
+    """Detect provider from model name.
+    
+    Returns provider name or raises ValueError if unknown.
+    """
     model_lower = model.lower()
     
+    # Check most specific patterns first
     if "grok" in model_lower:
         return "xai"
+    elif "sonar" in model_lower:
+        # Perplexity sonar models
+        return "perplexity"
+    elif "/" in model and "meta-llama" in model_lower:
+        # Together uses org/model format with slash
+        return "together"
     elif any(x in model_lower for x in ["gpt-", "davinci", "curie"]):
         return "openai"
     elif "claude" in model_lower:
         return "anthropic"
-    elif any(x in model_lower for x in ["llama", "mixtral", "gemma"]):
+    elif any(x in model_lower for x in ["llama", "mixtral", "gemma"]) and "/" not in model:
+        # Groq uses model names without slash
         return "groq"
-    elif "meta-llama" in model_lower:
-        return "together"
-    elif "sonar" in model_lower:
-        return "perplexity"
     else:
-        logger.warning(f"Could not detect provider for model '{model}', defaulting to openai")
-        return "openai"
+        # Unknown provider - error instead of silent fallback
+        raise ValueError(
+            f"Unknown model provider for '{model}'. "
+            f"Supported: OpenAI (gpt-*), XAI (grok*), Anthropic (claude*), "
+            f"Groq (llama*/mixtral*/gemma* without /), "
+            f"Together (org/model with /), Perplexity (*sonar*)"
+        )
 
 
 def _base_url_for_provider(provider: str) -> str:
