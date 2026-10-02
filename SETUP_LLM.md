@@ -81,7 +81,7 @@ Run the tests to verify everything works:
 uv run pytest
 ```
 
-All 213+ tests should pass.
+All tests should pass.
 
 To specifically test the LLM client:
 
