@@ -1,15 +1,14 @@
 # 🔒 Secure LLM Setup Guide
 
-This guide shows you how to set up LLM integration for Fungi Fortress using secure environment variables.
+This guide shows you how to set up LLM integration for Fungi Fortress.
 
-## ✅ Quick Setup (3 steps)
+**🎮 Note**: The game is **fully playable without an API key** using the built-in mock Oracle. This guide is only needed if you want to use live LLM providers.
 
-### 1. Copy the configuration template
-```bash
-cp llm_config.ini.example llm_config.ini
-```
+## ✅ Quick Setup for Live LLM (optional)
 
-### 2. Set your API key as an environment variable
+### 1. Set your API key as an environment variable
+
+**No configuration file needed!** Just set your API key:
 
 Choose your provider and set the corresponding environment variable:
 
@@ -33,12 +32,22 @@ export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
 export GROQ_API_KEY="your-groq-api-key-here"
 ```
 
-### 3. Run the game
+### 2. (Optional) Configure model preferences
+
+To change the default model or tweak parameters:
+
 ```bash
-python main.py
+cp llm_config.ini.example llm_config.ini
+# Edit llm_config.ini to set your preferred model
 ```
 
-The game will automatically detect which API key to use based on your chosen model!
+### 3. Run the game
+```bash
+uv run fungi
+# or: python main.py
+```
+
+The game will automatically detect which API key to use based on your model!
 
 ## 🔧 Configuration Options
 
@@ -56,12 +65,32 @@ Edit `llm_config.ini` to customize:
 ✅ **Easy rotation** - Change keys without touching code  
 ✅ **Process isolation** - Keys are only visible to your game process  
 
+## 🎮 Offline Mode (No API Key Required)
+
+**New in this version**: Fungi Fortress is fully playable without any API key!
+
+When no API key is configured, the game automatically uses a **mock Oracle** that provides:
+- Deterministic, in-character responses
+- Perfect for offline play and testing
+- No external API calls
+- Full Oracle functionality
+
+Just run the game without setting any API key:
+
+```bash
+uv run fungi
+```
+
+The game will display a subtle indicator when using offline mode.
+
 ## 🔍 Verification
 
-Run the security tests to verify everything is set up correctly:
+Run the tests to verify everything works:
 ```bash
-python -m pytest tests/test_security.py -v
+uv run pytest
 ```
+
+All 205+ tests should pass, including 40 tests of the new unified LLM client.
 
 ## 💡 Tips
 
@@ -81,4 +110,7 @@ python -m pytest tests/test_security.py -v
 - The auto-detection is based on model names
 
 **Still having issues?**
-- Run `python verify_llm_setup.py` for detailed diagnostics. This script tests API key validity, provider detection, and basic XAI API communication directly. Note that the main game uses a more abstracted interface for LLM calls. 
+- Check the logs for detailed error messages
+- Try running in offline mode (no API key) to isolate the issue
+- Run `uv run pytest tests/test_llm_client.py -v` to verify the client works
+- See `LLM_CLIENT.md` for architecture details 
