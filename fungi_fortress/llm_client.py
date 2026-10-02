@@ -134,16 +134,24 @@ class MockLLMProvider:
         def has_word(pattern: str) -> bool:
             return bool(re.search(r'\b' + re.escape(pattern) + r'\b', normalized))
         
+        # Select narrative based on query patterns
         if any(has_word(word) for word in ["hello", "hi", "greet"]):
-            return self.RESPONSES["greeting"]
+            narrative = self.RESPONSES["greeting"]
         elif any(has_word(word) for word in ["quest", "mission", "goal"]):
-            return self.RESPONSES["quest"]
+            narrative = self.RESPONSES["quest"]
         elif any(has_word(word) for word in ["fungi", "mushroom", "spore"]):
-            return self.RESPONSES["fungi"]
+            narrative = self.RESPONSES["fungi"]
         elif any(has_word(word) for word in ["help", "aid", "assist"]):
-            return self.RESPONSES["help"]
+            narrative = self.RESPONSES["help"]
         else:
-            return self.RESPONSES["default"]
+            narrative = self.RESPONSES["default"]
+        
+        # Return structured JSON response
+        import json
+        return json.dumps({
+            "narrative": narrative,
+            "actions": []
+        })
 
 
 # === XAI Provider ===
