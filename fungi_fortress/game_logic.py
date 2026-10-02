@@ -5,10 +5,7 @@ from typing import TYPE_CHECKING, Dict, List, Tuple, Optional, cast
 from collections import deque
 
 # Update constants import to relative
-from .constants import MAP_WIDTH, MAP_HEIGHT, ANIMAL_MOVE_CHANCE, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS
-
-# Bridge building cost (wood per segment)
-BRIDGE_WOOD_COST = 1
+from .constants import MAP_WIDTH, MAP_HEIGHT, ANIMAL_MOVE_CHANCE, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS, BRIDGE_WOOD_COST
 
 # Use relative imports for modules within the fungi_fortress package
 from .characters import Task, Dwarf, NPC, Animal, Oracle # Added Oracle

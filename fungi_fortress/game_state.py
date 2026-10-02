@@ -429,7 +429,7 @@ class GameState:
         
         This ensures reservations stay in sync with actual tasks and cannot leak.
         """
-        from .game_logic import BRIDGE_WOOD_COST
+        from .constants import BRIDGE_WOOD_COST
         
         reserved = 0
         

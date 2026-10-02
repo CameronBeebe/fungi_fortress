@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional, Union
 from collections import deque
 
 # Update constants import to relative
-from .constants import MAP_WIDTH, MAP_HEIGHT, MAX_TASKS, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS, SPELL_HOTKEYS
+from .constants import MAP_WIDTH, MAP_HEIGHT, MAX_TASKS, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS, SPELL_HOTKEYS, BRIDGE_WOOD_COST
 
 # Use relative imports for sibling modules
 from .characters import Task, Dwarf, NPC, Animal, Oracle
@@ -609,9 +609,6 @@ class InputHandler:
             if entity_at_cursor.name == "Water":
                 task_type = 'build_bridge'
                 target_x, target_y = cursor_pos
-                
-                # Define bridge cost (must match game_logic.py)
-                BRIDGE_WOOD_COST = 1
 
                 stand = bridge_stand(self.game_state, dwarf, target_x, target_y)
                 if stand is not None:
