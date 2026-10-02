@@ -54,7 +54,7 @@ def wrap_text(text: str, width: int) -> List[str]:
         lines.append(current_line)
     return lines
 
-def a_star(map_grid: MapGrid, start: Tuple[int, int], goal: Tuple[int, int], adjacent: bool = False) -> Optional[List[Tuple[int, int]]]:
+def a_star(map_grid: MapGrid, start: Tuple[int, int], goal: Tuple[int, int], adjacent: bool = False, extra_walkable: set[tuple[int, int]] | None = None) -> Optional[List[Tuple[int, int]]]:
     """Finds the shortest path between two points on the map using A*.
 
     Considers tile walkability. Uses Manhattan distance as the heuristic.
@@ -67,6 +67,8 @@ def a_star(map_grid: MapGrid, start: Tuple[int, int], goal: Tuple[int, int], adj
         adjacent (bool, optional): If True, the algorithm finds the shortest path to
                                  a walkable tile directly adjacent to the goal,
                                  rather than the goal tile itself. Defaults to False.
+        extra_walkable: Optional set of (x, y) positions to treat as walkable
+                       even if their tiles are not normally walkable.
 
     Returns:
         Optional[List[Tuple[int, int]]]: A list of (x, y) tuples representing the path
@@ -74,19 +76,23 @@ def a_star(map_grid: MapGrid, start: Tuple[int, int], goal: Tuple[int, int], adj
                                         Returns an empty list if start == goal (and not adjacent).
                                         Returns None if no path is found.
     """
+    if extra_walkable is None:
+        extra_walkable = set()
+    
     def heuristic(a, b):
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     # Handle trivial cases first
     if not (0 <= start[0] < len(map_grid[0]) and 0 <= start[1] < len(map_grid)):
         return None # Start is out of bounds
-    if not map_grid[start[1]][start[0]].walkable:
+    if not (map_grid[start[1]][start[0]].walkable or start in extra_walkable):
          return None # Start is not walkable
          
     if adjacent:
         # Check if start is already a valid adjacent destination
         start_dist_to_goal = abs(start[0] - goal[0]) + abs(start[1] - goal[1])
-        if start_dist_to_goal == 1 and map_grid[start[1]][start[0]].walkable: 
+        start_tile = map_grid[start[1]][start[0]]
+        if start_dist_to_goal == 1 and (start_tile.walkable or start in extra_walkable):
              # Path consists only of the start node itself, as it's adjacent and walkable
              # The definition asks for path from start (exclusive) to end (inclusive)
              # but in this edge case, the only "step" is staying put, effectively.
@@ -106,9 +112,10 @@ def a_star(map_grid: MapGrid, start: Tuple[int, int], goal: Tuple[int, int], adj
     while open_set:
         current = heapq.heappop(open_set)[1]
         if adjacent:
-            # Check if current is adjacent to goal and walkable
+            # Check if current is adjacent to goal and is walkable (naturally or via extra_walkable)
             dist = abs(current[0] - goal[0]) + abs(current[1] - goal[1])
-            if dist == 1 and map_grid[current[1]][current[0]].walkable:
+            current_tile = map_grid[current[1]][current[0]]
+            if dist == 1 and (current_tile.walkable or current in extra_walkable):
                 path = []
                 while current in came_from:
                     path.append(current)
@@ -123,15 +130,17 @@ def a_star(map_grid: MapGrid, start: Tuple[int, int], goal: Tuple[int, int], adj
 
         for dx, dy in directions:
             neighbor = (current[0] + dx, current[1] + dy)
-            if (0 <= neighbor[0] < width and 0 <= neighbor[1] < height and 
-                map_grid[neighbor[1]][neighbor[0]].walkable):
-                tentative_g_score = g_score[current] + 1
-                if tentative_g_score < g_score.get(neighbor, float('inf')):
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tentative_g_score
-                    # Use heuristic to goal even for adjacent, to prioritize closer tiles
-                    f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
-                    heapq.heappush(open_set, (f_score[neighbor], neighbor))
+            if (0 <= neighbor[0] < width and 0 <= neighbor[1] < height):
+                neighbor_tile = map_grid[neighbor[1]][neighbor[0]]
+                # Check if walkable naturally or in extra_walkable set
+                if neighbor_tile.walkable or neighbor in extra_walkable:
+                    tentative_g_score = g_score[current] + 1
+                    if tentative_g_score < g_score.get(neighbor, float('inf')):
+                        came_from[neighbor] = current
+                        g_score[neighbor] = tentative_g_score
+                        # Use heuristic to goal even for adjacent, to prioritize closer tiles
+                        f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
+                        heapq.heappush(open_set, (f_score[neighbor], neighbor))
     return None
 
 def a_star_for_illumination(map_grid: MapGrid, start: Tuple[int, int], goal: Tuple[int, int]) -> Optional[List[Tuple[int, int]]]:
