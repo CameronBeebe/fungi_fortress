@@ -42,6 +42,9 @@ def game_loop(stdscr: curses.window):
 
     Args:
         stdscr: The main curses window object provided by curses.wrapper.
+        
+    Returns:
+        Tuple of (game_logic, input_handler) for crash snapshot access
     """
     logging.info("Curses main function started.")
 
@@ -193,16 +196,27 @@ def game_loop(stdscr: curses.window):
     
     logging.info("--- Fungi Fortress Game Exiting --- Flushing logs.")
     logging.shutdown() # Ensure all logs are flushed
+    
+    # Return references for crash snapshot
+    return game_logic, input_handler
 
 
 def main():
     """Main entry point with error handling and crash logging."""
     # Store references for crash snapshot access
-    game_logic = None
-    input_handler = None
+    game_logic_ref = None
+    input_handler_ref = None
+    
+    def crash_wrapper(stdscr):
+        """Wrapper that captures references for crash snapshots."""
+        nonlocal game_logic_ref, input_handler_ref
+        result = game_loop(stdscr)
+        if result:
+            game_logic_ref, input_handler_ref = result
+        return result
     
     try:
-        curses.wrapper(game_loop)
+        curses.wrapper(crash_wrapper)
     except Exception as e:
         # Ensure curses cleanup happens
         try:
@@ -231,25 +245,28 @@ def main():
         # Write crash state snapshot if available
         crash_state_path = None
         try:
-            # Get game_logic and input_handler from local scope if they were created
-            import gc
-            for obj in gc.get_objects():
-                if obj.__class__.__name__ == 'GameLogic' and hasattr(obj, 'penultimate_state_snapshot'):
-                    game_logic = obj
-                    break
-            for obj in gc.get_objects():
-                if obj.__class__.__name__ == 'InputHandler' and hasattr(obj, 'key_buffer'):
-                    input_handler = obj
-                    break
+            # Use direct references captured from game_loop
+            snapshot_data = None
             
-            if game_logic and hasattr(game_logic, 'penultimate_state_snapshot') and game_logic.penultimate_state_snapshot:
+            if game_logic_ref and hasattr(game_logic_ref, 'penultimate_state_snapshot'):
+                snapshot_data = game_logic_ref.penultimate_state_snapshot
+            
+            # If no penultimate snapshot (crash before first tick), capture current state
+            if not snapshot_data and game_logic_ref:
+                try:
+                    snapshot_data = game_logic_ref._capture_state_snapshot()
+                except:
+                    pass  # Capture might fail if game state is incomplete
+            
+            # Always try to write snapshot if we have any data
+            if snapshot_data or input_handler_ref:
                 crash_state_path = os.path.join(log_dir, f"crash-{timestamp_file}.json")
                 crash_data = {
                     "timestamp": timestamp,
                     "error": str(e),
                     "error_type": type(e).__name__,
-                    "penultimate_state": game_logic.penultimate_state_snapshot,
-                    "recent_keys": list(input_handler.key_buffer) if input_handler else []
+                    "penultimate_state": snapshot_data if snapshot_data else {"note": "No snapshot available (crash before first tick)"},
+                    "recent_keys": list(input_handler_ref.key_buffer) if input_handler_ref and hasattr(input_handler_ref, 'key_buffer') else []
                 }
                 
                 with open(crash_state_path, "w") as f:
@@ -257,6 +274,19 @@ def main():
         except Exception as snapshot_error:
             # Don't let snapshot errors hide the original crash
             logging.error(f"Failed to write crash snapshot: {snapshot_error}")
+            # Try to at least log the error details
+            try:
+                if not crash_state_path:
+                    crash_state_path = os.path.join(log_dir, f"crash-{timestamp_file}.json")
+                with open(crash_state_path, "w") as f:
+                    json.dump({
+                        "timestamp": timestamp,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "snapshot_error": str(snapshot_error)
+                    }, f, indent=2)
+            except:
+                pass  # Give up on snapshot
         
         # Print error info to stderr after curses ends
         print(f"\n{'='*80}", file=sys.stderr)

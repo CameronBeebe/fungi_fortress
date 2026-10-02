@@ -21,7 +21,11 @@ class Entity:
 class Tile:
     def __init__(self, name, walkable=True):
         self.entity = Entity(name, walkable, name)
-        self.walkable = walkable
+    
+    @property
+    def walkable(self):
+        """Delegate walkable to entity like the real Tile class."""
+        return self.entity.walkable
 
 
 class Tasks:

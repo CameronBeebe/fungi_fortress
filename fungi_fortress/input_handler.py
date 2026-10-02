@@ -28,6 +28,9 @@ def bridge_stand(game_state, dwarf, target_x: int, target_y: int):
 
     Ordered bridges count as walkable for this check. Water the dwarf still
     could not reach after those orders is not queued.
+    
+    Note: Temporarily modifies entity.walkable (not tile.walkable which is read-only)
+    to allow pathfinding through planned bridge locations.
     """
     planned = set()
     for task in getattr(game_state.task_manager, "tasks", []):
@@ -38,7 +41,7 @@ def bridge_stand(game_state, dwarf, target_x: int, target_y: int):
         planned.add((active.resource_x, active.resource_y))
     planned.discard((target_x, target_y))
 
-    opened = []
+    opened_entities = []
     height = len(game_state.map)
     width = len(game_state.map[0]) if height else 0
     for x, y in planned:
@@ -46,13 +49,15 @@ def bridge_stand(game_state, dwarf, target_x: int, target_y: int):
             continue
         tile = game_state.map[y][x]
         if not tile.walkable:
-            tile.walkable = True
-            opened.append(tile)
+            # Temporarily set the entity's walkable attribute (not the tile property!)
+            tile.entity.walkable = True
+            opened_entities.append(tile.entity)
     try:
         path = a_star(game_state.map, (dwarf.x, dwarf.y), (target_x, target_y), adjacent=True)
     finally:
-        for tile in opened:
-            tile.walkable = False
+        # Restore original walkability
+        for entity in opened_entities:
+            entity.walkable = False
 
     if path:
         return path[-1]
