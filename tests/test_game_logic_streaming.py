@@ -9,7 +9,7 @@ from fungi_fortress.game_logic import GameLogic
 from fungi_fortress.config_manager import LLMConfig
 
 
-def test_game_logic_streaming_oracle_with_mock_client():
+def test_game_logic_streaming_oracle_with_mock_client(monkeypatch):
     """Test GameLogic streaming path with mock LLM client.
     
     Verifies:
@@ -18,6 +18,31 @@ def test_game_logic_streaming_oracle_with_mock_client():
     3. No 'disruption' error message appears
     4. Mock provider is actually used (no network calls)
     """
+    # Inject test action into mock response for this test only
+    from fungi_fortress.llm_client import MockLLMProvider
+    
+    original_mock_response = MockLLMProvider._mock_response
+    
+    def mock_response_with_action(self, user_content):
+        # Call original to get the response type
+        import re
+        normalized = user_content.lower()
+        def has_word(pattern: str) -> bool:
+            return bool(re.search(r'\b' + re.escape(pattern) + r'\b', normalized))
+        
+        # For fungi queries, return ACTION:: format (not JSON) for testing
+        if any(has_word(word) for word in ["fungi", "mushroom", "spore"]):
+            return (
+                "The sacred fungi hold memories of ages past. They grow in places of deep magic, "
+                "where stone and root intertwine.\n\n"
+                "ACTION::add_message::{\"text\": \"Test action from mock\"}"
+            )
+        else:
+            # Use original for other queries
+            return original_mock_response(self, user_content)
+    
+    monkeypatch.setattr(MockLLMProvider, "_mock_response", mock_response_with_action)
+    
     # Initialize game state with NO API key to force mock usage
     llm_config = LLMConfig(
         api_key=None,  # Force mock provider
