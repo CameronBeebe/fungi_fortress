@@ -113,9 +113,15 @@ class MockLLMProvider:
     
     def _extract_user_content(self, messages: list[dict]) -> str:
         """Extract user query from messages."""
+        # Find the last user message and extract the actual query
         for msg in reversed(messages):
             if msg.get("role") == "user":
-                return msg.get("content", "").lower()
+                content = msg.get("content", "")
+                # Look for "Player Query:" in the content
+                if "Player Query:" in content:
+                    query_part = content.split("Player Query:")[-1].strip()
+                    return query_part.lower()
+                return content.lower()
         return ""
     
     def _mock_response(self, user_content: str) -> str:
