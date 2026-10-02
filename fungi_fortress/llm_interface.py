@@ -55,13 +55,19 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
     # Build game context and prompt
     game_context = _build_game_context(game_state)
     
+    # Trim history based on context level (low: 1, medium: 3, high: 5)
+    context_level = getattr(game_state.llm_config, 'context_level', 'medium')
+    history_limits = {'low': 1, 'medium': 3, 'high': 5}
+    history_limit = history_limits.get(context_level, 3)
+    trimmed_history = game_state.oracle_llm_interaction_history[-history_limit:] if game_state.oracle_llm_interaction_history else []
+    
     enable_structured_outputs = getattr(game_state.llm_config, 'enable_structured_outputs', False)
     
     messages = llm_oracle.build_oracle_messages(
         oracle_name=oracle_name,
         player_query=player_query,
         game_context=game_context,
-        history=game_state.oracle_llm_interaction_history,
+        history=trimmed_history,
         enable_structured_outputs=enable_structured_outputs,
     )
     
@@ -112,6 +118,12 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
     # Build game context
     game_context = _build_game_context(game_state)
     
+    # Trim history based on context level
+    context_level = getattr(game_state.llm_config, 'context_level', 'medium')
+    history_limits = {'low': 1, 'medium': 3, 'high': 5}
+    history_limit = history_limits.get(context_level, 3)
+    trimmed_history = game_state.oracle_llm_interaction_history[-history_limit:] if game_state.oracle_llm_interaction_history else []
+    
     # Log interaction timestamp
     timestamp_utc = datetime.datetime.now(timezone.utc).isoformat()
     if "+00:00" in timestamp_utc:
@@ -125,7 +137,7 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
             oracle_name=oracle_name,
             player_query=player_query,
             game_context=game_context,
-            history=game_state.oracle_llm_interaction_history,
+            history=trimmed_history,
             max_tokens=game_state.llm_config.max_tokens,
             enable_structured_outputs=getattr(game_state.llm_config, 'enable_structured_outputs', False),
         )
@@ -329,19 +341,34 @@ def process_enhanced_oracle_streaming(
 
 
 def _build_game_context(game_state: Any) -> Dict[str, Any]:
-    """Build game context dict from game state."""
+    """Build game context dict from game state.
+    
+    Context level determines what to include:
+    - low: tick, depth only
+    - medium: + mission
+    - high: + mission + resources
+    """
     context = {
         'tick': game_state.tick,
         'depth': game_state.depth,
     }
     
-    if hasattr(game_state, 'mission') and game_state.mission:
-        context['mission'] = game_state.mission
+    # Get context level from config
+    context_level = "medium"  # default
+    if game_state.llm_config:
+        context_level = getattr(game_state.llm_config, 'context_level', 'medium')
     
-    if hasattr(game_state, 'player_resources'):
-        context['resources'] = game_state.player_resources
-    elif hasattr(game_state, 'inventory'):
-        context['resources'] = getattr(game_state.inventory, 'resources', {})
+    # Add mission for medium and high
+    if context_level in ('medium', 'high'):
+        if hasattr(game_state, 'mission') and game_state.mission:
+            context['mission'] = game_state.mission
+    
+    # Add resources only for high
+    if context_level == 'high':
+        if hasattr(game_state, 'player_resources'):
+            context['resources'] = game_state.player_resources
+        elif hasattr(game_state, 'inventory'):
+            context['resources'] = getattr(game_state.inventory, 'resources', {})
     
     return context
 

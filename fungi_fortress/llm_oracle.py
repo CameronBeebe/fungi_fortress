@@ -78,9 +78,10 @@ def build_oracle_messages(
     context_str = " | ".join(context_parts)
     
     # Build history string
+    # History is already trimmed by caller based on context_level
     if history:
         history_lines = []
-        for exchange in history[-3:]:  # Last 3 exchanges
+        for exchange in history:
             history_lines.append(f"Player: {exchange['player']}")
             history_lines.append(f"Oracle: {exchange['oracle']}")
         history_str = "\n".join(history_lines)
