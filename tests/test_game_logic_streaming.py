@@ -13,17 +13,14 @@ def test_game_logic_streaming_oracle_with_mock_client():
     """Test GameLogic streaming path with mock LLM client.
     
     Verifies:
-    1. Streaming initiates without crashing
-    2. No AttributeError or 'disruption' error message appears
-    3. Dialogue is added during streaming
-    
-    Note: Full streaming completion takes many iterations (character-by-character),
-    so this test just verifies streaming starts correctly and doesn't crash.
-    The non-streaming test verifies full history growth.
+    1. Oracle history grows by exactly 1 turn
+    2. Each action executes exactly once (not doubled)
+    3. No 'disruption' error message appears
+    4. Mock provider is actually used (no network calls)
     """
-    # Initialize game state with mock LLM config
+    # Initialize game state with NO API key to force mock usage
     llm_config = LLMConfig(
-        api_key="test-key-mock",
+        api_key=None,  # Force mock provider
         model_name="mock-model",
         enable_streaming=True,
         context_level="low"
@@ -39,54 +36,79 @@ def test_game_logic_streaming_oracle_with_mock_client():
     game_state.oracle_interaction_state = "AWAITING_PROMPT"
     game_state.oracle_current_dialogue = []
     
-    # Simulate Oracle query event
+    # Track initial state
+    initial_history_len = len(game_state.oracle_llm_interaction_history)
+    
+    # Track add_message action executions
+    add_message_count = 0
+    original_add_debug = game_state.add_debug_message
+    def counting_add_debug(msg):
+        nonlocal add_message_count
+        if "LLM: Test action from mock" in msg:
+            add_message_count += 1
+        return original_add_debug(msg)
+    game_state.add_debug_message = counting_add_debug
+    
+    # Simulate Oracle query about fungi (triggers mock response)
     player_query = "Tell me about the ancient fungi"
     game_state.add_event("ORACLE_QUERY", {
         "query_text": player_query,
         "oracle_name": "Test Oracle"
     })
     
-    # Process the query through GameLogic
-    # First update: initiates streaming
+    # Process until streaming completes (mock needs ~325 ticks, cap at 2000)
     game_logic.update()
     
-    # Verify 1: Streaming started successfully
-    assert game_state.oracle_streaming_active is True, "Streaming should be active"
-    assert game_state.oracle_interaction_state == "STREAMING_RESPONSE", "Should be in STREAMING_RESPONSE state"
+    max_ticks = 2000
+    for tick in range(max_ticks):
+        if game_state.oracle_interaction_state == "AWAITING_PROMPT":
+            break
+        game_logic.update()
+    else:
+        pytest.fail(f"Streaming did not complete within {max_ticks} ticks")
     
-    print(f"✓ Streaming initiated successfully")
+    # Verify 1: History grew by exactly 1 turn
+    final_history_len = len(game_state.oracle_llm_interaction_history)
+    assert final_history_len == initial_history_len + 1, (
+        f"Expected history to grow by 1, grew by {final_history_len - initial_history_len}"
+    )
     
-    # Process a few streaming iterations to verify no crashes
-    try:
-        for i in range(10):
-            game_logic.update()
-        no_crash = True
-    except AttributeError as e:
-        if "_handle_action" in str(e):
-            pytest.fail(f"Streaming crashed with missing _handle_action: {e}")
-        raise
-    except Exception as e:
-        pytest.fail(f"Streaming crashed with unexpected error: {e}")
+    # Verify the history entry
+    latest_entry = game_state.oracle_llm_interaction_history[-1]
+    assert latest_entry["player"] == player_query
+    assert "fungi" in latest_entry["oracle"].lower()
     
-    # Verify 2: No 'disruption' message (would indicate streaming error)
-    all_debug_log = "\n".join(game_state.debug_log)
-    assert "disruption" not in all_debug_log.lower(), "Found 'disruption' error message"
-    assert "AttributeError" not in all_debug_log, "Found AttributeError in debug log"
+    # Verify 2: No 'disruption' error
+    all_dialogue = []
+    for line in game_state.oracle_current_dialogue:
+        if isinstance(line, tuple):
+            all_dialogue.append(line[0])
+        else:
+            all_dialogue.append(str(line))
+    dialogue_text = "\n".join(all_dialogue)
+    assert "disruption" not in dialogue_text.lower(), "Found 'disruption' error in dialogue"
+    
+    # Verify 3: Mock action ran exactly once (not doubled)
+    assert add_message_count == 1, f"add_message action ran {add_message_count} times (expected exactly 1)"
     
     print(f"✓ Streaming test passed:")
-    print(f"  - Streaming started without crash")
-    print(f"  - No AttributeError from missing _handle_action")
-    print(f"  - No disruption error messages")
+    print(f"  - History grew from {initial_history_len} to {final_history_len}")
+    print(f"  - No disruption errors")
+    print(f"  - Completed in {tick} ticks")
 
 
 def test_game_logic_non_streaming_oracle_with_mock_client():
     """Test GameLogic non-streaming path with mock LLM client.
     
-    Verifies the same invariants as streaming test but for non-streaming mode.
+    Verifies:
+    1. History grows by exactly 1 turn
+    2. Response is from mock (not network error)
+    3. No disruption errors
+    4. No network calls (api_key=None forces mock)
     """
-    # Initialize game state with mock LLM config (streaming disabled)
+    # Initialize game state with NO API key (forces mock, no network)
     llm_config = LLMConfig(
-        api_key="test-key-mock",
+        api_key=None,  # Force mock provider, prevent network calls
         model_name="mock-model",
         enable_streaming=False,  # Non-streaming mode
         context_level="low"
@@ -104,7 +126,7 @@ def test_game_logic_non_streaming_oracle_with_mock_client():
     
     initial_history_len = len(game_state.oracle_llm_interaction_history)
     
-    # Simulate Oracle query
+    # Simulate Oracle query that triggers "default" mock response
     player_query = "What secrets do you hold?"
     game_state.add_event("ORACLE_QUERY", {
         "query_text": player_query,
@@ -114,8 +136,8 @@ def test_game_logic_non_streaming_oracle_with_mock_client():
     # Process the query
     game_logic.update()
     
-    # Wait a bit for non-streaming response
-    for i in range(5):
+    # Wait for non-streaming response (should complete quickly)
+    for i in range(10):
         if game_state.oracle_interaction_state == "AWAITING_PROMPT":
             break
         game_logic.update()
@@ -126,15 +148,20 @@ def test_game_logic_non_streaming_oracle_with_mock_client():
         f"Expected history to grow by 1, but grew by {final_history_len - initial_history_len}"
     )
     
+    # Verify response is from mock, not network error
+    latest_entry = game_state.oracle_llm_interaction_history[-1]
+    oracle_response = latest_entry["oracle"].lower()
+    assert "spores whisper" in oracle_response, f"Expected mock response text, got: {oracle_response[:100]}"
+    assert "connection cannot be established" not in oracle_response, "Got network error instead of mock response"
+    assert "error" not in oracle_response, f"Got error response: {oracle_response[:100]}"
+    
     # Verify no disruption errors
     all_dialogue = "\n".join(str(line) for line in game_state.oracle_current_dialogue)
     assert "disruption" not in all_dialogue.lower()
     
-    # Verify response was added
-    assert len(game_state.oracle_current_dialogue) > 0
-    
     print(f"✓ Non-streaming test passed:")
     print(f"  - History entries: {initial_history_len} → {final_history_len}")
+    print(f"  - Response is from mock (no network)")
     print(f"  - No disruption errors")
 
 

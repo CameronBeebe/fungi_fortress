@@ -85,7 +85,7 @@ class MockLLMProvider:
     RESPONSES = {
         "greeting": "Greetings, seeker. The mycelial network pulses with ancient knowledge. What wisdom do you seek?",
         "quest": "Your path winds through shadowed groves. Gather what the forest offers, and the way forward shall reveal itself.",
-        "fungi": "The sacred fungi hold memories of ages past. They grow in places of deep magic, where stone and root intertwine.",
+        "fungi": "The sacred fungi hold memories of ages past. They grow in places of deep magic, where stone and root intertwine.\n\nACTION::add_message::{\"text\": \"Test action from mock\"}",
         "help": "Trust in the network. Its threads connect all living things. What seems lost may yet be found through patience.",
         "default": "The spores whisper... but their meaning is obscured. Perhaps your question needs a different shape.",
     }
@@ -134,24 +134,29 @@ class MockLLMProvider:
         def has_word(pattern: str) -> bool:
             return bool(re.search(r'\b' + re.escape(pattern) + r'\b', normalized))
         
-        # Select narrative based on query patterns
+        # Select response based on query patterns
         if any(has_word(word) for word in ["hello", "hi", "greet"]):
-            narrative = self.RESPONSES["greeting"]
+            response_text = self.RESPONSES["greeting"]
         elif any(has_word(word) for word in ["quest", "mission", "goal"]):
-            narrative = self.RESPONSES["quest"]
+            response_text = self.RESPONSES["quest"]
         elif any(has_word(word) for word in ["fungi", "mushroom", "spore"]):
-            narrative = self.RESPONSES["fungi"]
+            # Fungi response includes ACTION:: for testing
+            response_text = self.RESPONSES["fungi"]
         elif any(has_word(word) for word in ["help", "aid", "assist"]):
-            narrative = self.RESPONSES["help"]
+            response_text = self.RESPONSES["help"]
         else:
-            narrative = self.RESPONSES["default"]
+            response_text = self.RESPONSES["default"]
         
-        # Return structured JSON response
-        import json
-        return json.dumps({
-            "narrative": narrative,
-            "actions": []
-        })
+        # For fungi queries with ACTION::, return as-is for legacy parsing
+        # For others, return structured JSON
+        if "ACTION::" in response_text:
+            return response_text
+        else:
+            import json
+            return json.dumps({
+                "narrative": response_text,
+                "actions": []
+            })
 
 
 # === XAI Provider ===
