@@ -283,6 +283,8 @@ def process_enhanced_oracle_streaming(
                 yield e.user_message()
         
         # Use text streaming engine for display
+        # Note: The streaming engine already parses and yields actions during streaming,
+        # so we don't need to parse the complete_response again (that would execute actions twice)
         for action in text_streaming_engine.start_oracle_streaming_sequence(
             oracle_name,
             player_query,
@@ -290,14 +292,9 @@ def process_enhanced_oracle_streaming(
         ):
             yield action
         
-        # Parse the complete response for actions (after streaming completes)
+        # Parse the complete response for LOGGING only (not for execution)
         if complete_response and not error_for_log:
             parsed_narrative, parsed_actions = _parse_llm_response(complete_response)
-            
-            # Execute any actions from the response
-            if parsed_actions:
-                for llm_action in parsed_actions:
-                    yield llm_action
         
         # Log the complete interaction
         _log_oracle_interaction(
