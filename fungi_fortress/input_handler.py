@@ -609,15 +609,38 @@ class InputHandler:
             if entity_at_cursor.name == "Water":
                 task_type = 'build_bridge'
                 target_x, target_y = cursor_pos
+                
+                # Define bridge cost (must match game_logic.py)
+                BRIDGE_WOOD_COST = 1
 
                 stand = bridge_stand(self.game_state, dwarf, target_x, target_y)
                 if stand is not None:
-                    adjacent_x, adjacent_y = stand
-                    task = Task(adjacent_x, adjacent_y, task_type, target_x, target_y)
-                    if self.game_state.task_manager.add_task(task):
-                        self.game_state.add_debug_message(f"Bridge building task assigned for ({target_x}, {target_y}) via ({adjacent_x}, {adjacent_y})")
+                    # Check if we have enough available wood (accounting for reservations)
+                    available_wood = self.game_state.get_available_wood()
+                    
+                    if available_wood >= BRIDGE_WOOD_COST:
+                        adjacent_x, adjacent_y = stand
+                        task = Task(adjacent_x, adjacent_y, task_type, target_x, target_y)
+                        
+                        # Reserve the wood before adding the task
+                        if self.game_state.reserve_bridge_wood((target_x, target_y), BRIDGE_WOOD_COST):
+                            if self.game_state.task_manager.add_task(task):
+                                self.game_state.add_debug_message(f"Bridge building task assigned for ({target_x}, {target_y}) via ({adjacent_x}, {adjacent_y})")
+                            else:
+                                # Task manager full, release the reservation
+                                self.game_state.release_bridge_wood((target_x, target_y))
+                                self.game_state.add_debug_message("Failed to add bridge task (manager full?)")
+                        else:
+                            # This shouldn't happen since we checked available_wood above
+                            self.game_state.add_debug_message("Failed to reserve wood for bridge (internal error)")
                     else:
-                        self.game_state.add_debug_message("Failed to add bridge task (manager full?)")
+                        # Not enough wood available
+                        total_wood = self.game_state.inventory.resources.get("wood", 0)
+                        reserved_wood = self.game_state.get_reserved_wood()
+                        self.game_state.add_debug_message(
+                            f"Cannot queue bridge: need {BRIDGE_WOOD_COST} wood, "
+                            f"have {total_wood} total ({available_wood} available, {reserved_wood} reserved for other bridges)"
+                        )
                 else:
                     self.game_state.add_debug_message(f"No adjacent walkable path to water tile at ({target_x}, {target_y}) for bridge building.")
 
