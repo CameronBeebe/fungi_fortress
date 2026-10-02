@@ -4,12 +4,12 @@ A terminal-based strategy/simulation game written in Python using the curses lib
 
 ## 🤖 LLM Integration Status
 
-**✅ PRODUCTION-READY + OFFLINE MODE** - The Oracle LLM integration is fully ready for both live XAI (Grok) API usage and offline play:
+**✅ OFFLINE + ONLINE MODE** - The Oracle LLM integration supports both offline and online play:
 
 - **🎮 Offline Mode**: Built-in mock provider - fully playable with no API key required
 - **⚡ XAI Provider**: Direct integration with XAI (Grok) via `https://api.x.ai/v1`
 - **🛡️ Typed Errors**: Clear error handling with player-friendly messages
-- **📊 Battle-Tested**: 213+ tests passing, including comprehensive client and Oracle tests
+- **📊 Tested**: 217+ tests passing, including client and Oracle integration tests
 - **🔒 Secure**: API keys never logged or exposed (field(repr=False), env-only)
 
 **Quick Setup**: 
@@ -212,11 +212,8 @@ This installs pytest, mypy, and other development tools.
     *   Define a "mineral_deposit" entity in the `ENTITY_REGISTRY` and integrate its spawning into grotto map generation.
     *   Define a walkable "shallow_water" entity in the `ENTITY_REGISTRY` and implement its use for river fords in surface map generation. This could also help address pathfinding issues across water.
 *   **LLM Integration (`llm_interface.py`):**
-    *   Implement true streaming support for Anthropic models in `_detect_provider_and_call_api_streaming` instead of the current non-streaming fallback.
     *   Expand `handle_game_event` to process a wider variety of game events (e.g., dynamic event generation, NPC behavior adaptations) using LLM capabilities.
-    *   Refine LLM prompt context by selectively adding more detailed and relevant game state information to `handle_oracle_query_streaming` and `handle_oracle_query_non_streaming`.
-    *   Standardize LLM provider detection: Ensure the logic in `_detect_provider_and_call_api` (for non-streaming calls) is consistent with `config_manager.detect_provider_from_model`, ideally by calling the centralized function.
-    *   Consider creating a dedicated `_call_anthropic_api` function for non-streaming Anthropic calls if it offers unique features or requires specific error handling beyond the generic OpenAI-compatible wrapper.
+    *   Refine LLM prompt context by selectively adding more detailed and relevant game state information.
 *   **Gameplay Features:**
     *   Further develop dwarf task management (e.g., more complex tasks, dwarf skills affecting outcomes beyond mining).
     *   Expand shop functionality (e.g., dynamic pricing, wider item variety).
@@ -231,9 +228,9 @@ Contributions are welcome! Please feel free to open issues or submit pull reques
 Fungi Fortress features an AI-powered Oracle that provides guidance, lore, and interactive storytelling. The Oracle system supports **both offline and online modes**:
 
 - **🎮 Offline Mode**: Built-in mock Oracle provides deterministic, in-character responses with no API needed
-- **🌐 Online Mode**: Connect to any OpenAI-compatible LLM provider for dynamic responses
+- **🌐 Online Mode**: Connect to xAI (Grok) for dynamic LLM-powered responses, or use the offline mock provider
 
-**🚀 PRODUCTION-READY + OFFLINE-READY** - The unified LLM client is stable, tested, and works great whether you're online or offline.
+The unified LLM client supports both online (xAI/Grok) and offline (mock) modes.
 
 ### Recent Improvements (Latest Update)
 
