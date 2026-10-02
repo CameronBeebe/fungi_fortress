@@ -878,6 +878,10 @@ class GameLogic:
                 elif action_type == "stream_pause":
                     # Handle stream_pause action if needed
                     pass
+                else:
+                    # Handle non-streaming actions (add_message, update_oracle_history, etc.)
+                    # Execute them immediately via _handle_action
+                    self._handle_action(streaming_action)
                 
                 time_spent_streaming_this_tick_ms += 10  # Approximate time per chunk
 

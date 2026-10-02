@@ -92,7 +92,7 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
             "player_query": player_query,
             "oracle_name": oracle_name,
             "game_context": game_context,
-            "history": game_state.oracle_llm_interaction_history[:],
+            "history": trimmed_history,  # Use trimmed history based on context_level
         }
     }]
 
