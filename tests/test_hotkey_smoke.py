@@ -35,7 +35,6 @@ def test_hotkey_smoke_overlay_toggles():
         assert result is True
 
 
-@pytest.mark.xfail(reason="Task assignment paths need dwarf at cursor - needs setup", strict=False)
 def test_hotkey_smoke_task_assignments():
     """Test task assignment keys (mine, chop, fish, build, etc.)
     
@@ -57,7 +56,6 @@ def test_hotkey_smoke_task_assignments():
         input_handler.handle_input(key)
 
 
-@pytest.mark.xfail(reason="Talk/enter/interact need NPCs/structures - needs setup", strict=False)  
 def test_hotkey_smoke_interactions():
     """Test interaction keys (talk, enter, interact)
     
@@ -77,7 +75,6 @@ def test_hotkey_smoke_interactions():
         input_handler.handle_input(key)
 
 
-@pytest.mark.xfail(reason="Shop/descend need proper depth/structure setup", strict=False)
 def test_hotkey_smoke_shop_descend():
     """Test shop/descend key
     
@@ -94,7 +91,6 @@ def test_hotkey_smoke_shop_descend():
     input_handler.handle_input(ord('d'))
 
 
-@pytest.mark.xfail(reason="Spell casting needs magic system setup", strict=False)
 def test_hotkey_smoke_spells():
     """Test spell casting keys
     
