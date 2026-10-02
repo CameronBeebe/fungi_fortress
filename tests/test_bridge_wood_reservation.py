@@ -348,3 +348,41 @@ def test_bridge_failure_insufficient_wood():
     # Should report insufficient wood
     assert "insufficient wood" in " ".join(game.debug_log).lower(), "Should report insufficient wood"
 
+
+def test_assigned_task_cancelled_when_unreachable():
+    """Test that bridge tasks assigned to dwarves are also cancelled when they become unreachable."""
+    llm_config = LLMConfig()
+    game = GameState(llm_config)
+    game.inventory.resources["wood"] = 5
+    
+    # Simple map: Grass | Water | Water | Grass
+    grass = ENTITY_REGISTRY.get("grass")
+    water = ENTITY_REGISTRY.get("water")
+    game.map = [
+        [Tile(grass, 0, 0), Tile(water, 1, 0), Tile(water, 2, 0), Tile(grass, 3, 0)]
+    ]
+    
+    dwarf = game.dwarves[0] if game.dwarves else Dwarf(0, 0, 0)
+    if not game.dwarves:
+        game.dwarves = [dwarf]
+    dwarf.x, dwarf.y = 0, 0
+    
+    # Assign second bridge to dwarf (task2 depends on task1)
+    task2 = Task(1, 0, "build_bridge", 2, 0)
+    dwarf.task = task2
+    
+    # Task should reserve wood
+    assert game.get_reserved_wood() == BRIDGE_WOOD_COST
+    
+    # Simulate first bridge (1,0) failure - this makes the second bridge (2,0) unreachable
+    logic = GameLogic(game)
+    logic._handle_bridge_failure((1, 0), "test failure")
+    
+    # Assigned task should be cancelled
+    assert dwarf.task is None, "Dwarf's assigned task should be cleared"
+    assert dwarf.state == "idle", "Dwarf should be idle after task cancellation"
+    
+    # Reservation should be released
+    assert game.get_reserved_wood() == 0, "All reservations should be released"
+
+

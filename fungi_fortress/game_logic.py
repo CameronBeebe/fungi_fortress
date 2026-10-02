@@ -1348,59 +1348,83 @@ class GameLogic:
     def _handle_bridge_failure(self, failed_bridge_pos: Tuple[int, int], reason: str):
         """Handle bridge building failure by cancelling dependent tasks.
         
-        Wood reservations are released automatically when tasks are removed.
+        Checks both queued and assigned bridge tasks for dependency. Tests reachability
+        from any dwarf position.
+        
+        Wood reservations are released automatically when tasks are removed or cleared.
         
         Args:
             failed_bridge_pos: Position of the bridge that failed to build
             reason: Human-readable reason for the failure
         """
-        # Find and cancel tasks that depend on this bridge
-        # A task depends on this bridge if it cannot be reached without it
+        # Collect all bridge tasks (both queued and assigned to dwarves)
+        all_bridge_tasks = []
+        
+        # Queued tasks
+        for task in list(self.game_state.task_manager.tasks):
+            if task.type == "build_bridge" and task.resource_x is not None and task.resource_y is not None:
+                all_bridge_tasks.append(("queued", task, None))
+        
+        # Assigned tasks
+        for dwarf in self.game_state.dwarves:
+            if dwarf.task and dwarf.task.type == "build_bridge":
+                if dwarf.task.resource_x is not None and dwarf.task.resource_y is not None:
+                    all_bridge_tasks.append(("assigned", dwarf.task, dwarf))
+        
+        # Build set of BUILT bridges (actual bridge entities on the map)
+        # Plus planned bridges EXCLUDING the failed one
+        extra_walkable = set()
+        
+        # Add actual built bridges
+        bridge_entity = ENTITY_REGISTRY.get("bridge")
+        if bridge_entity:
+            for y in range(len(self.game_state.map)):
+                for x in range(len(self.game_state.map[0])):
+                    tile = self.game_state.get_tile(x, y)
+                    if tile and tile.entity == bridge_entity:
+                        extra_walkable.add((x, y))
+        
+        # Add planned bridges (excluding failed one)
+        for status, task, _ in all_bridge_tasks:
+            pos = (task.resource_x, task.resource_y)
+            if pos != failed_bridge_pos:
+                extra_walkable.add(pos)
+        
+        # Check each task for reachability from any dwarf
         cancelled_tasks = []
-        dwarf = self.game_state.dwarves[0] if self.game_state.dwarves else None
+        for status, task, assigned_dwarf in all_bridge_tasks:
+            task_bridge_pos = (task.resource_x, task.resource_y)
+            
+            # Check if this bridge is reachable from ANY dwarf
+            # (Use extra_walkable WITHOUT this task's position)
+            test_walkable = extra_walkable - {task_bridge_pos}
+            reachable = False
+            
+            from .utils import a_star
+            for dwarf in self.game_state.dwarves:
+                path = a_star(self.game_state.map, (dwarf.x, dwarf.y), task_bridge_pos, 
+                              adjacent=True, extra_walkable=test_walkable)
+                if path is not None:
+                    reachable = True
+                    break
+            
+            if not reachable:
+                # This task is now unreachable from all dwarves
+                cancelled_tasks.append((status, task, assigned_dwarf))
         
-        if dwarf:
-            for task in list(self.game_state.task_manager.tasks):
-                if task.type == "build_bridge" and task.resource_x is not None and task.resource_y is not None:
-                    task_bridge_pos = (task.resource_x, task.resource_y)
-                    
-                    # Build set of BUILT bridges (actual bridge entities on the map)
-                    # Plus planned bridges EXCLUDING the failed one AND the task being checked
-                    extra_walkable = set()
-                    
-                    # Add actual built bridges
-                    bridge_entity = ENTITY_REGISTRY.get("bridge")
-                    if bridge_entity:
-                        for y in range(len(self.game_state.map)):
-                            for x in range(len(self.game_state.map[0])):
-                                tile = self.game_state.get_tile(x, y)
-                                if tile and tile.entity == bridge_entity:
-                                    extra_walkable.add((x, y))
-                    
-                    # Add planned bridges (excluding failed one and current task being checked)
-                    for t in self.game_state.task_manager.tasks:
-                        if t.type == "build_bridge" and t.resource_x is not None:
-                            pos = (t.resource_x, t.resource_y)
-                            if pos != failed_bridge_pos and pos != task_bridge_pos:
-                                extra_walkable.add(pos)
-                    
-                    # Check if dwarf can reach the stand position for this bridge
-                    from .utils import a_star
-                    path = a_star(self.game_state.map, (dwarf.x, dwarf.y), task_bridge_pos, 
-                                  adjacent=True, extra_walkable=extra_walkable)
-                    
-                    if path is None:
-                        # This task is now unreachable, cancel it
-                        cancelled_tasks.append(task)
-        
-        # Remove cancelled tasks from the task manager
-        # Reservations released automatically when tasks are removed
-        for task in cancelled_tasks:
-            self.game_state.task_manager.remove_task(task)
+        # Remove/clear cancelled tasks
+        for status, task, assigned_dwarf in cancelled_tasks:
+            if status == "queued":
+                self.game_state.task_manager.remove_task(task)
+            elif status == "assigned" and assigned_dwarf:
+                # Clear the dwarf's task
+                assigned_dwarf.task = None
+                assigned_dwarf.state = "idle"
+                assigned_dwarf.path = []
         
         # Inform the player
         if cancelled_tasks:
-            positions = ", ".join([f"({t.resource_x},{t.resource_y})" for t in cancelled_tasks])
+            positions = ", ".join([f"({t.resource_x},{t.resource_y})" for _, t, _ in cancelled_tasks])
             self.game_state.add_debug_message(
                 f"Bridge at {failed_bridge_pos} failed ({reason}). "
                 f"Cancelled {len(cancelled_tasks)} dependent bridge(s) at: {positions}"
