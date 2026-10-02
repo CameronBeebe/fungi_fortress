@@ -1,6 +1,7 @@
 import curses
 import random
 from typing import TYPE_CHECKING, Optional, Union
+from collections import deque
 
 # Update constants import to relative
 from .constants import MAP_WIDTH, MAP_HEIGHT, MAX_TASKS, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS, SPELL_HOTKEYS
@@ -89,6 +90,12 @@ class InputHandler:
         Dispatches the key to different handling logic depending on whether
         the inventory, shop, or legend is displayed, or if the game is in the
         main map view.
+        # Record key press in ring buffer for crash debugging
+        self.key_buffer.append({
+            "key": key,
+            "key_name": curses.keyname(key).decode('utf-8') if key >= 0 else f"KEY_{key}",
+            "tick": getattr(self.game_state, 'tick', 0)
+        })
 
         Args:
             key (int): The integer representation of the key pressed (from curses).

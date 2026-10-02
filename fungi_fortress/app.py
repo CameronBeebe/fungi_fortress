@@ -11,6 +11,7 @@ import sys
 import logging
 import os
 import traceback
+import json
 from datetime import datetime
 
 from .play_log import start_play_log
@@ -196,6 +197,10 @@ def game_loop(stdscr: curses.window):
 
 def main():
     """Main entry point with error handling and crash logging."""
+    # Store references for crash snapshot access
+    game_logic = None
+    input_handler = None
+    
     try:
         curses.wrapper(game_loop)
     except Exception as e:
@@ -212,8 +217,10 @@ def main():
         crash_log_path = os.path.join(log_dir, "fungi_crash.log")
         
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp_file = datetime.now().strftime("%Y%m%d-%H%M%S")
         tb_str = traceback.format_exc()
         
+        # Write traceback log
         with open(crash_log_path, "a") as f:
             f.write(f"\n{'='*80}\n")
             f.write(f"CRASH at {timestamp}\n")
@@ -221,11 +228,43 @@ def main():
             f.write(tb_str)
             f.write(f"\n{'='*80}\n\n")
         
+        # Write crash state snapshot if available
+        crash_state_path = None
+        try:
+            # Get game_logic and input_handler from local scope if they were created
+            import gc
+            for obj in gc.get_objects():
+                if obj.__class__.__name__ == 'GameLogic' and hasattr(obj, 'penultimate_state_snapshot'):
+                    game_logic = obj
+                    break
+            for obj in gc.get_objects():
+                if obj.__class__.__name__ == 'InputHandler' and hasattr(obj, 'key_buffer'):
+                    input_handler = obj
+                    break
+            
+            if game_logic and hasattr(game_logic, 'penultimate_state_snapshot') and game_logic.penultimate_state_snapshot:
+                crash_state_path = os.path.join(log_dir, f"crash-{timestamp_file}.json")
+                crash_data = {
+                    "timestamp": timestamp,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "penultimate_state": game_logic.penultimate_state_snapshot,
+                    "recent_keys": list(input_handler.key_buffer) if input_handler else []
+                }
+                
+                with open(crash_state_path, "w") as f:
+                    json.dump(crash_data, f, indent=2)
+        except Exception as snapshot_error:
+            # Don't let snapshot errors hide the original crash
+            logging.error(f"Failed to write crash snapshot: {snapshot_error}")
+        
         # Print error info to stderr after curses ends
         print(f"\n{'='*80}", file=sys.stderr)
         print(f"FATAL ERROR: {e}", file=sys.stderr)
         print(f"{'='*80}", file=sys.stderr)
         print(f"\nFull crash log written to: {crash_log_path}", file=sys.stderr)
+        if crash_state_path:
+            print(f"Crash state snapshot written to: {crash_state_path}", file=sys.stderr)
         print("\nLast traceback frames:", file=sys.stderr)
         print("".join(traceback.format_tb(sys.exc_info()[2])[-3:]), file=sys.stderr)
         print(f"{type(e).__name__}: {e}", file=sys.stderr)
