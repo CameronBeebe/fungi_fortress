@@ -17,11 +17,9 @@ DEFAULT_CONFIG_FILENAME = "llm_config.ini"
 
 @dataclass
 class LLMConfig:
-    """Configuration for LLM interactions."""
+    """Configuration for XAI LLM interactions."""
     api_key: Optional[str] = None
-    model_name: str = "grok-3-mini"  # Default model
-    provider: str = "auto"  # Provider: auto, xai, groq, openai, anthropic, etc.
-    base_url: Optional[str] = None  # Optional base URL override (for Ollama, OpenRouter, etc.)
+    model_name: str = "grok-3-mini"  # Default XAI model
     context_level: str = "medium"  # Default context level (low, medium, high)
     enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
     offering_item: Optional[str] = None # Specific item Oracle might ask for (optional)
@@ -67,70 +65,33 @@ class LLMConfig:
             Configured LLMClient instance (may be mock if no valid API key)
         """
         return llm_client.create_client_from_config(
-            model=self.model_name or "gpt-4o-mini",
-            provider=self.provider,
+            model=self.model_name or "grok-3-mini",
             api_key=self.api_key,
-            base_url=self.base_url,
             max_tokens=self.max_tokens,
             timeout_seconds=self.timeout_seconds,
             temperature=0.7,
         )
 
-def get_api_key_from_env(provider: str) -> Optional[str]:
-    """Get API key from environment variables based on provider.
+def get_xai_api_key_from_env() -> Optional[str]:
+    """Get XAI API key from environment variables.
     
-    Args:
-        provider: The LLM provider name (xai, openai, anthropic, groq, together, perplexity)
-        
     Returns:
-        The API key from environment variables, or None if not found
+        The XAI_API_KEY from environment variables, or None if not found
     """
-    env_var_map = {
-        "xai": "XAI_API_KEY",
-        "openai": "OPENAI_API_KEY", 
-        "anthropic": "ANTHROPIC_API_KEY",
-        "groq": "GROQ_API_KEY",
-        "together": "TOGETHER_API_KEY",
-        "perplexity": "PERPLEXITY_API_KEY"
-    }
-    
-    env_var = env_var_map.get(provider.lower())
-    if env_var:
-        api_key = os.getenv(env_var)
-        if api_key:
-            logger.info(f"Found API key for {provider} in environment variable {env_var}")
-            return api_key
-        else:
-            logger.info(f"No API key found in environment variable {env_var} for provider {provider}")
+    api_key = os.getenv("XAI_API_KEY")
+    if api_key:
+        logger.info("Found XAI_API_KEY in environment")
+        return api_key
     else:
-        logger.warning(f"Unknown provider '{provider}' - cannot determine environment variable")
+        logger.info("No XAI_API_KEY found in environment")
     
     return None
 
-def detect_provider_from_model(model_name: str) -> str:
-    """Auto-detect provider based on model name.
-    
-    Delegates to llm_client._detect_provider_from_model for consistency.
-    
-    Args:
-        model_name: The model name to analyze
-        
-    Returns:
-        The detected provider name
-        
-    Raises:
-        ValueError: If model name doesn't match any known provider
-    """
-    if not model_name:
-        raise ValueError("Model name is required for provider detection")
-    
-    return llm_client._detect_provider_from_model(model_name)
-
 def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfig:
-    """Loads LLM configuration from the specified .ini file.
+    """Loads XAI LLM configuration from the specified .ini file.
 
-    Reads model name, provider, and other settings from the [LLM] section.
-    API keys are loaded from environment variables for security.
+    Reads model name and other settings from the [LLM] section.
+    API keys are loaded from environment variables (XAI_API_KEY) for security.
 
     Args:
         config_file_name (str): The name of the configuration file.
@@ -153,38 +114,24 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
     except FileNotFoundError:
         logger.info(f"Configuration file '{config_file_path}' not found.")
         
-        # Check for API keys in environment even without config file
-        # Try each provider's key to determine which one to use
-        for provider_name in ["xai", "openai", "anthropic", "groq", "together", "perplexity"]:
-            api_key = get_api_key_from_env(provider_name)
-            if api_key:
-                logger.info(f"Found {provider_name.upper()} API key in environment, using defaults for that provider")
-                # Return config with detected provider and default model
-                default_models = {
-                    "xai": "grok-3-mini",
-                    "openai": "gpt-4o-mini",
-                    "anthropic": "claude-3-5-sonnet-20241022",
-                    "groq": "llama-3.3-70b-versatile",
-                    "together": "meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo",
-                    "perplexity": "llama-3.1-sonar-large-128k-online",
-                }
-                return LLMConfig(
-                    api_key=api_key,
-                    model_name=default_models.get(provider_name, "gpt-4o-mini"),
-                    provider=provider_name,
-                    context_level="medium",
-                    max_tokens=1000,
-                    timeout_seconds=60,
-                )
+        # Check for XAI API key in environment even without config file
+        api_key = get_xai_api_key_from_env()
+        if api_key:
+            logger.info("Found XAI_API_KEY in environment, using defaults")
+            return LLMConfig(
+                api_key=api_key,
+                model_name="grok-3-mini",
+                context_level="medium",
+                max_tokens=1000,
+                timeout_seconds=60,
+            )
         
-        # No API keys found either
-        logger.info("No API keys found in environment. LLM will use mock provider (offline mode).")
+        # No API key found
+        logger.info("No XAI_API_KEY found in environment. LLM will use mock provider (offline mode).")
         return LLMConfig() 
 
     # Default values
-    model_name: Optional[str] = None
-    provider: str = "auto"
-    base_url: Optional[str] = None
+    model_name: str = "grok-3-mini"
     context_level: str = "medium"
     
     # Safety settings with defaults
@@ -199,19 +146,7 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
 
     # Load from [LLM] section
     if "LLM" in parser:
-        model_name = parser["LLM"].get("model_name")
-        if not model_name:
-            model_name = None 
-            
-        provider = parser["LLM"].get("provider", "auto")
-        if provider not in ["auto", "xai", "groq", "openai", "anthropic", "together", "perplexity"]:
-            logger.warning(f"Invalid 'provider' in '{config_file_path}'. Using default 'auto'.")
-            provider = "auto"
-        
-        # Optional base URL override
-        base_url = parser["LLM"].get("base_url")
-        if base_url:
-            logger.info(f"Using custom base URL: {base_url}")
+        model_name = parser["LLM"].get("model_name", "grok-3-mini")
             
         context_level_from_file = parser["LLM"].get("context_level")
         if context_level_from_file in ["low", "medium", "high"]:
@@ -272,42 +207,12 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
     else:
         logger.warning(f"[LLM] section not found in '{config_file_path}'. LLM features may be unavailable.")
 
-    # Determine actual provider for API key lookup
-    # Precedence: 1) explicit provider, 2) detect from model, 3) detect from env key
-    actual_provider = provider
-    
-    if provider != "auto":
-        # Explicit provider in config wins
-        logger.info(f"Using explicit provider '{provider}' from config")
-        actual_provider = provider
-    elif model_name:
-        # Auto-detect from model name
-        try:
-            actual_provider = detect_provider_from_model(model_name)
-            logger.info(f"Auto-detected provider '{actual_provider}' for model '{model_name}'")
-        except ValueError as e:
-            logger.error(f"Provider detection failed: {e}")
-            raise
-    else:
-        # No explicit provider and no model - check which env key is set
-        for provider_name in ["xai", "openai", "anthropic", "groq", "together", "perplexity"]:
-            if get_api_key_from_env(provider_name):
-                actual_provider = provider_name
-                logger.info(f"Auto-detected provider '{actual_provider}' from environment key")
-                break
-        else:
-            # No env keys found
-            logger.info("No provider specified and no API keys in environment")
-            actual_provider = "openai"  # Default for mock
-
     # Get API key from environment variables
-    api_key = get_api_key_from_env(actual_provider)
+    api_key = get_xai_api_key_from_env()
 
     return LLMConfig(
         api_key=api_key, 
         model_name=model_name, 
-        provider=provider,
-        base_url=base_url,
         context_level=context_level,
         max_tokens=max_tokens,
         timeout_seconds=timeout_seconds,

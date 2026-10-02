@@ -93,8 +93,7 @@ class TestLLMClient:
     def test_client_with_invalid_key_uses_mock(self):
         """Test client with invalid API key uses mock provider."""
         config = LLMClientConfig(
-            base_url="https://api.example.com/v1",
-            model="test-model",
+            model="grok-3-mini",
             api_key="YOUR_API_KEY_HERE",
         )
         client = LLMClient(config)
@@ -104,8 +103,7 @@ class TestLLMClient:
     def test_client_force_mock(self):
         """Test forcing mock provider even with valid config."""
         config = LLMClientConfig(
-            base_url="https://api.example.com/v1",
-            model="test-model",
+            model="grok-3-mini",
             api_key="real-looking-key",
         )
         client = LLMClient(config, use_mock=True)
@@ -135,24 +133,22 @@ class TestLLMClient:
     def test_client_with_valid_config_not_mock(self):
         """Test client with valid config is not mock."""
         config = LLMClientConfig(
-            base_url="https://api.openai.com/v1",
-            model="gpt-4o-mini",
-            api_key="sk-real-key",
+            model="grok-3-mini",
+            api_key="xai-real-key",
         )
         client = LLMClient(config)
         
         # Should not be mock (would try to use real API)
         assert not client.is_mock()
     
-    @patch('fungi_fortress.llm_client.OpenAICompatibleProvider._check_openai')
-    def test_openai_provider_missing_library(self, mock_check):
-        """Test OpenAI provider with missing library."""
+    @patch('fungi_fortress.llm_client.XAIProvider._check_openai')
+    def test_xai_provider_missing_library(self, mock_check):
+        """Test XAI provider with missing OpenAI library."""
         mock_check.return_value = False
         
         config = LLMClientConfig(
-            base_url="https://api.openai.com/v1",
-            model="gpt-4o-mini",
-            api_key="sk-test-key",
+            model="grok-3-mini",
+            api_key="xai-test-key",
         )
         client = LLMClient(config)
         
@@ -177,8 +173,7 @@ class TestErrorMapping:
         )
         
         config = LLMClientConfig(
-            base_url="https://api.openai.com/v1",
-            model="gpt-4o-mini",
+            model="grok-3-mini",
             api_key="invalid-key",
         )
         client = LLMClient(config)
@@ -200,8 +195,7 @@ class TestErrorMapping:
         )
         
         config = LLMClientConfig(
-            base_url="https://api.openai.com/v1",
-            model="gpt-4o-mini",
+            model="grok-3-mini",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -221,8 +215,7 @@ class TestErrorMapping:
         )
         
         config = LLMClientConfig(
-            base_url="https://api.openai.com/v1",
-            model="gpt-4o-mini",
+            model="grok-3-mini",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -242,8 +235,7 @@ class TestErrorMapping:
         )
         
         config = LLMClientConfig(
-            base_url="https://api.openai.com/v1",
-            model="gpt-4o-mini",
+            model="grok-3-mini",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -253,13 +245,12 @@ class TestErrorMapping:
 
 
 class TestClientFactory:
-    """Tests for client factory function."""
+    """Tests for client factory function (XAI + mock only)."""
     
     def test_create_client_with_no_key(self):
         """Test factory creates mock client with no API key."""
         client = llm_client.create_client_from_config(
-            model="gpt-4o-mini",
-            provider="openai",
+            model="grok-3-mini",
             api_key=None,
         )
         
@@ -268,49 +259,17 @@ class TestClientFactory:
     def test_create_client_with_placeholder_key(self):
         """Test factory creates mock client with placeholder key."""
         client = llm_client.create_client_from_config(
-            model="gpt-4o-mini",
-            provider="openai",
+            model="grok-3-mini",
             api_key="YOUR_API_KEY_HERE",
         )
         
         assert client.is_mock()
     
-    def test_create_client_auto_detect_xai(self):
-        """Test factory auto-detects XAI from model name."""
+    def test_create_client_with_xai_key(self):
+        """Test factory creates XAI client with valid key."""
         client = llm_client.create_client_from_config(
             model="grok-3-mini",
-            provider="auto",
-            api_key="test-key",
-        )
-        
-        assert not client.is_mock()
-    
-    def test_create_client_auto_detect_openai(self):
-        """Test factory auto-detects OpenAI from model name."""
-        client = llm_client.create_client_from_config(
-            model="gpt-4o-mini",
-            provider="auto",
-            api_key="test-key",
-        )
-        
-        assert not client.is_mock()
-    
-    def test_create_client_auto_detect_anthropic(self):
-        """Test factory auto-detects Anthropic from model name."""
-        client = llm_client.create_client_from_config(
-            model="claude-3-5-sonnet-20241022",
-            provider="auto",
-            api_key="test-key",
-        )
-        
-        assert not client.is_mock()
-    
-    def test_create_client_auto_detect_groq(self):
-        """Test factory auto-detects Groq from model name."""
-        client = llm_client.create_client_from_config(
-            model="llama-3.3-70b-versatile",
-            provider="auto",
-            api_key="test-key",
+            api_key="xai-test-key",
         )
         
         assert not client.is_mock()

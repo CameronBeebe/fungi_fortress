@@ -67,9 +67,9 @@ class TestOracleMessageBuilding:
         assert "fungi" in user_content
     
     def test_build_messages_with_history(self):
-        """Test messages include conversation history."""
+        """Test messages include conversation history (already trimmed by caller)."""
+        # Pass only last 3 exchanges (trimming is done by caller in llm_interface.py)
         history = [
-            {"player": "Hello", "oracle": "Greetings"},
             {"player": "What now?", "oracle": "Seek the grove"},
             {"player": "Where?", "oracle": "To the east"},
             {"player": "Thanks", "oracle": "Go with wisdom"},
@@ -84,13 +84,10 @@ class TestOracleMessageBuilding:
         
         user_content = messages[1]["content"]
         
-        # Should include last 3 exchanges
+        # Should include all provided exchanges
         assert "Seek the grove" in user_content
         assert "Where?" in user_content
         assert "Go with wisdom" in user_content
-        
-        # Should NOT include the first exchange (more than 3 ago)
-        assert "Hello" not in user_content or "Greetings" not in user_content
 
 
 class TestOracleQueryNonStreaming:

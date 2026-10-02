@@ -66,9 +66,8 @@ class BadResponseError(LLMError):
 
 @dataclass
 class LLMClientConfig:
-    """Configuration for LLM client."""
+    """Configuration for XAI LLM client."""
     
-    base_url: str
     model: str
     api_key: Optional[str] = None
     max_tokens: int = 1000
@@ -125,97 +124,155 @@ class MockLLMProvider:
         return ""
     
     def _mock_response(self, user_content: str) -> str:
-        """Generate deterministic response based on query."""
-        if any(word in user_content for word in ["hello", "hi", "greet"]):
+        """Generate deterministic response based on query (whole-word matching)."""
+        import re
+        
+        # Normalize content for matching
+        normalized = user_content.lower()
+        
+        # Use word boundary matching to avoid substring issues (e.g., "hi" in "this")
+        def has_word(pattern: str) -> bool:
+            return bool(re.search(r'\b' + re.escape(pattern) + r'\b', normalized))
+        
+        if any(has_word(word) for word in ["hello", "hi", "greet"]):
             return self.RESPONSES["greeting"]
-        elif any(word in user_content for word in ["quest", "mission", "goal"]):
+        elif any(has_word(word) for word in ["quest", "mission", "goal"]):
             return self.RESPONSES["quest"]
-        elif any(word in user_content for word in ["fungi", "mushroom", "spore"]):
+        elif any(has_word(word) for word in ["fungi", "mushroom", "spore"]):
             return self.RESPONSES["fungi"]
-        elif any(word in user_content for word in ["help", "aid", "assist"]):
+        elif any(has_word(word) for word in ["help", "aid", "assist"]):
             return self.RESPONSES["help"]
         else:
             return self.RESPONSES["default"]
 
 
-# === OpenAI-Compatible Provider ===
+# === XAI Provider ===
 
 
-class OpenAICompatibleProvider:
-    """Provider for OpenAI-compatible APIs."""
+class XAIProvider:
+    """Provider for XAI (Grok) API."""
     
     def __init__(self, config: LLMClientConfig):
         self.config = config
         self._openai_available = self._check_openai()
     
     def _check_openai(self) -> bool:
-        """Check if OpenAI library is available."""
+        """Check if OpenAI library is available (used for XAI API calls)."""
         try:
             import openai
             return True
         except ImportError:
-            logger.warning("openai library not available")
+            logger.warning("openai library not available (required for XAI)")
             return False
     
-    def chat(self, messages: list[dict], max_tokens: int = 1000) -> str:
-        """Non-streaming chat completion."""
+    def chat(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: str = "high", use_json_schema: bool = False) -> str:
+        """Non-streaming chat completion with XAI."""
         if not self._openai_available:
-            raise ConnectionError("OpenAI library not installed")
+            raise ConnectionError("OpenAI library not installed (required for XAI API)")
         
         import openai
         
         try:
             client = openai.OpenAI(
                 api_key=self.config.api_key,
-                base_url=self.config.base_url,
+                base_url="https://api.x.ai/v1",
                 timeout=self.config.timeout_seconds
             )
             
-            completion = client.chat.completions.create(
-                model=self.config.model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=self.config.temperature,
-            )
+            # Build completion parameters
+            completion_params = {
+                "model": self.config.model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": self.config.temperature,
+            }
+            
+            # Add reasoning_effort for grok-3-mini models
+            if "grok-3-mini" in self.config.model.lower():
+                completion_params["reasoning_effort"] = reasoning_effort
+            
+            # Add JSON schema if requested
+            if use_json_schema:
+                oracle_schema = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "oracle_response",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "narrative": {
+                                    "type": "string",
+                                    "description": "The Oracle's narrative response"
+                                },
+                                "actions": {
+                                    "type": "array",
+                                    "description": "Game actions to execute",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "action_type": {"type": "string"},
+                                            "details": {"type": "object"}
+                                        },
+                                        "required": ["action_type", "details"],
+                                        "additionalProperties": False
+                                    }
+                                }
+                            },
+                            "required": ["narrative", "actions"],
+                            "additionalProperties": False
+                        }
+                    }
+                }
+                completion_params["response_format"] = oracle_schema
+            
+            completion = client.chat.completions.create(**completion_params)
             
             content = completion.choices[0].message.content
             if not content:
-                raise BadResponseError("Empty response from API")
+                raise BadResponseError("Empty response from XAI API")
             
             return content
             
         except openai.AuthenticationError as e:
-            raise AuthenticationError(f"Invalid API key: {e}") from e
+            raise AuthenticationError(f"Invalid XAI API key: {e}") from e
         except openai.RateLimitError as e:
-            raise RateLimitError(f"Rate limit exceeded: {e}") from e
+            raise RateLimitError(f"XAI rate limit exceeded: {e}") from e
         except openai.APITimeoutError as e:
-            raise TimeoutError(f"Request timed out: {e}") from e
+            raise TimeoutError(f"XAI request timed out: {e}") from e
         except openai.APIConnectionError as e:
-            raise ConnectionError(f"Connection failed: {e}") from e
+            raise ConnectionError(f"XAI connection failed: {e}") from e
         except Exception as e:
-            raise BadResponseError(f"Unexpected error: {e}") from e
+            raise BadResponseError(f"Unexpected XAI error: {e}") from e
     
-    def chat_stream(self, messages: list[dict], max_tokens: int = 1000) -> Iterator[str]:
-        """Streaming chat completion."""
+    def chat_stream(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: str = "high") -> Iterator[str]:
+        """Streaming chat completion with XAI."""
         if not self._openai_available:
-            raise ConnectionError("OpenAI library not installed")
+            raise ConnectionError("OpenAI library not installed (required for XAI API)")
         
         import openai
         
         try:
             client = openai.OpenAI(
                 api_key=self.config.api_key,
-                base_url=self.config.base_url,
+                base_url="https://api.x.ai/v1",
                 timeout=self.config.timeout_seconds
             )
             
-            stream = client.chat.completions.create(
-                model=self.config.model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=self.config.temperature,
-                stream=True
-            )
+            # Build completion parameters
+            completion_params = {
+                "model": self.config.model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": self.config.temperature,
+                "stream": True
+            }
+            
+            # Add reasoning_effort for grok-3-mini models
+            if "grok-3-mini" in self.config.model.lower():
+                completion_params["reasoning_effort"] = reasoning_effort
+            
+            stream = client.chat.completions.create(**completion_params)
             
             for chunk in stream:
                 if chunk.choices and len(chunk.choices) > 0:
@@ -224,22 +281,22 @@ class OpenAICompatibleProvider:
                         yield delta.content
                         
         except openai.AuthenticationError as e:
-            raise AuthenticationError(f"Invalid API key: {e}") from e
+            raise AuthenticationError(f"Invalid XAI API key: {e}") from e
         except openai.RateLimitError as e:
-            raise RateLimitError(f"Rate limit exceeded: {e}") from e
+            raise RateLimitError(f"XAI rate limit exceeded: {e}") from e
         except openai.APITimeoutError as e:
-            raise TimeoutError(f"Request timed out: {e}") from e
+            raise TimeoutError(f"XAI request timed out: {e}") from e
         except openai.APIConnectionError as e:
-            raise ConnectionError(f"Connection failed: {e}") from e
+            raise ConnectionError(f"XAI connection failed: {e}") from e
         except Exception as e:
-            raise BadResponseError(f"Unexpected error: {e}") from e
+            raise BadResponseError(f"Unexpected XAI error: {e}") from e
 
 
 # === Main Client ===
 
 
 class LLMClient:
-    """Unified LLM client with streaming support and typed errors."""
+    """LLM client supporting XAI (Grok) and mock provider."""
     
     def __init__(self, config: Optional[LLMClientConfig] = None, use_mock: bool = False):
         """Initialize client.
@@ -261,19 +318,21 @@ class LLMClient:
             self._provider = MockLLMProvider()
             logger.info("Using mock LLM provider (offline mode)")
         else:
-            self._provider = OpenAICompatibleProvider(config)
-            logger.info(f"Using {config.base_url} with model {config.model}")
+            self._provider = XAIProvider(config)
+            logger.info(f"Using XAI API (https://api.x.ai/v1) with model {config.model}")
     
     def is_mock(self) -> bool:
         """Check if using mock provider."""
         return self._use_mock
     
-    def chat(self, messages: list[dict], max_tokens: Optional[int] = None) -> str:
+    def chat(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: str = "high", use_json_schema: bool = False) -> str:
         """Send a chat completion request (non-streaming).
         
         Args:
             messages: List of message dicts with 'role' and 'content'.
             max_tokens: Override default max tokens.
+            reasoning_effort: XAI reasoning effort ("low", "medium", "high") for grok-3-mini models.
+            use_json_schema: Whether to use JSON schema for structured output (XAI only).
             
         Returns:
             Complete response text.
@@ -285,19 +344,23 @@ class LLMClient:
             max_tokens = 1000
         
         try:
-            return self._provider.chat(messages, max_tokens)
+            if self._use_mock:
+                return self._provider.chat(messages, max_tokens)
+            else:
+                return self._provider.chat(messages, max_tokens, reasoning_effort, use_json_schema)
         except LLMError:
             raise
         except Exception as e:
             logger.error(f"Unexpected error in chat: {e}")
             raise BadResponseError(f"Unexpected error: {e}") from e
     
-    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None) -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: str = "high") -> Iterator[str]:
         """Send a streaming chat completion request.
         
         Args:
             messages: List of message dicts with 'role' and 'content'.
             max_tokens: Override default max tokens.
+            reasoning_effort: XAI reasoning effort ("low", "medium", "high") for grok-3-mini models.
             
         Yields:
             Response text chunks as they arrive.
@@ -309,7 +372,10 @@ class LLMClient:
             max_tokens = 1000
         
         try:
-            yield from self._provider.chat_stream(messages, max_tokens)
+            if self._use_mock:
+                yield from self._provider.chat_stream(messages, max_tokens)
+            else:
+                yield from self._provider.chat_stream(messages, max_tokens, reasoning_effort)
         except LLMError:
             raise
         except Exception as e:
@@ -322,42 +388,29 @@ class LLMClient:
 
 def create_client_from_config(
     model: str,
-    provider: str = "auto",
     api_key: Optional[str] = None,
-    base_url: Optional[str] = None,
     max_tokens: int = 1000,
     timeout_seconds: int = 60,
     temperature: float = 0.7,
 ) -> LLMClient:
-    """Create an LLM client from configuration parameters.
+    """Create an XAI LLM client from configuration parameters.
     
     Args:
-        model: Model name (e.g., 'gpt-4o-mini', 'grok-3-mini')
-        provider: Provider name or 'auto' to detect from model
-        api_key: API key, or None to use mock provider
-        base_url: Optional base URL override (for Ollama, OpenRouter, etc.)
+        model: XAI model name (e.g., 'grok-3-mini')
+        api_key: XAI API key (XAI_API_KEY), or None to use mock provider
         max_tokens: Maximum tokens per response
         timeout_seconds: Request timeout
         temperature: Sampling temperature
         
     Returns:
-        Configured LLMClient instance
+        Configured LLMClient instance (XAI or mock)
     """
-    # Auto-detect provider from model name if needed
-    if provider == "auto":
-        provider = _detect_provider_from_model(model)
-    
     # If no API key, use mock
     if not api_key or api_key in ("YOUR_API_KEY_HERE", "testkey123"):
         logger.info("No valid API key configured, using mock provider")
         return LLMClient(use_mock=True)
     
-    # Use provided base URL or get default for provider
-    if not base_url:
-        base_url = _base_url_for_provider(provider)
-    
     config = LLMClientConfig(
-        base_url=base_url,
         model=model,
         api_key=api_key,
         max_tokens=max_tokens,
@@ -366,49 +419,3 @@ def create_client_from_config(
     )
     
     return LLMClient(config)
-
-
-def _detect_provider_from_model(model: str) -> str:
-    """Detect provider from model name.
-    
-    Returns provider name or raises ValueError if unknown.
-    """
-    model_lower = model.lower()
-    
-    # Check most specific patterns first
-    if "grok" in model_lower:
-        return "xai"
-    elif "sonar" in model_lower:
-        # Perplexity sonar models
-        return "perplexity"
-    elif "/" in model and "meta-llama" in model_lower:
-        # Together uses org/model format with slash
-        return "together"
-    elif any(x in model_lower for x in ["gpt-", "davinci", "curie"]):
-        return "openai"
-    elif "claude" in model_lower:
-        return "anthropic"
-    elif any(x in model_lower for x in ["llama", "mixtral", "gemma"]) and "/" not in model:
-        # Groq uses model names without slash
-        return "groq"
-    else:
-        # Unknown provider - error instead of silent fallback
-        raise ValueError(
-            f"Unknown model provider for '{model}'. "
-            f"Supported: OpenAI (gpt-*), XAI (grok*), Anthropic (claude*), "
-            f"Groq (llama*/mixtral*/gemma* without /), "
-            f"Together (org/model with /), Perplexity (*sonar*)"
-        )
-
-
-def _base_url_for_provider(provider: str) -> str:
-    """Get base URL for a provider."""
-    urls = {
-        "xai": "https://api.x.ai/v1",
-        "openai": "https://api.openai.com/v1",
-        "anthropic": "https://api.anthropic.com/v1",
-        "groq": "https://api.groq.com/openai/v1",
-        "together": "https://api.together.xyz/v1",
-        "perplexity": "https://api.perplexity.ai",
-    }
-    return urls.get(provider, urls["openai"])
