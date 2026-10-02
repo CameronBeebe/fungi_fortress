@@ -1,6 +1,7 @@
 import curses
 import random
 from typing import TYPE_CHECKING, Optional, Union
+from collections import deque
 
 # Update constants import to relative
 from .constants import MAP_WIDTH, MAP_HEIGHT, MAX_TASKS, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS, SPELL_HOTKEYS
@@ -27,6 +28,9 @@ def bridge_stand(game_state, dwarf, target_x: int, target_y: int):
 
     Ordered bridges count as walkable for this check. Water the dwarf still
     could not reach after those orders is not queued.
+    
+    Note: Passes planned bridge positions to a_star via extra_walkable to avoid
+    mutating shared ENTITY_REGISTRY entities (all water tiles share one entity).
     """
     planned = set()
     for task in getattr(game_state.task_manager, "tasks", []):
@@ -37,21 +41,13 @@ def bridge_stand(game_state, dwarf, target_x: int, target_y: int):
         planned.add((active.resource_x, active.resource_y))
     planned.discard((target_x, target_y))
 
-    opened = []
-    height = len(game_state.map)
-    width = len(game_state.map[0]) if height else 0
-    for x, y in planned:
-        if not (0 <= y < height and 0 <= x < width):
-            continue
-        tile = game_state.map[y][x]
-        if not tile.walkable:
-            tile.walkable = True
-            opened.append(tile)
-    try:
-        path = a_star(game_state.map, (dwarf.x, dwarf.y), (target_x, target_y), adjacent=True)
-    finally:
-        for tile in opened:
-            tile.walkable = False
+    # Use extra_walkable parameter instead of mutating shared entities
+    path = a_star(game_state.map, (dwarf.x, dwarf.y), (target_x, target_y), 
+                  adjacent=True, extra_walkable=planned)
+    if path is None:
+        return None
+    # Return the last tile in the path (adjacent to the water)
+    return path[-1] if path else (dwarf.x, dwarf.y)
 
     if path:
         return path[-1]
@@ -89,6 +85,12 @@ class InputHandler:
         Dispatches the key to different handling logic depending on whether
         the inventory, shop, or legend is displayed, or if the game is in the
         main map view.
+        # Record key press in ring buffer for crash debugging
+        self.key_buffer.append({
+            "key": key,
+            "key_name": curses.keyname(key).decode('utf-8') if key >= 0 else f"KEY_{key}",
+            "tick": getattr(self.game_state, 'tick', 0)
+        })
 
         Args:
             key (int): The integer representation of the key pressed (from curses).

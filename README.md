@@ -24,51 +24,87 @@ A terminal-based strategy/simulation game written in Python using the curses lib
 
 ## Requirements
 
-*   Python 3.7+
+*   Python 3.10+ (3.12 recommended)
+*   **Terminal:** Minimum 70 columns × 45 rows for proper display
+*   **C compiler** (for `noise` package):
+    *   **macOS:** `xcode-select --install`
+    *   **Linux:** Usually pre-installed (`gcc`/`build-essential`)
+    *   **Windows:** Visual C++ Build Tools or similar
 *   **curses:**
-    *   **Linux/macOS:** Typically included with Python or available through system package managers (e.g., `sudo apt-get install libncursesw5-dev` on Debian/Ubuntu, often pre-installed on macOS).
-    *   **Windows:** You need to install the `windows-curses` package:
-        ```bash
-        pip install windows-curses
-        ```
-        *(Note: This project is primarily developed/tested on Unix-like systems. Windows compatibility via `windows-curses` may vary.)*
-*   **groq:** Current LLM integration testing using the X.AI API (used by the Oracle for LLM features) with groq.
-    ```bash
-    pip install groq
-    ```
-*   **LLM SDKs:** For LLM features, the following are installed via `requirements.txt`:
-    *   `openai`: For XAI (Grok), OpenAI (GPT), and other OpenAI-compatible APIs.
-    *   `groq`: For Groq API.
-    *   `requests`: Used for some direct API calls (e.g., Anthropic).
+    *   **Linux/macOS:** Included with Python
+    *   **Windows:** Automatically installed via `windows-curses` dependency
+
+## Installation
+
+### Using uv (Recommended - Fast!)
+
+[uv](https://github.com/astral-sh/uv) is a fast Python package manager that handles virtual environments and dependencies automatically.
+
+```bash
+# Install uv if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone the repository
+git clone <repository-url>
+cd fungi-fortress
+
+# Install dependencies (creates .venv automatically, uses uv.lock for exact versions)
+uv sync
+
+# Run the game
+uv run fungi
+```
+
+### Using pip (Traditional Method)
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd fungi-fortress
+
+# Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install the package with dev dependencies
+pip install -e ".[dev]"
+
+# Run the game
+fungi
+```
 
 ## How to Run
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository-url>
-    cd fungi-fortress
-    ```
-2.  **Set up API Key (Optional, for LLM features):**
-    This game can use a Large Language Model (LLM) for certain features. To enable these:
-    *   Copy `llm_config.ini.example` to `llm_config.ini`
-    *   Set your API key as an environment variable (for security):
-        ```bash
-        # For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
-        # For OpenAI:         export OPENAI_API_KEY="your-openai-api-key-here"
-        # For Anthropic:      export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
-        # For Groq:           export GROQ_API_KEY="your-groq-api-key-here"
-        # For Together:       export TOGETHER_API_KEY="your-together-api-key-here"
-        # For Perplexity:     export PERPLEXITY_API_KEY="your-perplexity-api-key-here"
-        ```
-    *   The game automatically detects which API key to use based on your chosen model
-    *   **Security:** API keys are stored in environment variables, never in files
+After installation with **uv**:
+```bash
+uv run fungi                    # Console command (recommended)
+uv run python -m fungi_fortress # As module
+uv run python main.py          # Direct script
+```
 
-3.  **Ensure requirements are met** (see above, especially for `curses` on Windows).
-4.  **Run the game:**
+After installation with **pip** (in activated venv):
+```bash
+fungi                    # Console command (recommended)
+python -m fungi_fortress # As module
+python main.py          # Direct script
+```
+
+### Optional: Set up API Key for LLM features
+
+This game can use a Large Language Model (LLM) for certain features. To enable these:
+
+*   Copy `llm_config.ini.example` to `llm_config.ini` in the repository root
+*   Set your API key as an environment variable (for security):
     ```bash
-    python main.py
+    # For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
+    # For OpenAI:         export OPENAI_API_KEY="your-openai-api-key-here"
+    # For Anthropic:      export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
+    # For Groq:           export GROQ_API_KEY="your-groq-api-key-here"
+    # For Together:       export TOGETHER_API_KEY="your-together-api-key-here"
+    # For Perplexity:     export PERPLEXITY_API_KEY="your-perplexity-api-key-here"
     ```
-    *(Alternatively, if running as an installed module later: `python -m fungi_fortress.main`)*
+*   The game automatically detects which API key to use based on your chosen model
+*   **Security:** API keys are stored in environment variables, never in files
 
 ## Basic Controls
 
@@ -101,24 +137,57 @@ When consulting an Oracle:
 
 This project uses `pytest` for testing and `mypy` for static type checking.
 
-1.  **Install Development Dependencies:**
-    Ensure you have installed the necessary packages:
-    ```bash
-    pip install -r requirements.txt
-    ```
-    *(This includes `pytest` and `mypy` marked as development dependencies).*
+### Running Tests
 
-2.  **Running Tests:**
-    Execute tests from the root directory:
-    ```bash
-    pytest
-    ```
+With **uv**:
+```bash
+# Run all tests
+uv run pytest -q
 
-3.  **Running Type Checks:**
-    Run the type checker from the root directory:
-    ```bash
-    mypy .
-    ```
+# Run with verbose output
+uv run pytest -v
+
+# Run specific test file
+uv run pytest tests/test_game_logic.py
+```
+
+With **pip** (in activated venv):
+```bash
+# Run all tests
+pytest -q
+
+# Run with verbose output
+pytest -v
+
+# Run specific test file
+pytest tests/test_game_logic.py
+```
+
+### Running Type Checks
+
+With **uv**:
+```bash
+uv run mypy fungi_fortress/
+```
+
+With **pip** (in activated venv):
+```bash
+mypy fungi_fortress/
+```
+
+### Development Setup
+
+**Using uv** (recommended):
+```bash
+uv sync  # Installs all dependencies including dev tools
+```
+
+**Using pip**:
+```bash
+pip install -e ".[dev]"
+```
+
+This installs pytest, mypy, and other development tools.
 
 ## Known Issues
 

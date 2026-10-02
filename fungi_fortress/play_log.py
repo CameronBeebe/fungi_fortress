@@ -62,4 +62,15 @@ def cleanup_old_logs(log_dir: Path, older_than: datetime) -> int:
 
 
 def _default_log_dir() -> Path:
-    return Path(os.path.dirname(os.path.abspath(__file__))) / LOG_DIR_NAME
+    """Return the log directory path.
+    
+    Priority:
+    1. FUNGI_LOG_DIR environment variable if set
+    2. ./logs in the current working directory
+    
+    This ensures logs are written to the working directory, not the package directory.
+    """
+    env_log_dir = os.environ.get("FUNGI_LOG_DIR")
+    if env_log_dir:
+        return Path(env_log_dir)
+    return Path.cwd() / LOG_DIR_NAME

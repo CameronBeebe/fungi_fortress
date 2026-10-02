@@ -4,11 +4,70 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fungi_fortress"
-version = "0.1.0" # You can change this
-description = "A roguelike game of fungal survival."
-readme = "README.md" # Optional: if you have a README
-requires-python = ">=3.8"
+version = "0.1.0"
+description = "A terminal-based strategy/simulation game with LLM-powered content generation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Fungi Fortress Contributors"}
+]
+keywords = ["game", "roguelike", "terminal", "curses", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console :: Curses",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment :: Simulation",
+]
 
-# Optional: Specify where setuptools can find your package
+dependencies = [
+    "windows-curses>=2.3.0; sys_platform == 'win32'",
+    "noise>=1.2.0,<2.0",
+    "groq>=0.4.0,<1.0",
+    "openai>=1.0.0,<2.0",
+    "requests>=2.25.0,<3.0",
+    "typing_extensions>=4.0.0,<5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0,<9.0",
+    "mypy>=1.0,<2.0",
+    "python-dotenv>=0.19.0,<2.0",
+]
+
+# PEP 735 dependency groups (uv native)
+[dependency-groups]
+dev = [
+    "pytest>=7.0,<9.0",
+    "mypy>=1.0,<2.0",
+    "python-dotenv>=0.19.0,<2.0",
+]
+
+[project.scripts]
+fungi = "fungi_fortress.cli:main"
+
 [tool.setuptools.packages.find]
-where = ["."] # Look for packages in the root directory 
+where = ["."]
+include = ["fungi_fortress*"]
+
+[tool.setuptools.package-data]
+fungi_fortress = ["seeds/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+warn_redundant_casts = true
+warn_unused_ignores = false

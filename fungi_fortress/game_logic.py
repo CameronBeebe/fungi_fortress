@@ -1,5 +1,8 @@
 import random
+import logging
+import json
 from typing import TYPE_CHECKING, Dict, List, Tuple, Optional, cast
+from collections import deque
 
 # Update constants import to relative
 from .constants import MAP_WIDTH, MAP_HEIGHT, ANIMAL_MOVE_CHANCE, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS
@@ -736,7 +739,9 @@ class GameLogic:
             occupied_positions[pos].append(entity)
         
         # Spread stacked entities
-        for pos, entities in occupied_positions.items():
+        # Use list() to create a snapshot - prevents "dictionary changed size during iteration"
+        # error when adding new positions while iterating
+        for pos, entities in list(occupied_positions.items()):
             if len(entities) > 1:
                 for i, entity in enumerate(entities[1:], 1):
                     # Try to find nearby empty position
@@ -994,17 +999,17 @@ class GameLogic:
     def _settle_arrival(self, dwarf):
         """The dwarf is standing on the task tile. Start the work, or finish a move."""
         if not dwarf.task:
-            self.game_state.add_debug_message(f"D{dwarf.id} finished moving but had no task. Setting to IDLE.")
+            logging.info(f"D{dwarf.id} finished moving but had no task. Setting to IDLE.")
             dwarf.state = 'idle'
             return
         if dwarf.task.type == 'move':
-            self.game_state.add_debug_message(f"D{dwarf.id} completed MOVE task to ({dwarf.x},{dwarf.y}). Setting state to IDLE.")
+            logging.info(f"D{dwarf.id} completed MOVE task to ({dwarf.x},{dwarf.y}). Setting state to IDLE.")
             dwarf.state = 'idle'
             dwarf.task = None
             dwarf.action_progress = 0
             return
         if dwarf.task.type == 'talk':
-            self.game_state.add_debug_message(f"D{dwarf.id} reached destination for TALK task at ({dwarf.x},{dwarf.y}) targeting ({dwarf.task.resource_x},{dwarf.task.resource_y}).")
+            logging.info(f"D{dwarf.id} reached destination for TALK task at ({dwarf.x},{dwarf.y}) targeting ({dwarf.task.resource_x},{dwarf.task.resource_y}).")
             target_entity = None
             if dwarf.task.resource_x is not None and dwarf.task.resource_y is not None:
                 for char in self.game_state.characters:
@@ -1023,7 +1028,7 @@ class GameLogic:
                         (f"({offering_cost_str}).", "NORMAL"),
                         ("Will you make this offering? (Y/N)", "NORMAL")
                     ]
-                    self.game_state.add_debug_message(f"D{dwarf.id} initiated Oracle dialogue with {target_entity.name}. Awaiting offering.")
+                    logging.info(f"D{dwarf.id} initiated Oracle dialogue with {target_entity.name}. Awaiting offering.")
                 elif isinstance(target_entity, NPC):
                     self.game_state.add_debug_message(f"D{dwarf.id} talks to {target_entity.name}. They grunt noncommittally.")
                 else:
@@ -1045,7 +1050,7 @@ class GameLogic:
         }
         action_state = task_type_to_action_state.get(dwarf.task.type)
         if action_state:
-            self.game_state.add_debug_message(f"D{dwarf.id} reached destination for {dwarf.task.type} task. Setting state to {action_state}.")
+            logging.info(f"D{dwarf.id} reached destination for {dwarf.task.type} task. Setting state to {action_state}.")
             dwarf.state = action_state
             dwarf.action_progress = 0
         else:
@@ -1062,7 +1067,7 @@ class GameLogic:
         situation = (dwarf.state, task_type, path_len)
         if situation != getattr(dwarf, "_tick_log", None):
             dwarf._tick_log = situation
-            self.game_state.add_debug_message(
+            logging.info(
                 f"Updating D{dwarf.id}. Prev State: {dwarf.previous_state}, New State: {dwarf.state}, Task: {task_type or 'None'}, Path len: {path_len}"
             )
 
@@ -1325,3 +1330,90 @@ class GameLogic:
             self.game_state.add_debug_message(f"D{dwarf.id} built bridge segment at ({dwarf.task.resource_x},{dwarf.task.resource_y})")
         else:
             self.game_state.add_debug_message(f"D{dwarf.id} cannot build bridge at ({dwarf.task.resource_x},{dwarf.task.resource_y}). Target is not Water, it is {target_bridge_tile.entity.name}.")
+
+    def _capture_state_snapshot(self) -> dict:
+        """Capture a lightweight snapshot of current game state for crash debugging.
+        
+        This is called at the START of each update() tick to preserve the state
+        from the previous tick. On crash, this 'penultimate' state is written to
+        logs/crash-<timestamp>.json.
+        
+        Captures:
+        - Tick number, depth, location
+        - All dwarves/characters/animals: position, state, task, path
+        - 15x15 ASCII map window around each dwarf
+        """
+        snapshot = {
+            "tick": self.tick_counter,
+            "depth": self.game_state.depth,
+            "cursor": {"x": self.game_state.cursor_x, "y": self.game_state.cursor_y},
+            "dwarves": [],
+            "characters": [],
+            "animals": [],
+            "map_windows": {}
+        }
+        
+        # Capture dwarf states
+        for dwarf in self.game_state.dwarves:
+            dwarf_data = {
+                "id": dwarf.id,
+                "position": {"x": dwarf.x, "y": dwarf.y},
+                "state": dwarf.state,
+                "previous_state": getattr(dwarf, "previous_state", None),
+                "path_length": len(dwarf.path) if dwarf.path else 0,
+            }
+            if dwarf.task:
+                dwarf_data["task"] = {
+                    "type": dwarf.task.type,
+                    "target": {"x": dwarf.task.x, "y": dwarf.task.y}
+                }
+            else:
+                dwarf_data["task"] = None
+            snapshot["dwarves"].append(dwarf_data)
+            
+            # Capture 15x15 map window around dwarf
+            snapshot["map_windows"][f"dwarf_{dwarf.id}"] = self._capture_map_window(dwarf.x, dwarf.y, 15)
+        
+        # Capture character states
+        for char in self.game_state.characters:
+            char_data = {
+                "name": char.name,
+                "position": {"x": char.x, "y": char.y},
+                "type": char.__class__.__name__
+            }
+            snapshot["characters"].append(char_data)
+        
+        # Capture animal states
+        for animal in self.game_state.animals:
+            animal_data = {
+                "type": animal.animal_type,
+                "position": {"x": animal.x, "y": animal.y}
+            }
+            snapshot["animals"].append(animal_data)
+        
+        return snapshot
+    
+    def _capture_map_window(self, center_x: int, center_y: int, size: int) -> List[str]:
+        """Capture a small ASCII window of the map around a position.
+        
+        Args:
+            center_x, center_y: Center position
+            size: Window size (e.g., 15 for 15x15)
+        
+        Returns:
+            List of strings representing map rows
+        """
+        half = size // 2
+        window = []
+        
+        for y in range(center_y - half, center_y + half + 1):
+            row = ""
+            for x in range(center_x - half, center_x + half + 1):
+                tile = self.game_state.get_tile(x, y)
+                if tile:
+                    row += tile.entity.char
+                else:
+                    row += " "
+            window.append(row)
+        
+        return window

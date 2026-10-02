@@ -19,7 +19,6 @@ from fungi_fortress.config_manager import PACKAGE_ROOT_DIR as CONFIG_MANAGER_PAC
 
 VALID_CONFIG_CONTENT = """
 [LLM]
-api_key = test_api_key_123
 model_name = gpt-test
 context_level = high
 """
@@ -65,6 +64,7 @@ setting = value
 EMPTY_CONFIG_CONTENT = """
 """
 
+@patch.dict(os.environ, {"OPENAI_API_KEY": "test_api_key_123"}, clear=False)
 @patch('fungi_fortress.config_manager.os.path.join')
 @patch('fungi_fortress.config_manager.open', new_callable=mock_open, read_data=VALID_CONFIG_CONTENT)
 def test_load_llm_config_success(mock_open_func, mock_os_path_join):
@@ -75,6 +75,8 @@ def test_load_llm_config_success(mock_open_func, mock_os_path_join):
 
     config = load_llm_config() # Uses DEFAULT_CONFIG_FILENAME
 
+    # API key comes from env var, not config file (security design)
+    # gpt-test model -> OpenAI provider -> OPENAI_API_KEY
     assert config.api_key == "test_api_key_123"
     assert config.model_name == "gpt-test"
     assert config.context_level == "high"
@@ -102,7 +104,7 @@ def test_load_llm_config_file_not_found(mock_file_open, mock_os_path_join, mock_
     
     config = load_llm_config("non_existent.ini")
     assert config.api_key is None
-    assert config.model_name == "gpt-4o-mini" # Expect default model name
+    assert config.model_name == "grok-3-mini"  # Expect default model name from LLMConfig
     assert config.context_level == "medium" # Default
     
     expected_join_calls = [
@@ -124,14 +126,15 @@ def test_load_llm_config_no_llm_section(mock_open_func, mock_os_path_join):
     mock_os_path_join.assert_called_once_with(CONFIG_MANAGER_PACKAGE_ROOT_DIR, "no_section_config.ini")
     mock_open_func.assert_called_once_with("mocked/path/to/no_section_config.ini", 'r')
 
-@pytest.mark.parametrize("content, expected_raw_api_key, expected_is_real_key_present, file_basename", [
-    (PLACEHOLDER_API_KEY_CONTENT, "YOUR_API_KEY_HERE", False, "placeholder.ini"),
-    (EMPTY_API_KEY_CONTENT, "", False, "empty_key.ini"), # configparser might make it empty string
-    (MISSING_API_KEY_CONTENT, None, False, "missing_key.ini"),
+@pytest.mark.parametrize("content, file_basename", [
+    (PLACEHOLDER_API_KEY_CONTENT, "placeholder.ini"),
+    (EMPTY_API_KEY_CONTENT, "empty_key.ini"),
+    (MISSING_API_KEY_CONTENT, "missing_key.ini"),
 ])
 @patch('fungi_fortress.config_manager.os.path.join')
 @patch('fungi_fortress.config_manager.open')
-def test_load_llm_config_various_api_key_states(mock_open_call, mock_os_path_join, content, expected_raw_api_key, expected_is_real_key_present, file_basename):
+def test_load_llm_config_various_api_key_states(mock_open_call, mock_os_path_join, content, file_basename):
+    """API keys come from env vars, not config file. Test that config loads successfully."""
     mock_os_path_join.return_value = f"mocked/path/to/{file_basename}"
     
     mock_file_handle = io.StringIO(content)
@@ -139,26 +142,22 @@ def test_load_llm_config_various_api_key_states(mock_open_call, mock_os_path_joi
     mock_open_call.return_value.__exit__.return_value = None
 
     config = load_llm_config(file_basename)
-    # For MISSING_API_KEY_CONTENT, configparser might result in api_key being None if not found
-    # For EMPTY_API_KEY_CONTENT, configparser returns an empty string if the key is present but value is empty.
-    if expected_raw_api_key is None and config.api_key == "": # Special case for missing vs empty from configparser
-         pass # Allow if expected None but got empty string due to configparser behavior
-    elif config.api_key is None and expected_raw_api_key == "":
-         pass # Allow if expected empty string but got None due to configparser behavior
-    else:
-        assert config.api_key == expected_raw_api_key
-    assert config.is_real_api_key_present == expected_is_real_key_present
+    # API key comes from env vars (will be None without env var set)
+    assert config.api_key is None  # No env var set in this test
+    assert config.is_real_api_key_present == False
     mock_os_path_join.assert_called_once_with(CONFIG_MANAGER_PACKAGE_ROOT_DIR, file_basename)
 
+@patch.dict(os.environ, {"OPENAI_API_KEY": "test_api_key_456"}, clear=False)
 @patch('fungi_fortress.config_manager.os.path.join')
 @patch('fungi_fortress.config_manager.open', new_callable=mock_open, read_data=MISSING_MODEL_NAME_CONTENT)
 def test_load_llm_config_missing_model_name(mock_open_func, mock_os_path_join):
+    """Config file has no model_name - should use default and get API key from env."""
     file_basename = "missing_model.ini"
     mock_os_path_join.return_value = f"mocked/path/to/{file_basename}"
 
     config = load_llm_config(file_basename)
-    assert config.model_name is None # Updated to reflect current default behavior
-    assert config.api_key == "test_api_key_456"
+    assert config.model_name is None  # No model specified in config
+    assert config.api_key == "test_api_key_456"  # From env var
     mock_os_path_join.assert_called_once_with(CONFIG_MANAGER_PACKAGE_ROOT_DIR, file_basename)
     mock_open_func.assert_called_once_with(f"mocked/path/to/{file_basename}", 'r')
 
@@ -240,14 +239,15 @@ def test_load_llm_config_logs_no_section(mock_open_func, mock_os_path_join, mock
 @patch('fungi_fortress.config_manager.os.path.join')
 @patch('fungi_fortress.config_manager.open', new_callable=mock_open, read_data=PLACEHOLDER_API_KEY_CONTENT)
 def test_load_llm_config_logs_placeholder_api_key(mock_open_func, mock_os_path_join, mock_logger):
+    """API keys come from env vars, not config file, so no placeholder warning."""
     file_basename = "placeholder_log.ini"
     mock_os_path_join.return_value = f"mocked/path/to/{file_basename}"
 
-    config = load_llm_config(file_basename) # This will trigger __post_init__
+    config = load_llm_config(file_basename)
     
-    # Check the log message from __post_init__
-    # The api_key value in the log message should be the actual placeholder string
-    mock_logger.info.assert_any_call(f"API key is a placeholder or empty: 'YOUR_API_KEY_HERE'")
+    # API key comes from env vars (None without env var), not from config file
+    assert config.api_key is None
+    # No placeholder log message since we don't read api_key from file
 
 @patch('fungi_fortress.config_manager.logger')
 @patch('fungi_fortress.config_manager.os.path.join')
