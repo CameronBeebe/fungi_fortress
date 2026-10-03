@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -526,8 +527,8 @@ def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int
     for min_dwarf, min_peer in ((8, 5), (4, 3), (2, 2)):
         found = away(min_dwarf, min_peer)
         if found:
-            found.sort(key=lambda spot: min((_manhattan(spot, (dwarf.x, dwarf.y)) for dwarf in dwarves), default=0), reverse=True)
-            return found[0]
+            # Pick randomly among valid spots (using game's RNG for reproducibility)
+            return random.choice(found)
     return None
 
 
