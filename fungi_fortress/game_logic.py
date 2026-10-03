@@ -1,7 +1,7 @@
 import random
 import logging
 import json
-from typing import TYPE_CHECKING, Dict, List, Tuple, Optional, cast
+from typing import TYPE_CHECKING, Dict, List, Tuple, Optional, cast, Any
 from collections import deque
 
 # Update constants import to relative
@@ -284,6 +284,323 @@ class GameLogic:
 
         self.game_state.add_debug_message(f"Entered {sub_level_name}.")
 
+    def _handle_action(self, action: Dict[str, Any]) -> None:
+        """Handle a single action from LLM or game events.
+        
+        Extracted from update() to be reused by both regular event processing
+        and streaming Oracle processing.
+        
+        Args:
+            action: Action dict with 'action_type' and 'details'
+        """
+        action_type = action.get("action_type")
+        details = action.get("details", {})
+        self.game_state.add_debug_message(f"[GameLogic] Processing Action: {action_type} - Details: {details}")
+
+        if action_type == "add_message":
+            message_text = details.get("text", "An unknown event occurred.")
+            self.game_state.add_debug_message(f"LLM: {message_text}")
+        elif action_type == "spawn_character":
+            # Basic implementation: Add to characters list.
+            char_type = details.get("type", "NPC")
+            name = details.get("name", "Mysterious Figure")
+            x = details.get("x", self.game_state.cursor_x)
+            y = details.get("y", self.game_state.cursor_y)
+            
+            # Track this as oracle-generated content
+            content_entry = {
+                "type": "character",
+                "name": name,
+                "char_type": char_type,
+                "location": (x, y),
+                "tick": self.game_state.tick,
+                "details": details.copy()
+            }
+            self.game_state.oracle_generated_content.append(content_entry)
+            self.game_state.add_debug_message(f"[Oracle] Generated character: {name} ({char_type})")
+            
+            # Ensure x, y are within map bounds
+            x = max(0, min(MAP_WIDTH - 1, x))
+            y = max(0, min(MAP_HEIGHT - 1, y))
+
+            # Ensure tile is walkable or find nearby walkable
+            original_x, original_y = details.get('x'), details.get('y')
+            tile = self.game_state.get_tile(x,y)
+            initial_spawn_valid = tile and tile.walkable
+
+            if not initial_spawn_valid:
+                found_walkable = False
+                for r_s in range(1, 4):
+                    for dx_s in range(-r_s, r_s + 1):
+                        for dy_s in range(-r_s, r_s + 1):
+                            if abs(dx_s) != r_s and abs(dy_s) != r_s: continue
+                            nx_s, ny_s = x + dx_s, y + dy_s
+                            if 0 <= nx_s < MAP_WIDTH and 0 <= ny_s < MAP_HEIGHT:
+                                adj_tile = self.game_state.get_tile(nx_s, ny_s)
+                                if adj_tile and adj_tile.walkable:
+                                    x, y = nx_s, ny_s
+                                    found_walkable = True
+                                    self.game_state.add_debug_message(f"LLM spawn: Original ({original_x},{original_y}) unwalkable. Found nearby at ({x},{y}).")
+                                    break
+                        if found_walkable: break
+                    if found_walkable: break
+                
+                if not found_walkable:
+                    cursor_tile = self.game_state.get_tile(self.game_state.cursor_x, self.game_state.cursor_y)
+                    if cursor_tile and cursor_tile.walkable:
+                        x, y = self.game_state.cursor_x, self.game_state.cursor_y
+                        self.game_state.add_debug_message(f"Could not find walkable spot for LLM spawn near ({original_x}, {original_y}). Spawning at cursor ({x},{y}).")
+                    else:
+                        self.game_state.add_debug_message(f"Critical spawn fail: Could not find any walkable spot for LLM spawn near ({original_x},{original_y}) or at cursor. Action aborted.")
+                        self.game_state.oracle_current_dialogue.append(f"(The Oracle's vision for a {char_type} at ({original_x},{original_y}) was obscured, and it could not manifest.)")
+                        return
+
+            if char_type == "Oracle":
+                new_char = Oracle(name=name, x=x, y=y)
+            elif char_type == "Dwarf":
+                new_char = NPC(name=name, x=x, y=y)
+                self.game_state.add_debug_message(f"LLM tried to spawn Dwarf, created NPC {name} instead.")
+            else:
+                new_char = NPC(name=name, x=x, y=y)
+            
+            self.game_state.characters.append(new_char)
+            self.game_state.add_debug_message(f"LLM spawned {char_type} '{name}' at ({x},{y}).")
+
+        elif action_type == "add_oracle_dialogue":
+            dialogue_text = details.get("text", "The Oracle says nothing.")
+            if (self.game_state.show_oracle_dialog and 
+                self.game_state.oracle_interaction_state != "IDLE"):
+                self.game_state.oracle_current_dialogue.append(dialogue_text)
+                if details.get("is_llm_response") and self.game_state.oracle_interaction_state == "AWAITING_LLM_RESPONSE":
+                    self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
+            else:
+                self.game_state.add_debug_message(f"Oracle response after dialogue closed: {dialogue_text[:100]}{'...' if len(dialogue_text) > 100 else ''}")
+        
+        elif action_type == "set_oracle_state":
+            new_state = details.get("state")
+            if new_state:
+                if (self.game_state.show_oracle_dialog and 
+                    self.game_state.oracle_interaction_state != "IDLE"):
+                    old_state = self.game_state.oracle_interaction_state
+                    self.game_state.oracle_interaction_state = new_state
+                    self.game_state.add_debug_message(f"Oracle state set to: {new_state}")
+                    
+                    if new_state == "AWAITING_PROMPT" and not self.game_state.oracle_current_dialogue:
+                         self.game_state.oracle_current_dialogue.append("The Oracle awaits your words...")
+                    elif new_state == "AWAITING_LLM_RESPONSE" and old_state != "AWAITING_LLM_RESPONSE":
+                        if not any("Oracle contemplates" in line for line in self.game_state.oracle_current_dialogue[-2:]):
+                            self.game_state.oracle_current_dialogue.append("The Oracle contemplates your query...")
+                else:
+                    self.game_state.add_debug_message(f"Oracle state change ignored (dialogue closed): {new_state}")
+
+        elif action_type == "start_oracle_streaming":
+            if (self.game_state.show_oracle_dialog and 
+                self.game_state.oracle_interaction_state != "IDLE"):
+                streaming_details = details
+                oracle_name = streaming_details.get("oracle_name", "The Oracle")
+                
+                if not hasattr(self.game_state, 'oracle_streaming_generator'):
+                    self.game_state.oracle_streaming_generator = None
+                if not hasattr(self.game_state, 'oracle_streaming_active'):
+                    self.game_state.oracle_streaming_active = False
+                if not hasattr(self.game_state, 'oracle_streaming_buffer'):
+                    self.game_state.oracle_streaming_buffer = ""
+                
+                self.game_state.oracle_streaming_generator = llm_interface.process_oracle_streaming(
+                    streaming_details["prompt"],
+                    streaming_details["api_key"],
+                    streaming_details["model_name"],
+                    streaming_details["provider_hint"],
+                    streaming_details["llm_config"],
+                    streaming_details["player_query"],
+                    oracle_name
+                )
+                self.game_state.oracle_streaming_active = True
+                self.game_state.oracle_streaming_buffer = ""
+                self.game_state.oracle_interaction_state = "STREAMING_RESPONSE"
+                self.game_state.add_debug_message(f"Started Oracle streaming response from {oracle_name}")
+
+        elif action_type == "start_oracle_dialogue_stream":
+            if (self.game_state.show_oracle_dialog and 
+                self.game_state.oracle_interaction_state == "STREAMING_RESPONSE"):
+                oracle_name = details.get("oracle_name", "The Oracle")
+                self.game_state.oracle_current_dialogue.append("")
+                self.game_state.oracle_dialogue_page_start_index = 0
+                self.game_state.add_debug_message(f"Started dialogue stream for {oracle_name}")
+
+        elif action_type == "append_oracle_dialogue_stream":
+            if (self.game_state.show_oracle_dialog and 
+                self.game_state.oracle_interaction_state == "STREAMING_RESPONSE"):
+                text_chunk = details.get("text_chunk", "")
+                if text_chunk:
+                    self.game_state.oracle_streaming_buffer += text_chunk
+                    if self.game_state.oracle_current_dialogue:
+                        self.game_state.oracle_current_dialogue[-1] = self.game_state.oracle_streaming_buffer
+                    else:
+                            self.game_state.oracle_current_dialogue.append(self.game_state.oracle_streaming_buffer)
+
+        elif action_type == "finish_oracle_dialogue_stream":
+            if (self.game_state.show_oracle_dialog and 
+                self.game_state.oracle_interaction_state == "STREAMING_RESPONSE"):
+                final_text = details.get("final_text", "")
+                is_error = details.get("error", False)
+                
+                if final_text:
+                    if self.game_state.oracle_current_dialogue:
+                        self.game_state.oracle_current_dialogue[-1] = final_text
+                    else:
+                            self.game_state.oracle_current_dialogue.append(final_text)
+                
+                self.game_state.oracle_streaming_active = False
+                self.game_state.oracle_streaming_generator = None
+                self.game_state.oracle_streaming_buffer = ""
+                
+                if details.get("is_llm_response"):
+                    self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
+                elif is_error:
+                    self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
+                else:
+                    self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
+
+        elif action_type == "update_oracle_history":
+            player_query = details.get("player_query", "")
+            oracle_response = details.get("oracle_response", "")
+            
+            if player_query and oracle_response:
+                self.game_state.oracle_llm_interaction_history.append({
+                    "player": player_query, 
+                    "oracle": oracle_response
+                })
+                if len(self.game_state.oracle_llm_interaction_history) > 10:
+                    self.game_state.oracle_llm_interaction_history.pop(0)
+                self.game_state.add_debug_message("Updated Oracle interaction history")
+
+        elif action_type == "create_quest":
+            quest_name = details.get("name", "Unknown Quest")
+            content_entry = {
+                "type": "quest",
+                "name": quest_name,
+                "description": details.get("description", "A mysterious quest..."),
+                "objectives": details.get("objectives", []),
+                "rewards": details.get("rewards", []),
+                "tick": self.game_state.tick,
+                "details": details.copy()
+            }
+            self.game_state.oracle_generated_content.append(content_entry)
+            self.game_state.add_debug_message(f"[Oracle] Generated quest: {quest_name}")
+            self.game_state.new_oracle_content_count += 1
+            
+            if (self.game_state.show_oracle_dialog and 
+                self.game_state.oracle_interaction_state != "IDLE"):
+                self.game_state.oracle_current_dialogue.append(f"✦ Quest Created: '{quest_name}' ✦")
+
+        elif action_type == "create_item":
+            item_name = details.get("name", "Unknown Item")
+            content_entry = {
+                "type": "item",
+                "name": item_name,
+                "description": details.get("description", "A mysterious item..."),
+                "location": details.get("location", "Unknown"),
+                "properties": details.get("properties", {}),
+                "tick": self.game_state.tick,
+                "details": details.copy()
+            }
+            self.game_state.oracle_generated_content.append(content_entry)
+            self.game_state.add_debug_message(f"[Oracle] Generated item: {item_name}")
+            self.game_state.new_oracle_content_count += 1
+            
+            if (self.game_state.show_oracle_dialog and 
+                self.game_state.oracle_interaction_state != "IDLE"):
+                self.game_state.oracle_current_dialogue.append(f"✦ Item Created: '{item_name}' ✦")
+
+        elif action_type == "create_character":
+            char_name = details.get("name", "Unknown Character")
+            content_entry = {
+                "type": "character",
+                "name": char_name,
+                "description": details.get("description", "A mysterious character..."),
+                "location": details.get("location", "Unknown"),
+                "faction": details.get("faction", "None"),
+                "tick": self.game_state.tick,
+                "details": details.copy()
+            }
+            self.game_state.oracle_generated_content.append(content_entry)
+            self.game_state.add_debug_message(f"[Oracle] Generated character: {char_name}")
+            self.game_state.new_oracle_content_count += 1
+            
+            if (self.game_state.show_oracle_dialog and 
+                self.game_state.oracle_interaction_state != "IDLE"):
+                self.game_state.oracle_current_dialogue.append(f"✦ Character Created: '{char_name}' ✦")
+
+        elif action_type == "create_event":
+            event_name = details.get("name", "Unknown Event")
+            content_entry = {
+                "type": "event", 
+                "name": event_name,
+                "description": details.get("description", "A mysterious event..."),
+                "trigger": details.get("trigger", "Unknown"),
+                "effects": details.get("effects", []),
+                "tick": self.game_state.tick,
+                "details": details.copy()
+            }
+            self.game_state.oracle_generated_content.append(content_entry)
+            self.game_state.add_debug_message(f"[Oracle] Generated event: {event_name}")
+            self.game_state.new_oracle_content_count += 1
+            
+            if (self.game_state.show_oracle_dialog and 
+                self.game_state.oracle_interaction_state != "IDLE"):
+                self.game_state.oracle_current_dialogue.append(f"✦ Event Created: '{event_name}' ✦")
+
+        elif action_type == "start_enhanced_oracle_streaming":
+            # Initialize enhanced streaming Oracle response with flavor text
+            if (self.game_state.show_oracle_dialog and 
+                self.game_state.oracle_interaction_state != "IDLE"):
+                streaming_details = details
+                oracle_name = streaming_details.get("oracle_name", "The Oracle")
+                
+                # Initialize streaming state
+                if not hasattr(self.game_state, 'oracle_streaming_generator'):
+                    self.game_state.oracle_streaming_generator = None
+                if not hasattr(self.game_state, 'oracle_streaming_active'):
+                    self.game_state.oracle_streaming_active = False
+                if not hasattr(self.game_state, 'oracle_streaming_buffer'):
+                    self.game_state.oracle_streaming_buffer = ""
+                if not hasattr(self.game_state, 'oracle_streaming_delay_counter'):
+                    self.game_state.oracle_streaming_delay_counter = 0
+                
+                # Start the enhanced streaming generator
+                self.game_state.oracle_streaming_generator = llm_interface.process_enhanced_oracle_streaming(
+                    streaming_details["prompt"],
+                    None,  # api_key - ignored, comes from llm_config
+                    streaming_details["model_name"],
+                    streaming_details["provider_hint"],
+                    self.game_state.llm_config,
+                    streaming_details["player_query"],
+                    oracle_name,
+                    streaming_details.get("game_context"),
+                    streaming_details.get("history"),
+                )
+                self.game_state.oracle_streaming_active = True
+                self.game_state.oracle_streaming_buffer = ""
+                self.game_state.oracle_streaming_delay_counter = 0
+                self.game_state.oracle_interaction_state = "STREAMING_RESPONSE"
+                
+                # Scroll to the end of dialogue so new flavor text starts in view
+                self.game_state.oracle_dialogue_page_start_index = len(self.game_state.oracle_current_dialogue)
+                
+                self.game_state.add_debug_message(f"Started enhanced Oracle streaming response from {oracle_name}")
+
+        elif action_type not in ["add_message", "set_oracle_state", "start_enhanced_oracle_streaming"]:
+            content_entry = {
+                "type": "other",
+                "action_type": action_type,
+                "description": f"Oracle action: {action_type}",
+                "tick": self.game_state.tick,
+                "details": details.copy()
+            }
+            self.game_state.oracle_generated_content.append(content_entry)
+            self.game_state.add_debug_message(f"[Oracle] Generated content: {action_type}")
+
     def update(self):
         """Main game loop update function called each tick.
 
@@ -331,367 +648,7 @@ class GameLogic:
         # This should also work even when paused to allow Oracle dialogue updates
         if all_llm_actions:
             for action in all_llm_actions:
-                action_type = action.get("action_type")
-                details = action.get("details", {})
-                self.game_state.add_debug_message(f"[GameLogic] Processing Action: {action_type} - Details: {details}")
-
-                if action_type == "add_message":
-                    message_text = details.get("text", "An unknown event occurred.")
-                    self.game_state.add_debug_message(f"LLM: {message_text}") # Or a different log for player
-                elif action_type == "spawn_character":
-                    # Basic implementation: Add to characters list.
-                    # Needs more robust handling (e.g., checking position, ensuring valid type)
-                    char_type = details.get("type", "NPC") # Default to NPC
-                    name = details.get("name", "Mysterious Figure")
-                    x = details.get("x", self.game_state.cursor_x)
-                    y = details.get("y", self.game_state.cursor_y)
-                    
-                    # Track this as oracle-generated content
-                    content_entry = {
-                        "type": "character",
-                        "name": name,
-                        "char_type": char_type,
-                        "location": (x, y),
-                        "tick": self.game_state.tick,
-                        "details": details.copy()
-                    }
-                    self.game_state.oracle_generated_content.append(content_entry)
-                    self.game_state.add_debug_message(f"[Oracle] Generated character: {name} ({char_type})")
-                    
-                    # Ensure x, y are within map bounds
-                    x = max(0, min(MAP_WIDTH - 1, x))
-                    y = max(0, min(MAP_HEIGHT - 1, y))
-
-                    # Ensure tile is walkable or find nearby walkable
-                    original_x, original_y = details.get('x'), details.get('y') # Store original for message
-                    tile = self.game_state.get_tile(x,y)
-                    initial_spawn_valid = tile and tile.walkable
-
-                    if not initial_spawn_valid:
-                        found_walkable = False
-                        for r_s in range(1, 4): # Search radius
-                            for dx_s in range(-r_s, r_s + 1):
-                                for dy_s in range(-r_s, r_s + 1):
-                                    if abs(dx_s) != r_s and abs(dy_s) != r_s: continue # Only check perimeter of square
-                                    nx_s, ny_s = x + dx_s, y + dy_s
-                                    if 0 <= nx_s < MAP_WIDTH and 0 <= ny_s < MAP_HEIGHT:
-                                        adj_tile = self.game_state.get_tile(nx_s, ny_s)
-                                        if adj_tile and adj_tile.walkable:
-                                            x, y = nx_s, ny_s
-                                            found_walkable = True
-                                            self.game_state.add_debug_message(f"LLM spawn: Original ({original_x},{original_y}) unwalkable. Found nearby at ({x},{y}).")
-                                            break
-                                if found_walkable: break
-                            if found_walkable: break
-                        
-                        if not found_walkable:
-                            # Fallback to cursor position
-                            cursor_tile = self.game_state.get_tile(self.game_state.cursor_x, self.game_state.cursor_y)
-                            if cursor_tile and cursor_tile.walkable:
-                                x, y = self.game_state.cursor_x, self.game_state.cursor_y
-                                self.game_state.add_debug_message(f"Could not find walkable spot for LLM spawn near ({original_x}, {original_y}). Spawning at cursor ({x},{y}).")
-                            else:
-                                # All fallbacks failed, inform player through oracle dialogue
-                                self.game_state.add_debug_message(f"Critical spawn fail: Could not find any walkable spot for LLM spawn near ({original_x},{original_y}) or at cursor. Action aborted.")
-                                self.game_state.oracle_current_dialogue.append(f"(The Oracle's vision for a {char_type} at ({original_x},{original_y}) was obscured, and it could not manifest.)")
-                                # Skip creating this character
-                                continue # Continue to the next action in all_llm_actions
-                    
-                    # If we've reached here, x and y are valid spawn points (either original, nearby, or cursor)
-
-                    if char_type == "Oracle": # Should Oracles be spawnable by LLM? Maybe only other NPCs/Creatures
-                        new_char = Oracle(name=name, x=x, y=y)
-                    elif char_type == "Dwarf": # Probably shouldn't allow LLM to spawn controllable units easily
-                        # For now, let's make it an NPC if "Dwarf" type is given by LLM for safety
-                        new_char = NPC(name=name, x=x, y=y) 
-                        self.game_state.add_debug_message(f"LLM tried to spawn Dwarf, created NPC {name} instead.")
-                    else: # Default to NPC, or could have a registry for LLM-spawnable creatures
-                        new_char = NPC(name=name, x=x, y=y)
-                    
-                    self.game_state.characters.append(new_char)
-                    self.game_state.add_debug_message(f"LLM spawned {char_type} '{name}' at ({x},{y}).")
-
-                elif action_type == "add_oracle_dialogue":
-                    dialogue_text = details.get("text", "The Oracle says nothing.")
-                    # Only add dialogue if Oracle dialogue is still active to prevent late responses
-                    if (self.game_state.show_oracle_dialog and 
-                        self.game_state.oracle_interaction_state != "IDLE"):
-                        self.game_state.oracle_current_dialogue.append(dialogue_text)
-                        # If it was an LLM response and we were waiting, transition state back
-                        if details.get("is_llm_response") and self.game_state.oracle_interaction_state == "AWAITING_LLM_RESPONSE":
-                            self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
-                    else:
-                        # Oracle dialogue was closed, log the response but don't interfere with UI
-                        self.game_state.add_debug_message(f"Oracle response after dialogue closed: {dialogue_text[:100]}{'...' if len(dialogue_text) > 100 else ''}")
-                
-                elif action_type == "set_oracle_state":
-                    new_state = details.get("state")
-                    if new_state:
-                        # Only change Oracle state if dialogue is still active
-                        if (self.game_state.show_oracle_dialog and 
-                            self.game_state.oracle_interaction_state != "IDLE"):
-                            old_state = self.game_state.oracle_interaction_state
-                            self.game_state.oracle_interaction_state = new_state
-                            self.game_state.add_debug_message(f"Oracle state set to: {new_state}")
-                            
-                            # If state changes and new introductory dialogue is added, reset page index - REMOVING THIS
-                            # reset_page_for_new_dialogue = False
-                            # if new_state == "AWAITING_PROMPT" and not self.game_state.oracle_current_dialogue:
-                            #      self.game_state.oracle_current_dialogue.append("The Oracle awaits your words...")
-                            #      reset_page_for_new_dialogue = True
-                            # elif new_state == "AWAITING_LLM_RESPONSE" and old_state != "AWAITING_LLM_RESPONSE":
-                            #     if not any("Oracle contemplates" in line for line in self.game_state.oracle_current_dialogue[-2:]):
-                            #         self.game_state.oracle_current_dialogue.append("The Oracle contemplates your query...")
-                            #         reset_page_for_new_dialogue = True
-                            # 
-                            # if reset_page_for_new_dialogue:
-                            #     self.game_state.oracle_dialogue_page_start_index = 0
-
-                            # Simplified: Add standard prompts if dialogue is empty or specific transitions occur, but don't reset scroll.
-                            if new_state == "AWAITING_PROMPT" and not self.game_state.oracle_current_dialogue:
-                                 self.game_state.oracle_current_dialogue.append("The Oracle awaits your words...")
-                            elif new_state == "AWAITING_LLM_RESPONSE" and old_state != "AWAITING_LLM_RESPONSE":
-                                if not any("Oracle contemplates" in line for line in self.game_state.oracle_current_dialogue[-2:]):
-                                    self.game_state.oracle_current_dialogue.append("The Oracle contemplates your query...")
-                        else:
-                            # Oracle dialogue was closed, ignore state change
-                            self.game_state.add_debug_message(f"Oracle state change ignored (dialogue closed): {new_state}")
-
-                elif action_type == "start_oracle_streaming":
-                    # Initialize streaming Oracle response
-                    if (self.game_state.show_oracle_dialog and 
-                        self.game_state.oracle_interaction_state != "IDLE"):
-                        # Start the streaming process
-                        streaming_details = details
-                        oracle_name = streaming_details.get("oracle_name", "The Oracle")
-                        
-                        # Initialize streaming state
-                        if not hasattr(self.game_state, 'oracle_streaming_generator'):
-                            self.game_state.oracle_streaming_generator = None
-                        if not hasattr(self.game_state, 'oracle_streaming_active'):
-                            self.game_state.oracle_streaming_active = False
-                        if not hasattr(self.game_state, 'oracle_streaming_buffer'):
-                            self.game_state.oracle_streaming_buffer = ""
-                        
-                        # Start the streaming generator
-                        self.game_state.oracle_streaming_generator = llm_interface.process_oracle_streaming(
-                            streaming_details["prompt"],
-                            streaming_details["api_key"],
-                            streaming_details["model_name"],
-                            streaming_details["provider_hint"],
-                            streaming_details["llm_config"], # was oracle_config
-                            streaming_details["player_query"],
-                            oracle_name
-                        )
-                        self.game_state.oracle_streaming_active = True
-                        self.game_state.oracle_streaming_buffer = ""
-                        self.game_state.oracle_interaction_state = "STREAMING_RESPONSE"
-                        
-                        self.game_state.add_debug_message(f"Started Oracle streaming response from {oracle_name}")
-
-                elif action_type == "start_oracle_dialogue_stream":
-                    # Begin streaming dialogue display
-                    if (self.game_state.show_oracle_dialog and 
-                        self.game_state.oracle_interaction_state == "STREAMING_RESPONSE"):
-                        oracle_name = details.get("oracle_name", "The Oracle")
-                        # Add a placeholder line that will be updated with streaming text
-                        self.game_state.oracle_current_dialogue.append("")
-                        self.game_state.oracle_dialogue_page_start_index = 0
-                        self.game_state.add_debug_message(f"Started dialogue stream for {oracle_name}")
-
-                elif action_type == "append_oracle_dialogue_stream":
-                    # Add text chunk to the streaming dialogue
-                    if (self.game_state.show_oracle_dialog and 
-                        self.game_state.oracle_interaction_state == "STREAMING_RESPONSE"):
-                        text_chunk = details.get("text_chunk", "")
-                        if text_chunk:
-                            # Update the streaming buffer
-                            self.game_state.oracle_streaming_buffer += text_chunk
-                            
-                            # Update the last dialogue line with the accumulated text
-                            if self.game_state.oracle_current_dialogue:
-                                self.game_state.oracle_current_dialogue[-1] = self.game_state.oracle_streaming_buffer
-                            else:
-                                    self.game_state.oracle_current_dialogue.append(self.game_state.oracle_streaming_buffer)
-
-                elif action_type == "finish_oracle_dialogue_stream":
-                    # Complete the streaming dialogue
-                    if (self.game_state.show_oracle_dialog and 
-                        self.game_state.oracle_interaction_state == "STREAMING_RESPONSE"):
-                        final_text = details.get("final_text", "")
-                        is_error = details.get("error", False)
-                        
-                        # Update the final dialogue text
-                        if final_text:
-                            if self.game_state.oracle_current_dialogue:
-                                self.game_state.oracle_current_dialogue[-1] = final_text
-                            else:
-                                    self.game_state.oracle_current_dialogue.append(final_text)
-                        
-                        # Clean up streaming state
-                        self.game_state.oracle_streaming_active = False
-                        self.game_state.oracle_streaming_generator = None
-                        self.game_state.oracle_streaming_buffer = ""
-                        
-                        if details.get("is_llm_response"):
-                            self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
-                        
-                        self.game_state.add_debug_message(f"Finished Oracle dialogue stream (error: {is_error})")
-
-                elif action_type == "update_oracle_history":
-                    # Update the Oracle interaction history
-                    player_query = details.get("player_query", "")
-                    oracle_response = details.get("oracle_response", "")
-                    
-                    if player_query and oracle_response:
-                        self.game_state.oracle_llm_interaction_history.append({
-                            "player": player_query, 
-                            "oracle": oracle_response
-                        })
-                        if len(self.game_state.oracle_llm_interaction_history) > 10:
-                            self.game_state.oracle_llm_interaction_history.pop(0)
-                        self.game_state.add_debug_message("Updated Oracle interaction history")
-
-                elif action_type == "create_quest":
-                    # Track quest generation
-                    quest_name = details.get("name", "Unknown Quest")
-                    content_entry = {
-                        "type": "quest",
-                        "name": quest_name,
-                        "description": details.get("description", "A mysterious quest..."),
-                        "objectives": details.get("objectives", []),
-                        "rewards": details.get("rewards", []),
-                        "tick": self.game_state.tick,
-                        "details": details.copy()
-                    }
-                    self.game_state.oracle_generated_content.append(content_entry)
-                    self.game_state.add_debug_message(f"[Oracle] Generated quest: {quest_name}")
-                    self.game_state.new_oracle_content_count += 1
-                    
-                    # Add feedback to Oracle dialogue if still active
-                    if (self.game_state.show_oracle_dialog and 
-                        self.game_state.oracle_interaction_state != "IDLE"):
-                        self.game_state.oracle_current_dialogue.append(f"✦ Quest Created: '{quest_name}' ✦")
-
-                elif action_type == "create_item":
-                    # Track item/artifact generation
-                    item_name = details.get("name", "Unknown Item")
-                    content_entry = {
-                        "type": "item",
-                        "name": item_name,
-                        "description": details.get("description", "A mysterious item..."),
-                        "location": details.get("location", "Unknown"),
-                        "properties": details.get("properties", {}),
-                        "tick": self.game_state.tick,
-                        "details": details.copy()
-                    }
-                    self.game_state.oracle_generated_content.append(content_entry)
-                    self.game_state.add_debug_message(f"[Oracle] Generated item: {item_name}")
-                    self.game_state.new_oracle_content_count += 1
-                    
-                    # Add feedback to Oracle dialogue if still active
-                    if (self.game_state.show_oracle_dialog and 
-                        self.game_state.oracle_interaction_state != "IDLE"):
-                        self.game_state.oracle_current_dialogue.append(f"✦ Item Created: '{item_name}' ✦")
-
-                elif action_type == "create_character":
-                    # Track character generation
-                    char_name = details.get("name", "Unknown Character")
-                    content_entry = {
-                        "type": "character",
-                        "name": char_name,
-                        "description": details.get("description", "A mysterious character..."),
-                        "location": details.get("location", "Unknown"),
-                        "faction": details.get("faction", "None"),
-                        "tick": self.game_state.tick,
-                        "details": details.copy()
-                    }
-                    self.game_state.oracle_generated_content.append(content_entry)
-                    self.game_state.add_debug_message(f"[Oracle] Generated character: {char_name}")
-                    self.game_state.new_oracle_content_count += 1
-                    
-                    # Add feedback to Oracle dialogue if still active
-                    if (self.game_state.show_oracle_dialog and 
-                        self.game_state.oracle_interaction_state != "IDLE"):
-                        self.game_state.oracle_current_dialogue.append(f"✦ Character Created: '{char_name}' ✦")
-
-                elif action_type == "create_event":
-                    # Track event generation
-                    event_name = details.get("name", "Unknown Event")
-                    content_entry = {
-                        "type": "event", 
-                        "name": event_name,
-                        "description": details.get("description", "A mysterious event..."),
-                        "trigger": details.get("trigger", "Unknown"),
-                        "effects": details.get("effects", []),
-                        "tick": self.game_state.tick,
-                        "details": details.copy()
-                    }
-                    self.game_state.oracle_generated_content.append(content_entry)
-                    self.game_state.add_debug_message(f"[Oracle] Generated event: {event_name}")
-                    self.game_state.new_oracle_content_count += 1
-                    
-                    # Add feedback to Oracle dialogue if still active
-                    if (self.game_state.show_oracle_dialog and 
-                        self.game_state.oracle_interaction_state != "IDLE"):
-                        self.game_state.oracle_current_dialogue.append(f"✦ Event Created: '{event_name}' ✦")
-
-                # For any other action types (except simple messages), track as miscellaneous content
-                elif action_type not in ["add_message", "set_oracle_state", "start_enhanced_oracle_streaming"]:  # Don't track simple message additions or state changes
-                    content_entry = {
-                        "type": "other",
-                        "action_type": action_type,
-                        "description": f"Oracle action: {action_type}",
-                        "tick": self.game_state.tick,
-                        "details": details.copy()
-                    }
-                    self.game_state.oracle_generated_content.append(content_entry)
-                    self.game_state.add_debug_message(f"[Oracle] Generated content: {action_type}")
-
-                # Add more action handlers here as needed (e.g., update_quest, give_item)
-
-                elif action_type == "start_enhanced_oracle_streaming":
-                    # Initialize enhanced streaming Oracle response with flavor text
-                    if (self.game_state.show_oracle_dialog and 
-                        self.game_state.oracle_interaction_state != "IDLE"):
-                        # Start the enhanced streaming process
-                        streaming_details = details
-                        oracle_name = streaming_details.get("oracle_name", "The Oracle")
-                        
-                        # Initialize streaming state
-                        if not hasattr(self.game_state, 'oracle_streaming_generator'):
-                            self.game_state.oracle_streaming_generator = None
-                        if not hasattr(self.game_state, 'oracle_streaming_active'):
-                            self.game_state.oracle_streaming_active = False
-                        if not hasattr(self.game_state, 'oracle_streaming_buffer'):
-                            self.game_state.oracle_streaming_buffer = ""
-                        if not hasattr(self.game_state, 'oracle_streaming_delay_counter'):
-                            self.game_state.oracle_streaming_delay_counter = 0
-                        
-                        # Start the enhanced streaming generator
-                        self.game_state.oracle_streaming_generator = llm_interface.process_enhanced_oracle_streaming(
-                            streaming_details["prompt"],
-                            streaming_details["api_key"],
-                            streaming_details["model_name"],
-                            streaming_details["provider_hint"],
-                            streaming_details["llm_config"], # was oracle_config
-                            streaming_details["player_query"],
-                            oracle_name
-                        )
-                        self.game_state.oracle_streaming_active = True
-                        self.game_state.oracle_streaming_buffer = ""
-                        self.game_state.oracle_streaming_delay_counter = 0
-                        self.game_state.oracle_interaction_state = "STREAMING_RESPONSE"
-                        
-                        # Scroll to the end of the current dialogue so new flavor text starts in view.
-                        self.game_state.oracle_dialogue_page_start_index = len(self.game_state.oracle_current_dialogue)
-                        
-                        self.game_state.add_debug_message(f"Started enhanced Oracle streaming response from {oracle_name}")
-
-                # Log unhandled actions
-                else:
-                    if action_type != "add_message":  # Don't log message additions as unhandled
-                        self.game_state.add_debug_message(f"[GameLogic] Unhandled Action: {action_type}")
+                self._handle_action(action)
         
         # --- Process Oracle Streaming (if active) ---
         self._process_oracle_streaming()
@@ -875,6 +832,10 @@ class GameLogic:
                 elif action_type == "stream_pause":
                     # Handle stream_pause action if needed
                     pass
+                else:
+                    # Handle non-streaming actions (add_message, update_oracle_history, etc.)
+                    # Execute them immediately via _handle_action
+                    self._handle_action(streaming_action)
                 
                 time_spent_streaming_this_tick_ms += 10  # Approximate time per chunk
 

@@ -210,26 +210,27 @@ class InputHandler:
             if self.game_state.oracle_interaction_state == "AWAITING_OFFERING":
                 if key == ord('y'):
                     if current_oracle and self._handle_offering(current_oracle):
-                        # Offering successful, now check API key
-                        has_real_api_key = False # Default to false
+                        # Offering successful - transition to prompt
+                        # Mock provider works fine with no API key
+                        self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
+                        
+                        # Show appropriate greeting based on whether using mock
+                        has_real_api_key = False
                         if self.game_state.llm_config:
                             has_real_api_key = self.game_state.llm_config.is_real_api_key_present
-
+                        
                         if has_real_api_key:
-                            self.game_state.oracle_interaction_state = "AWAITING_PROMPT"
                             self.game_state.oracle_current_dialogue = ["The Oracle acknowledges your offering.", "It awaits your query..."]
-                            self.game_state.oracle_prompt_buffer = ""
-                            self.game_state.oracle_dialogue_page_start_index = 0 # Reset page
-                            self.game_state.oracle_no_api_second_stage_pending = False # Ensure reset
                         else:
-                            # API key not valid/placeholder, or LLM disabled - show canned response
-                            self.game_state.oracle_interaction_state = "SHOWING_CANNED_RESPONSE"
-                            canned_dialogue = get_canned_response(current_oracle, "greeting_offering_no_llm")
-                            if not canned_dialogue: # Fallback
-                                canned_dialogue = ["The Oracle acknowledges your offering.", "Its connection to the aether is weak today, but it offers these words:"] + get_canned_response(current_oracle, "generic_fallback")
-                            self.game_state.oracle_current_dialogue = canned_dialogue
-                            self.game_state.oracle_dialogue_page_start_index = 0 # Reset page
-                            self.game_state.oracle_no_api_second_stage_pending = True # Start the two-stage no-API response
+                            # Offline/mock mode
+                            self.game_state.oracle_current_dialogue = [
+                                "The Oracle acknowledges your offering.",
+                                "(Offline mode: The Oracle will respond from stored wisdom.)"
+                            ]
+                        
+                        self.game_state.oracle_prompt_buffer = ""
+                        self.game_state.oracle_dialogue_page_start_index = 0
+                        self.game_state.oracle_no_api_second_stage_pending = False
                     else: # _handle_offering returned False (insufficient resources)
                         # _handle_offering itself sets dialogue for failure
                         self.game_state.oracle_dialogue_page_start_index = 0 # Reset page

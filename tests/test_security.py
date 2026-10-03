@@ -20,7 +20,7 @@ import re
 # Add the parent directory to the path to import our modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fungi_fortress.config_manager import load_llm_config, get_api_key_from_env, LLMConfig
+from fungi_fortress.config_manager import load_llm_config, get_xai_api_key_from_env, LLMConfig
 
 
 class TestAPIKeySecurity:
@@ -98,46 +98,18 @@ class TestAPIKeySecurity:
 class TestEnvironmentVariableLoading:
     """Test that environment variable loading works correctly and securely."""
     
-    def test_get_api_key_from_env_xai(self):
-        """Test XAI API key loading from environment."""
+    def test_get_xai_api_key_from_env_present(self):
+        """Test XAI API key loading from environment when present."""
         test_key = "xai-test-key-12345"
         with patch.dict(os.environ, {'XAI_API_KEY': test_key}):
-            result = get_api_key_from_env("xai")
+            result = get_xai_api_key_from_env()
             assert result == test_key
     
-    def test_get_api_key_from_env_openai(self):
-        """Test OpenAI API key loading from environment."""
-        test_key = "sk-test-key-12345"
-        with patch.dict(os.environ, {'OPENAI_API_KEY': test_key}):
-            result = get_api_key_from_env("openai")
-            assert result == test_key
-    
-    def test_get_api_key_from_env_anthropic(self):
-        """Test Anthropic API key loading from environment."""
-        test_key = "claude-test-key-12345"
-        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': test_key}):
-            result = get_api_key_from_env("anthropic")
-            assert result == test_key
-    
-    def test_get_api_key_from_env_groq(self):
-        """Test Groq API key loading from environment."""
-        test_key = "gsk_test_key_12345"
-        with patch.dict(os.environ, {'GROQ_API_KEY': test_key}):
-            result = get_api_key_from_env("groq")
-            assert result == test_key
-    
-    def test_get_api_key_from_env_missing(self):
-        """Test behavior when environment variable is missing."""
-        # Clear any existing API keys
-        env_vars = ['XAI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GROQ_API_KEY']
+    def test_get_xai_api_key_from_env_missing(self):
+        """Test behavior when XAI_API_KEY environment variable is missing."""
         with patch.dict(os.environ, {}, clear=True):
-            result = get_api_key_from_env("xai")
+            result = get_xai_api_key_from_env()
             assert result is None
-    
-    def test_get_api_key_from_env_unknown_provider(self):
-        """Test behavior with unknown provider."""
-        result = get_api_key_from_env("unknown_provider")
-        assert result is None
 
 
 class TestConfigurationSecurity:
@@ -168,7 +140,6 @@ max_tokens = 500
                     
                     assert config.api_key == test_api_key
                     assert config.is_real_api_key_present == True
-                    assert config.provider == "xai"
                     assert config.model_name == "grok-3"
         finally:
             os.unlink(temp_config_path)
@@ -176,8 +147,7 @@ max_tokens = 500
     def test_load_llm_config_no_env_var(self):
         """Test loading config without API key in environment."""
         config_content = """[LLM]
-provider = openai
-model_name = gpt-4o-mini
+model_name = grok-3-mini
 """
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
@@ -194,7 +164,6 @@ model_name = gpt-4o-mini
                     
                     assert config.api_key is None
                     assert config.is_real_api_key_present == False
-                    assert config.provider == "openai"
         finally:
             os.unlink(temp_config_path)
     
@@ -204,7 +173,7 @@ model_name = gpt-4o-mini
         
         with patch.dict(os.environ, {'XAI_API_KEY': test_api_key}):
             with patch('fungi_fortress.config_manager.logger') as mock_logger:
-                get_api_key_from_env("xai")
+                get_xai_api_key_from_env()
                 
                 # Check all logging calls
                 for call in mock_logger.info.call_args_list:
@@ -216,45 +185,28 @@ model_name = gpt-4o-mini
 class TestConfigurationRobustness:
     """Test that the configuration system is robust and user-friendly."""
     
-    def test_auto_provider_detection(self):
-        """Test automatic provider detection from model names."""
-        test_cases = [
-            ("grok-3", "xai"),
-            ("gpt-4o", "openai"),
-            ("claude-3-5-sonnet", "anthropic"),
-            ("llama-3.1-8b-instant", "groq"),
-        ]
-        
-        for model_name, expected_provider in test_cases:
-            config_content = f"""[LLM]
-provider = auto
-model_name = {model_name}
+    def test_xai_config_with_api_key(self):
+        """Test XAI configuration loading with API key."""
+        config_content = """[LLM]
+model_name = grok-3-mini
 """
-            
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
-                f.write(config_content)
-                temp_config_path = f.name
-            
-            try:
-                # Set appropriate API key
-                env_var = {
-                    "xai": "XAI_API_KEY",
-                    "openai": "OPENAI_API_KEY", 
-                    "anthropic": "ANTHROPIC_API_KEY",
-                    "groq": "GROQ_API_KEY"
-                }[expected_provider]
-                
-                with patch.dict(os.environ, {env_var: "test-key"}, clear=True):
-                    # Mock the config loading to use our temporary file
-                    with patch('fungi_fortress.config_manager.os.path.join') as mock_join:
-                        mock_join.return_value = temp_config_path
-                        config = load_llm_config()
-                        
-                        assert config.model_name == model_name
-                        assert config.api_key == "test-key"
-                        assert config.is_real_api_key_present == True
-            finally:
-                os.unlink(temp_config_path)
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+            f.write(config_content)
+            temp_config_path = f.name
+        
+        try:
+            with patch.dict(os.environ, {'XAI_API_KEY': "test-key"}, clear=True):
+                # Mock the config loading to use our temporary file
+                with patch('fungi_fortress.config_manager.os.path.join') as mock_join:
+                    mock_join.return_value = temp_config_path
+                    config = load_llm_config()
+                    
+                    assert config.model_name == "grok-3-mini"
+                    assert config.api_key == "test-key"
+                    assert config.is_real_api_key_present == True
+        finally:
+            os.unlink(temp_config_path)
     
     def test_config_validation(self):
         """Test that configuration validation works correctly."""

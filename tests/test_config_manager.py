@@ -64,7 +64,7 @@ setting = value
 EMPTY_CONFIG_CONTENT = """
 """
 
-@patch.dict(os.environ, {"OPENAI_API_KEY": "test_api_key_123"}, clear=False)
+@patch.dict(os.environ, {"XAI_API_KEY": "test_api_key_123"}, clear=False)
 @patch('fungi_fortress.config_manager.os.path.join')
 @patch('fungi_fortress.config_manager.open', new_callable=mock_open, read_data=VALID_CONFIG_CONTENT)
 def test_load_llm_config_success(mock_open_func, mock_os_path_join):
@@ -76,7 +76,7 @@ def test_load_llm_config_success(mock_open_func, mock_os_path_join):
     config = load_llm_config() # Uses DEFAULT_CONFIG_FILENAME
 
     # API key comes from env var, not config file (security design)
-    # gpt-test model -> OpenAI provider -> OPENAI_API_KEY
+    # XAI_API_KEY for XAI provider
     assert config.api_key == "test_api_key_123"
     assert config.model_name == "gpt-test"
     assert config.context_level == "high"
@@ -107,12 +107,11 @@ def test_load_llm_config_file_not_found(mock_file_open, mock_os_path_join, mock_
     assert config.model_name == "grok-3-mini"  # Expect default model name from LLMConfig
     assert config.context_level == "medium" # Default
     
+    # Updated: we no longer look for example file
     expected_join_calls = [
         call(CONFIG_MANAGER_PACKAGE_ROOT_DIR, "non_existent.ini"),
-        call(CONFIG_MANAGER_PACKAGE_ROOT_DIR, "llm_config.ini.example")
     ]
-    mock_os_path_join.assert_has_calls(expected_join_calls, any_order=False) # Check both calls were made
-    mock_os_path_exists.assert_called_once_with(mock_example_path) # Check that os.path.exists was called for the example file
+    mock_os_path_join.assert_has_calls(expected_join_calls, any_order=False)
 
 @patch('fungi_fortress.config_manager.os.path.join')
 @patch('fungi_fortress.config_manager.open', new_callable=mock_open, read_data=NO_LLM_SECTION_CONTENT)
@@ -121,7 +120,7 @@ def test_load_llm_config_no_llm_section(mock_open_func, mock_os_path_join):
 
     config = load_llm_config("no_section_config.ini")
     assert config.api_key is None
-    assert config.model_name is None # Updated to reflect current default behavior
+    assert config.model_name == "grok-3-mini" # Default XAI model
     assert config.context_level == "medium"
     mock_os_path_join.assert_called_once_with(CONFIG_MANAGER_PACKAGE_ROOT_DIR, "no_section_config.ini")
     mock_open_func.assert_called_once_with("mocked/path/to/no_section_config.ini", 'r')
@@ -156,15 +155,15 @@ def test_load_llm_config_missing_model_name(mock_open_func, mock_os_path_join):
     mock_os_path_join.return_value = f"mocked/path/to/{file_basename}"
 
     config = load_llm_config(file_basename)
-    assert config.model_name is None  # No model specified in config
-    assert config.api_key == "test_api_key_456"  # From env var
+    assert config.model_name == "grok-3-mini"  # Default XAI model
+    assert config.api_key is None  # No XAI_API_KEY in env
     mock_os_path_join.assert_called_once_with(CONFIG_MANAGER_PACKAGE_ROOT_DIR, file_basename)
     mock_open_func.assert_called_once_with(f"mocked/path/to/{file_basename}", 'r')
 
 @pytest.mark.parametrize("content, file_basename, expected_level, expected_model", [
     (VALID_CONFIG_CONTENT, "valid.ini", "high", "gpt-test"),
     (INVALID_CONTEXT_LEVEL_CONTENT, "invalid_ctx.ini", "medium", "gpt-test-invalid"), # Default context_level
-    (MISSING_MODEL_NAME_CONTENT, "missing_model_ctx.ini", "low", None) # Updated to reflect current default behavior
+    (MISSING_MODEL_NAME_CONTENT, "missing_model_ctx.ini", "low", "grok-3-mini") # Default XAI model
 ])
 @patch('fungi_fortress.config_manager.os.path.join')
 @patch('fungi_fortress.config_manager.open')
@@ -189,7 +188,7 @@ def test_load_llm_config_empty_file(mock_open_func, mock_os_path_join):
 
     config = load_llm_config(file_basename)
     assert config.api_key is None
-    assert config.model_name is None # Updated to reflect current default behavior
+    assert config.model_name == "grok-3-mini" # Default XAI model
     assert config.context_level == "medium"
     mock_os_path_join.assert_called_once_with(CONFIG_MANAGER_PACKAGE_ROOT_DIR, file_basename)
 
@@ -216,13 +215,12 @@ def test_load_llm_config_logs_file_not_found(mock_file_open, mock_os_path_join, 
 
     load_llm_config(file_basename)
 
+    # Updated: we no longer look for example file, just log and use defaults
     expected_join_calls = [
         call(CONFIG_MANAGER_PACKAGE_ROOT_DIR, file_basename),
-        call(CONFIG_MANAGER_PACKAGE_ROOT_DIR, "llm_config.ini.example")
     ]
     mock_os_path_join.assert_has_calls(expected_join_calls, any_order=False)
-    mock_os_path_exists.assert_called_once_with(mock_example_path)
-    mock_logger.info.assert_any_call(f"Configuration file '{mock_config_path}' not found. LLM features may be unavailable.")
+    mock_logger.info.assert_any_call(f"Configuration file '{mock_config_path}' not found.")
 
 @patch('fungi_fortress.config_manager.logger')
 @patch('fungi_fortress.config_manager.os.path.join')

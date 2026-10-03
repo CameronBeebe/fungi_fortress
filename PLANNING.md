@@ -70,6 +70,18 @@ The Oracle is the proof of concept; every character should work the same way.
 
 The running backlog lives in `TODO.md`.
 
+## Spore exposure and perception (draft ideas, open for discussion)
+
+**This section is brainstorming and not decided.** It's open for discussion and subject to change.
+
+- **Exposure should be felt, not read.** Bands change how the world looks rather than showing numbers. Current debug readouts are for development only; real play hides backend values, with a debug/"show stats" toggle (e.g. F1) for development.
+- **Perception layers:** as exposure rises, an overlay is drawn over the map (glowing mycelium, hidden figures and paths revealed, drifting colors and glyphs). Part of the overlay is true and part is false (water drawn as solid ground, a wall that looks passable). Skilled players learn tells, e.g. false tiles flicker on a rhythm while real ones stay steady. High-exposure visuals and reveals should be very elaborate and detailed.
+- **Pros and cons:** high exposure reveals secrets, unlocks dialogue, and shows what others can't see. It also makes navigation more dangerous (orders sent to things that aren't there, bridges to nowhere), and some creatures may be dangerous or visible only at high exposure.
+- **Decay and tolerance:** exposure fades over time, so it's a resource to manage. Repeated doses may build tolerance or leave lasting traces.
+- **LLM/Jev fit:** Jev judges what is real and what a figure will disclose at the current band; the LLM writes how it looks and sounds, more elaborate and stranger at deeper bands, but within typed schemas so a hallucination can never break the game rules.
+- **Engineering rule:** the engine keeps one true map. Exposure changes only what is drawn and described (a perception layer over a deterministic engine), which keeps it testable.
+- **Open questions:** how much is false vs. true at each band; how decay and tolerance work; whether other NPCs react to the player's exposure; how the debug toggle interacts with the overlay.
+
 ## Phased plan (small PRs, rough effort with agent help)
 
 **Phase 0: make it a real package ✓ COMPLETED (PR #2)**
