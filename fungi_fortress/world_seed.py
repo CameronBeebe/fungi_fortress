@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 import os
+import random
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from .characters import NPC
+from .characters import NPC, Oracle
 from .constants import STARTING_RESOURCES
 from . import llm_client, llm_world
 
@@ -469,21 +470,33 @@ def _spawn_characters(game: Any, seed: WorldSeed, layer: str = "surface") -> Non
         if spot is None:
             game.add_debug_message(f"No room to spawn {character.name}")
             continue
-        npc = NPC(
-            character.name,
-            spot[0],
-            spot[1],
-            data={
-                "description": character.description,
-                "faction": character.faction,
-                "motive": character.motive,
-                "secret": character.secret,
-                "voice": character.voice,
-                "seed_id": character.id,
-                "kind": character.kind,
-                "layer": layer,
-            },
-        )
+        # Build data dict once for both Oracle and NPC
+        char_data = {
+            "description": character.description,
+            "faction": character.faction,
+            "motive": character.motive,
+            "secret": character.secret,
+            "voice": character.voice,
+            "seed_id": character.id,
+            "kind": character.kind,
+            "layer": layer,
+        }
+        # Create Oracle instance for "revealed" kind characters (oracles/mystical entities)
+        if character.kind == "revealed":
+            npc = Oracle(
+                character.name,
+                spot[0],
+                spot[1],
+                description=character.description,
+                data=char_data,
+            )
+        else:
+            npc = NPC(
+                character.name,
+                spot[0],
+                spot[1],
+                data=char_data,
+            )
         game.characters.append(npc)
         occupied.add(spot)
         chosen.append(spot)
@@ -514,8 +527,8 @@ def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int
     for min_dwarf, min_peer in ((8, 5), (4, 3), (2, 2)):
         found = away(min_dwarf, min_peer)
         if found:
-            found.sort(key=lambda spot: min((_manhattan(spot, (dwarf.x, dwarf.y)) for dwarf in dwarves), default=0), reverse=True)
-            return found[0]
+            # Pick randomly among valid spots (using game's RNG for reproducibility)
+            return random.choice(found)
     return None
 
 

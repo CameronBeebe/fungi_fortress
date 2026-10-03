@@ -32,6 +32,78 @@ logging.info("--- Fungi Fortress Game Starting ---")
 # This must be set before any curses initialization
 os.environ.setdefault("ESCDELAY", "25")
 
+def initialize_new_game(game_state: GameState) -> str:
+    """Initialize a new game: regenerate map, spawn dwarf, grow world.
+    
+    This is the canonical new-game setup path that runs after GameState.__init__.
+    It regenerates the map (overwriting the initial one from __init__), places the
+    dwarf, and calls grow_world to spawn NPCs on the final map.
+    
+    Args:
+        game_state: The GameState instance to initialize (already constructed).
+        
+    Returns:
+        str: The world note from grow_world for logging/display.
+    """
+    from .constants import MAP_WIDTH, MAP_HEIGHT
+    from .characters import Dwarf
+    from .tiles import ENTITY_REGISTRY
+    from .world_seed import grow_world
+    
+    map_width, map_height = MAP_WIDTH, MAP_HEIGHT
+    logging.info(f"Initializing new game with map dimensions {map_width}x{map_height}.")
+
+    # Regenerate map (replaces the initial map from GameState.__init__)
+    initial_map, nexus_site, magic_fungi = generate_map(
+        map_width, map_height, game_state.depth, game_state.mission
+    )
+    game_state.map = initial_map
+    game_state.main_map = initial_map
+    game_state.nexus_site = nexus_site
+    game_state.magic_fungi_locations = magic_fungi
+    logging.info("Map regenerated and set in game_state.")
+
+    # Generate mycelial network for the final map
+    if nexus_site:
+        game_state.mycelial_network = generate_mycelial_network(
+            initial_map, nexus_site, magic_fungi if magic_fungi else []
+        )
+        game_state.network_distances = game_state.calculate_network_distances()
+        logging.info(f"Mycelial network generated with {len(game_state.mycelial_network)} nodes.")
+    else:
+        game_state.mycelial_network = {}
+        game_state.network_distances = {}
+        logging.warning("Mycelial network NOT generated (no nexus site).")
+
+    # Find spawn point for dwarf
+    spawn_x, spawn_y = None, None
+    grass_entity = ENTITY_REGISTRY.get("grass")
+    if grass_entity:
+        for y_coord in range(len(game_state.map)):
+            for x_coord in range(len(game_state.map[0])):
+                if game_state.map[y_coord][x_coord].entity == grass_entity:
+                    spawn_x, spawn_y = x_coord, y_coord
+                    break
+            if spawn_x is not None:
+                break
+    
+    if spawn_x is None:
+        spawn_x, spawn_y = map_width // 2, map_height // 2
+        game_state.add_debug_message("Warning: No grass found for spawn, using center.")
+        logging.warning("No grass found for spawn, using center coordinates.")
+
+    game_state.dwarves = [Dwarf(spawn_x, spawn_y, 0)]
+    game_state.cursor_x, game_state.cursor_y = spawn_x, spawn_y
+    game_state.add_debug_message(f"Spawned at ({spawn_x}, {spawn_y})")
+    logging.info(f"Dwarf spawned at ({spawn_x}, {spawn_y}).")
+
+    # Grow world (spawns NPCs on the final map)
+    world_note = grow_world(game_state)
+    game_state.add_debug_message(world_note)
+    logging.info(world_note)
+    
+    return world_note
+
 def game_loop(stdscr: curses.window):
     """Initializes and runs the main game loop.
 
@@ -75,60 +147,11 @@ def game_loop(stdscr: curses.window):
     game_logic: GameLogic = GameLogic(game_state)
     logging.info("Core game components initialized.")
 
-    # Initialize map and first dwarf/player state if needed
-    from .constants import MAP_WIDTH, MAP_HEIGHT
-    map_width, map_height = MAP_WIDTH, MAP_HEIGHT
-    logging.info(f"Map dimensions set to {map_width}x{map_height}.")
-
-    initial_map, nexus_site, magic_fungi = generate_map(
-        map_width, map_height, game_state.depth, game_state.mission
-    )
-    game_state.map = initial_map
-    game_state.main_map = initial_map # Keep a reference
-    game_state.nexus_site = nexus_site
-    game_state.magic_fungi_locations = magic_fungi
-    logging.info("Initial map generated and set in game_state.")
-
-    # Generate and set the mycelial network for the main map
-    if nexus_site: # Only generate if a nexus site exists
-        game_state.mycelial_network = generate_mycelial_network(initial_map, nexus_site, magic_fungi if magic_fungi else [])
-        game_state.network_distances = game_state.calculate_network_distances() # Calculate distances for the new network
-        logging.info(f"Initial mycelial network generated for the main map with {len(game_state.mycelial_network)} nodes.")
-    else:
-        game_state.mycelial_network = {} # Ensure it's an empty dict if no nexus
-        game_state.network_distances = {}
-        logging.warning("Initial mycelial network NOT generated for the main map as nexus_site is None.")
-
-    # Find initial spawn point
-    spawn_x, spawn_y = None, None
-    grass_entity = ENTITY_REGISTRY.get("grass") # Use .get for safety
-    if grass_entity:
-        for y_coord in range(len(game_state.map)):
-            for x_coord in range(len(game_state.map[0])):
-                 # Spawn on grass if possible
-                if game_state.map[y_coord][x_coord].entity == grass_entity:
-                     spawn_x, spawn_y = x_coord, y_coord
-                     break
-            if spawn_x is not None: break
-    
-    # Fallback spawn
-    if spawn_x is None:
-         spawn_x, spawn_y = map_width // 2, map_height // 2
-         game_state.add_debug_message("Warning: No grass found for spawn, using center.")
-         logging.warning("No grass found for spawn, using center coordinates.")
-
-    game_state.dwarves = [Dwarf(spawn_x, spawn_y, 0)]  # Only spawn one dwarf
-    game_state.cursor_x, game_state.cursor_y = spawn_x, spawn_y
-    game_state.add_debug_message(f"Spawned at ({spawn_x}, {spawn_y})")
-    logging.info(f"Player character spawned at ({spawn_x}, {spawn_y}).")
-
+    # Initialize new game (map, dwarf, NPCs)
     stdscr.erase()
     stdscr.addstr(0, 0, "Growing a world...")
     stdscr.refresh()
-    from .world_seed import grow_world
-    world_note = grow_world(game_state)
-    game_state.add_debug_message(world_note)
-    logging.info(world_note)
+    world_note = initialize_new_game(game_state)
 
     # Target 10 FPS for game logic updates
     target_logic_time = 1.0 / 10.0

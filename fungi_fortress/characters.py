@@ -117,7 +117,7 @@ class Oracle(NPC):
         canned_responses (Dict[str, Union[str, List[str]]]): Predefined dialogue options,
                                                               loaded from lore_base.
     """
-    def __init__(self, name: str, x: int, y: int, entity_id: str = None, tile_char: str = 'O', color_pair: int = 11, description: str = None) -> None:
+    def __init__(self, name: str, x: int, y: int, entity_id: str = None, tile_char: str = 'O', color_pair: int = 11, description: str = None, data: dict = None) -> None:
         """Initializes an Oracle character."""
         super().__init__(
             name=name, 
@@ -126,7 +126,8 @@ class Oracle(NPC):
             entity_id=entity_id if entity_id else name.lower().replace(" ", "_").replace("'", "") + "_oracle",
             tile_char=tile_char, 
             color_pair=color_pair, 
-            description=description if description else f"The enigmatic {name}"
+            description=description if description else f"The enigmatic {name}",
+            data=data
         )
         
         # Load canned responses from lore_base, with fallbacks

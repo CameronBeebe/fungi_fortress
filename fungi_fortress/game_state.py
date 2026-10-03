@@ -243,11 +243,6 @@ class GameState:
         self.add_debug_message(f"Fungi locations cached: {len(self.magic_fungi_locations)}")
         self.add_debug_message(f"Mission initialized: description={self.mission.get('description', 'None')}, objectives={self.mission.get('objectives', [])}")
 
-        # --- Spawn Initial Oracle (Depth 0 only) ---
-        if self.depth == 0:
-            self._spawn_initial_oracle("Whispering Fungus")
-        # --- End Oracle Spawn ---
-
         self.active_pulses: List[ActivePulse] = [] # For mycelial network pulse effects
         self.world_title: str = ""
         self.world_premise: str = ""
@@ -454,31 +449,6 @@ class GameState:
     # --- End Bridge Wood Reservation Management ---
 
     # --- Helper to spawn initial Oracle ---
-    def _spawn_initial_oracle(self, name: str) -> None:
-        """Finds a random walkable tile and spawns the initial Oracle.
-        
-        Args:
-            name (str): The name for the Oracle.
-        """
-        possible_locations: List[Tuple[int, int]] = []
-        dwarf_pos = (self.dwarves[0].x, self.dwarves[0].y) if self.dwarves else None
-        
-        for y in range(MAP_HEIGHT):
-            for x in range(MAP_WIDTH):
-                tile = self.get_tile(x, y)
-                # Check if walkable and not where the dwarf spawns
-                if tile and tile.walkable and (x, y) != dwarf_pos:
-                    possible_locations.append((x, y))
-        
-        if possible_locations:
-            ox, oy = random.choice(possible_locations)
-            oracle = Oracle(name, ox, oy)
-            self.characters.append(oracle)
-            self.add_debug_message(f"Oracle '{name}' spawned at ({ox}, {oy}).")
-        else:
-            self.add_debug_message(f"Warning: Could not find suitable location to spawn Oracle '{name}'.")
-    # --- End Helper --- 
-
     def set_llm_config(self, llm_config: Optional['LLMConfig']):
         """Sets the LLM configuration, performing some basic logging."""
         if llm_config:
