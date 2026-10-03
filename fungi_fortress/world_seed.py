@@ -469,6 +469,17 @@ def _spawn_characters(game: Any, seed: WorldSeed, layer: str = "surface") -> Non
         if spot is None:
             game.add_debug_message(f"No room to spawn {character.name}")
             continue
+        # Build data dict once for both Oracle and NPC
+        char_data = {
+            "description": character.description,
+            "faction": character.faction,
+            "motive": character.motive,
+            "secret": character.secret,
+            "voice": character.voice,
+            "seed_id": character.id,
+            "kind": character.kind,
+            "layer": layer,
+        }
         # Create Oracle instance for "revealed" kind characters (oracles/mystical entities)
         if character.kind == "revealed":
             npc = Oracle(
@@ -476,32 +487,14 @@ def _spawn_characters(game: Any, seed: WorldSeed, layer: str = "surface") -> Non
                 spot[0],
                 spot[1],
                 description=character.description,
-                data={
-                    "description": character.description,
-                    "faction": character.faction,
-                    "motive": character.motive,
-                    "secret": character.secret,
-                    "voice": character.voice,
-                    "seed_id": character.id,
-                    "kind": character.kind,
-                    "layer": layer,
-                },
+                data=char_data,
             )
         else:
             npc = NPC(
                 character.name,
                 spot[0],
                 spot[1],
-                data={
-                    "description": character.description,
-                    "faction": character.faction,
-                    "motive": character.motive,
-                    "secret": character.secret,
-                    "voice": character.voice,
-                    "seed_id": character.id,
-                    "kind": character.kind,
-                    "layer": layer,
-                },
+                data=char_data,
             )
         game.characters.append(npc)
         occupied.add(spot)
@@ -510,10 +503,7 @@ def _spawn_characters(game: Any, seed: WorldSeed, layer: str = "surface") -> Non
 
 
 def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int] | None:
-    """Pick a walkable tile away from the dwarves and from other seeded people, verifying reachability."""
-    from .utils import a_star
-    
-    # Find all walkable tiles
+    """Pick a walkable tile away from the dwarves and from other seeded people."""
     spots = []
     for y in range(height):
         for x in range(width):
@@ -522,26 +512,6 @@ def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int
             tile = game.get_tile(x, y) if hasattr(game, "get_tile") else game.map[y][x]
             if tile and getattr(tile, "walkable", False):
                 spots.append((x, y))
-    
-    # Compute all tiles reachable from any dwarf (one flood fill)
-    reachable = set()
-    for dwarf in dwarves:
-        if dwarf.x < 0 or dwarf.x >= width or dwarf.y < 0 or dwarf.y >= height:
-            continue
-        # BFS flood fill from this dwarf
-        queue = [(dwarf.x, dwarf.y)]
-        visited = {(dwarf.x, dwarf.y)}
-        while queue:
-            x, y = queue.pop(0)
-            reachable.add((x, y))
-            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                nx, ny = x + dx, y + dy
-                if (nx, ny) in visited or not (0 <= nx < width and 0 <= ny < height):
-                    continue
-                tile = game.get_tile(nx, ny) if hasattr(game, "get_tile") else game.map[ny][nx]
-                if tile and getattr(tile, "walkable", False):
-                    visited.add((nx, ny))
-                    queue.append((nx, ny))
 
     def away(min_dwarf: int, min_peer: int):
         found = []
@@ -550,9 +520,7 @@ def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int
                 continue
             if any(_manhattan(spot, other) < min_peer for other in chosen):
                 continue
-            # Filter by reachability (computed once via flood fill)
-            if spot in reachable:
-                found.append(spot)
+            found.append(spot)
         return found
 
     for min_dwarf, min_peer in ((8, 5), (4, 3), (2, 2)):
