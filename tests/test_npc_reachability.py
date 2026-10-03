@@ -15,13 +15,9 @@ def test_npcs_reachable_from_dwarf():
     Tests multiple random seeds to catch intermittent placement failures.
     """
     from fungi_fortress.game_state import GameState
-    from fungi_fortress.map_generation import generate_map, generate_mycelial_network
-    from fungi_fortress.world_seed import grow_world
+    from fungi_fortress.app import initialize_new_game
     from fungi_fortress.config_manager import LLMConfig
     from fungi_fortress.utils import a_star
-    from fungi_fortress.constants import MAP_WIDTH, MAP_HEIGHT
-    from fungi_fortress.tiles import ENTITY_REGISTRY
-    from fungi_fortress.characters import Dwarf
     
     # Test with several different seeds
     test_seeds = [42, 123, 456, 789, 2024]
@@ -29,50 +25,10 @@ def test_npcs_reachable_from_dwarf():
     for seed_value in test_seeds:
         random.seed(seed_value)
         
-        # Simulate the actual startup sequence from app.py
+        # Use the real startup sequence from app.py
         llm_config = LLMConfig()
         game_state = GameState(llm_config=llm_config)
-        
-        # Regenerate map (as app.py does)
-        map_width, map_height = MAP_WIDTH, MAP_HEIGHT
-        initial_map, nexus_site, magic_fungi = generate_map(
-            map_width, map_height, game_state.depth, game_state.mission
-        )
-        game_state.map = initial_map
-        game_state.main_map = initial_map
-        game_state.nexus_site = nexus_site
-        game_state.magic_fungi_locations = magic_fungi
-        
-        # Generate mycelial network
-        if nexus_site:
-            game_state.mycelial_network = generate_mycelial_network(
-                initial_map, nexus_site, magic_fungi if magic_fungi else []
-            )
-            game_state.network_distances = game_state.calculate_network_distances()
-        else:
-            game_state.mycelial_network = {}
-            game_state.network_distances = {}
-        
-        # Find spawn point and spawn dwarf (as app.py does)
-        spawn_x, spawn_y = None, None
-        grass_entity = ENTITY_REGISTRY.get("grass")
-        if grass_entity:
-            for y_coord in range(len(game_state.map)):
-                for x_coord in range(len(game_state.map[0])):
-                    if game_state.map[y_coord][x_coord].entity == grass_entity:
-                        spawn_x, spawn_y = x_coord, y_coord
-                        break
-                if spawn_x is not None:
-                    break
-        
-        if spawn_x is None:
-            spawn_x, spawn_y = map_width // 2, map_height // 2
-        
-        game_state.dwarves = [Dwarf(spawn_x, spawn_y, 0)]
-        game_state.cursor_x, game_state.cursor_y = spawn_x, spawn_y
-        
-        # Grow world (spawns NPCs including Oracle)
-        world_note = grow_world(game_state)
+        initialize_new_game(game_state)  # Canonical new-game setup
         
         # Now verify all NPCs are reachable
         dwarf_pos = (game_state.dwarves[0].x, game_state.dwarves[0].y)
@@ -103,54 +59,16 @@ def test_npcs_reachable_from_dwarf():
 def test_oracle_specifically_present():
     """Test that an Oracle NPC is present after startup."""
     from fungi_fortress.game_state import GameState
-    from fungi_fortress.map_generation import generate_map, generate_mycelial_network
-    from fungi_fortress.world_seed import grow_world
+    from fungi_fortress.app import initialize_new_game
     from fungi_fortress.config_manager import LLMConfig
-    from fungi_fortress.constants import MAP_WIDTH, MAP_HEIGHT
-    from fungi_fortress.tiles import ENTITY_REGISTRY
-    from fungi_fortress.characters import Dwarf, Oracle
+    from fungi_fortress.characters import Oracle
     
     random.seed(42)
     
-    # Simulate startup
+    # Use the real startup sequence
     llm_config = LLMConfig()
     game_state = GameState(llm_config=llm_config)
-    
-    # Regenerate map
-    map_width, map_height = MAP_WIDTH, MAP_HEIGHT
-    initial_map, nexus_site, magic_fungi = generate_map(
-        map_width, map_height, game_state.depth, game_state.mission
-    )
-    game_state.map = initial_map
-    game_state.main_map = initial_map
-    game_state.nexus_site = nexus_site
-    game_state.magic_fungi_locations = magic_fungi
-    
-    if nexus_site:
-        game_state.mycelial_network = generate_mycelial_network(
-            initial_map, nexus_site, magic_fungi if magic_fungi else []
-        )
-        game_state.network_distances = game_state.calculate_network_distances()
-    
-    # Spawn dwarf
-    spawn_x, spawn_y = None, None
-    grass_entity = ENTITY_REGISTRY.get("grass")
-    if grass_entity:
-        for y_coord in range(len(game_state.map)):
-            for x_coord in range(len(game_state.map[0])):
-                if game_state.map[y_coord][x_coord].entity == grass_entity:
-                    spawn_x, spawn_y = x_coord, y_coord
-                    break
-            if spawn_x is not None:
-                break
-    
-    if spawn_x is None:
-        spawn_x, spawn_y = map_width // 2, map_height // 2
-    
-    game_state.dwarves = [Dwarf(spawn_x, spawn_y, 0)]
-    
-    # Grow world
-    grow_world(game_state)
+    initialize_new_game(game_state)
     
     # Check for Oracle presence
     oracle_npcs = [npc for npc in game_state.characters if isinstance(npc, Oracle)]
