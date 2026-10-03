@@ -9,6 +9,13 @@ from fungi_fortress.config_manager import LLMConfig
 from fungi_fortress.inventory import Inventory
 
 
+@pytest.fixture(autouse=True)
+def reset_test_state():
+    """Reset any shared state before each test."""
+    yield
+    # Cleanup after test if needed
+
+
 def test_reservation_computed_from_queued_tasks():
     """Test that reserved wood is computed from actual queued tasks."""
     # Create a minimal real GameState

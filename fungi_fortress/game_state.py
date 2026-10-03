@@ -202,7 +202,7 @@ class GameState:
         self.dwarves: List[Dwarf] = []
         self.animals: List[Animal] = []
         self.characters: List[NPC] = []
-        self.inventory = Inventory(STARTING_RESOURCES, STARTING_SPECIAL_ITEMS)
+        self.inventory = Inventory(dict(STARTING_RESOURCES), dict(STARTING_SPECIAL_ITEMS))
         self.shop_carry = {k: 0 for k in self.inventory.resources.keys()}
         
         spawn_found = False
