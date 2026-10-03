@@ -15,7 +15,8 @@ Living backlog. One small PR per item unless noted. Order is the proposed build 
 - **Stance is frozen.** An NPC's stance is judged once (`npc.judged = True` before the call) and never revisited, and kin stance ignores spore exposure. Re-judge on meaningful change (band, gifts, quest progress) and retry transient errors.
 - **Collision.** Pathfinding ignores characters, and the stacking code teleports the displaced one to a neighbor. Decide on real blocking, swapping places, or NPCs stepping aside on their own.
 - **Revealed figures are hard to find.** Reveal Mycelium only lights the network, it doesn't reveal people. The seed's one revealed figure is always on the map and drawn as `?` below 55 exposure, `~` at 55 to 64, its initial at 65+. Make the spell actually surface figures and explain the bands in the UI.
-- **Spore bands in the UI.** Show the current band and the next threshold (glimpse <55, voice 55-64, welcome 65+).
+- **Debug/"show stats" toggle (F1).** Hide backend readouts (exposure numbers, bands, stances, debug messages) in normal play; F1 toggles them for development.
+- **Perception overlay prototype.** As exposure rises, draw an overlay with true and false elements over the map (see PLANNING.md "Spore exposure and perception" section; still under discussion).
 - **Fail-open mission judge.** With no key or on error the mission counts as accomplished. Show that in the UI.
 
 ## Engineering
