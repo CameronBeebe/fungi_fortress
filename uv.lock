@@ -236,7 +236,6 @@ name = "fungi-fortress"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "groq" },
     { name = "noise" },
     { name = "openai" },
     { name = "requests" },
@@ -260,7 +259,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "groq", specifier = ">=0.4.0,<1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0,<2.0" },
     { name = "noise", specifier = ">=1.2.0,<2.0" },
     { name = "openai", specifier = ">=1.0.0,<2.0" },
@@ -277,23 +275,6 @@ dev = [
     { name = "mypy", specifier = ">=1.0,<2.0" },
     { name = "pytest", specifier = ">=7.0,<9.0" },
     { name = "python-dotenv", specifier = ">=0.19.0,<2.0" },
-]
-
-[[package]]
-name = "groq"
-version = "0.37.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "distro" },
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "sniffio" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e9/78/18948a9056e1509c87e10ab8316a90ecce87035fbd53342dffdf97f4de00/groq-0.37.1.tar.gz", hash = "sha256:7353d6dfb60834fd7aacbb86af106e2dc2aeaff6d0edd65fb2fd0f16bd39314c", size = 145289, upload-time = "2025-12-04T18:08:07.118Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5f/d6/645a081750e43f858b7d09dce5d8e1e76cf11e7e4bdba81252e04f78963d/groq-0.37.1-py3-none-any.whl", hash = "sha256:b49f8c8898c55eaec9f71f1342f3fcacc9560d67a08ce5f35fbfb84e8dacd3da", size = 137494, upload-time = "2025-12-04T18:08:05.801Z" },
 ]
 
 [[package]]
