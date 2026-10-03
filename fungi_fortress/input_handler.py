@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional, Union
 from collections import deque
 
 # Update constants import to relative
-from .constants import MAP_WIDTH, MAP_HEIGHT, MAX_TASKS, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS, SPELL_HOTKEYS
+from .constants import MAP_WIDTH, MAP_HEIGHT, MAX_TASKS, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS, SPELL_HOTKEYS, BRIDGE_WOOD_COST
 
 # Use relative imports for sibling modules
 from .characters import Task, Dwarf, NPC, Animal, Oracle
@@ -613,12 +613,26 @@ class InputHandler:
 
                 stand = bridge_stand(self.game_state, dwarf, target_x, target_y)
                 if stand is not None:
-                    adjacent_x, adjacent_y = stand
-                    task = Task(adjacent_x, adjacent_y, task_type, target_x, target_y)
-                    if self.game_state.task_manager.add_task(task):
-                        self.game_state.add_debug_message(f"Bridge building task assigned for ({target_x}, {target_y}) via ({adjacent_x}, {adjacent_y})")
+                    # Check if we have enough available wood (accounting for reservations)
+                    available_wood = self.game_state.get_available_wood()
+                    
+                    if available_wood >= BRIDGE_WOOD_COST:
+                        adjacent_x, adjacent_y = stand
+                        task = Task(adjacent_x, adjacent_y, task_type, target_x, target_y)
+                        
+                        # Wood is reserved automatically when task is added to queue
+                        if self.game_state.task_manager.add_task(task):
+                            self.game_state.add_debug_message(f"Bridge building task assigned for ({target_x}, {target_y}) via ({adjacent_x}, {adjacent_y})")
+                        else:
+                            self.game_state.add_debug_message("Failed to add bridge task (manager full?)")
                     else:
-                        self.game_state.add_debug_message("Failed to add bridge task (manager full?)")
+                        # Not enough wood available
+                        total_wood = self.game_state.inventory.resources.get("wood", 0)
+                        reserved_wood = self.game_state.get_reserved_wood()
+                        self.game_state.add_debug_message(
+                            f"Cannot queue bridge: need {BRIDGE_WOOD_COST} wood, "
+                            f"have {total_wood} total ({available_wood} available, {reserved_wood} reserved for other bridges)"
+                        )
                 else:
                     self.game_state.add_debug_message(f"No adjacent walkable path to water tile at ({target_x}, {target_y}) for bridge building.")
 

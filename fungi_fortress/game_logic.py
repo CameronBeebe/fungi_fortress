@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Dict, List, Tuple, Optional, cast, Any
 from collections import deque
 
 # Update constants import to relative
-from .constants import MAP_WIDTH, MAP_HEIGHT, ANIMAL_MOVE_CHANCE, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS
+from .constants import MAP_WIDTH, MAP_HEIGHT, ANIMAL_MOVE_CHANCE, FISHING_TICKS, BASE_UNDERGROUND_MINING_TICKS, BRIDGE_WOOD_COST
 
 # Use relative imports for modules within the fungi_fortress package
 from .characters import Task, Dwarf, NPC, Animal, Oracle # Added Oracle
@@ -1259,38 +1259,141 @@ class GameLogic:
         self._trigger_sublevel_entry(dwarf, tile)
 
     def _complete_build_bridge(self, dwarf, tile_dwarf_is_on):
-        """Complete building a bridge segment."""
+        """Complete building a bridge segment.
+        
+        Handles:
+        - Wood deduction on success (reservation released automatically when task completes)
+        - Cancellation of dependent bridge segments on failure
+        - Clear player messaging for all outcomes
+        """
         if not (dwarf.task and dwarf.task.resource_x is not None and dwarf.task.resource_y is not None):
             self.game_state.add_debug_message(f"D{dwarf.id} build_bridge task has no resource_x/resource_y defined.")
             return
 
         target_bridge_tile = self.game_state.get_tile(dwarf.task.resource_x, dwarf.task.resource_y)
-        bridge_entity_data = ENTITY_REGISTRY.get("bridge") # Get the GameEntity data for bridge
-
-        # Define bridge cost here
-        bridge_cost = [("wood", 1)]
+        bridge_entity_data = ENTITY_REGISTRY.get("bridge")
+        bridge_pos = (dwarf.task.resource_x, dwarf.task.resource_y)
 
         if not target_bridge_tile:
-            self.game_state.add_debug_message(f"D{dwarf.id} build_bridge: Target tile ({dwarf.task.resource_x},{dwarf.task.resource_y}) not found.")
+            self.game_state.add_debug_message(f"D{dwarf.id} build_bridge: Target tile {bridge_pos} not found.")
+            self._handle_bridge_failure(bridge_pos, "target tile not found")
             return
         
         if not bridge_entity_data:
             self.game_state.add_debug_message(f"D{dwarf.id} build_bridge: 'bridge' entity data not found in registry.")
+            self._handle_bridge_failure(bridge_pos, "bridge entity missing from registry")
             return
 
-        if not self.game_state.inventory.can_afford(bridge_cost):
-            self.game_state.add_debug_message(f"D{dwarf.id} cannot afford to build bridge. Needs: {bridge_cost}")
-            return # Exit early if cannot afford
+        # Check if we have enough actual wood (not just reserved)
+        if not self.game_state.inventory.resources.get("wood", 0) >= BRIDGE_WOOD_COST:
+            self.game_state.add_debug_message(
+                f"D{dwarf.id} cannot build bridge at {bridge_pos}: insufficient wood "
+                f"(need {BRIDGE_WOOD_COST}, have {self.game_state.inventory.resources.get('wood', 0)})"
+            )
+            self._handle_bridge_failure(bridge_pos, "insufficient wood")
+            return
         
-        if target_bridge_tile.entity.name == "Water":
-            # Resources are deducted now that we've confirmed affordability and target type
-            for resource, amount in bridge_cost:
-                self.game_state.inventory.remove_resource(resource, amount)
+        if target_bridge_tile.entity.name != "Water":
+            self.game_state.add_debug_message(
+                f"D{dwarf.id} cannot build bridge at {bridge_pos}: target is {target_bridge_tile.entity.name}, not Water"
+            )
+            self._handle_bridge_failure(bridge_pos, f"target is {target_bridge_tile.entity.name}, not Water")
+            return
+
+        # Success: deduct wood and build bridge
+        # Reservation released automatically when dwarf.task is cleared
+        self.game_state.inventory.remove_resource("wood", BRIDGE_WOOD_COST)
+        target_bridge_tile.entity = bridge_entity_data
+        self.game_state.add_debug_message(f"D{dwarf.id} built bridge segment at {bridge_pos}")
+
+    def _handle_bridge_failure(self, failed_bridge_pos: Tuple[int, int], reason: str):
+        """Handle bridge building failure by cancelling dependent tasks.
+        
+        Checks both queued and assigned bridge tasks for dependency. Tests reachability
+        from any dwarf position.
+        
+        Wood reservations are released automatically when tasks are removed or cleared.
+        
+        Args:
+            failed_bridge_pos: Position of the bridge that failed to build
+            reason: Human-readable reason for the failure
+        """
+        # Collect all bridge tasks (both queued and assigned to dwarves)
+        all_bridge_tasks = []
+        
+        # Queued tasks
+        for task in list(self.game_state.task_manager.tasks):
+            if task.type == "build_bridge" and task.resource_x is not None and task.resource_y is not None:
+                all_bridge_tasks.append(("queued", task, None))
+        
+        # Assigned tasks
+        for dwarf in self.game_state.dwarves:
+            if dwarf.task and dwarf.task.type == "build_bridge":
+                if dwarf.task.resource_x is not None and dwarf.task.resource_y is not None:
+                    all_bridge_tasks.append(("assigned", dwarf.task, dwarf))
+        
+        # Build set of BUILT bridges (actual bridge entities on the map)
+        # Plus planned bridges EXCLUDING the failed one
+        extra_walkable = set()
+        
+        # Add actual built bridges
+        bridge_entity = ENTITY_REGISTRY.get("bridge")
+        if bridge_entity:
+            for y in range(len(self.game_state.map)):
+                for x in range(len(self.game_state.map[0])):
+                    tile = self.game_state.get_tile(x, y)
+                    if tile and tile.entity == bridge_entity:
+                        extra_walkable.add((x, y))
+        
+        # Add planned bridges (excluding failed one)
+        for status, task, _ in all_bridge_tasks:
+            pos = (task.resource_x, task.resource_y)
+            if pos != failed_bridge_pos:
+                extra_walkable.add(pos)
+        
+        # Check each task for reachability from any dwarf
+        cancelled_tasks = []
+        for status, task, assigned_dwarf in all_bridge_tasks:
+            task_bridge_pos = (task.resource_x, task.resource_y)
             
-            target_bridge_tile.entity = bridge_entity_data # Assign the GameEntity instance
-            self.game_state.add_debug_message(f"D{dwarf.id} built bridge segment at ({dwarf.task.resource_x},{dwarf.task.resource_y})")
+            # Check if this bridge is reachable from ANY dwarf
+            # (Use extra_walkable WITHOUT this task's position)
+            test_walkable = extra_walkable - {task_bridge_pos}
+            reachable = False
+            
+            from .utils import a_star
+            for dwarf in self.game_state.dwarves:
+                path = a_star(self.game_state.map, (dwarf.x, dwarf.y), task_bridge_pos, 
+                              adjacent=True, extra_walkable=test_walkable)
+                if path is not None:
+                    reachable = True
+                    break
+            
+            if not reachable:
+                # This task is now unreachable from all dwarves
+                cancelled_tasks.append((status, task, assigned_dwarf))
+        
+        # Remove/clear cancelled tasks
+        for status, task, assigned_dwarf in cancelled_tasks:
+            if status == "queued":
+                self.game_state.task_manager.remove_task(task)
+            elif status == "assigned" and assigned_dwarf:
+                # Clear the dwarf's task
+                assigned_dwarf.task = None
+                assigned_dwarf.state = "idle"
+                assigned_dwarf.path = []
+        
+        # Inform the player
+        if cancelled_tasks:
+            positions = ", ".join([f"({t.resource_x},{t.resource_y})" for _, t, _ in cancelled_tasks])
+            self.game_state.add_debug_message(
+                f"Bridge at {failed_bridge_pos} failed ({reason}). "
+                f"Cancelled {len(cancelled_tasks)} dependent bridge(s) at: {positions}"
+            )
         else:
-            self.game_state.add_debug_message(f"D{dwarf.id} cannot build bridge at ({dwarf.task.resource_x},{dwarf.task.resource_y}). Target is not Water, it is {target_bridge_tile.entity.name}.")
+            self.game_state.add_debug_message(
+                f"Bridge at {failed_bridge_pos} failed ({reason})"
+            )
 
     def _capture_state_snapshot(self) -> dict:
         """Capture a lightweight snapshot of current game state for crash debugging.

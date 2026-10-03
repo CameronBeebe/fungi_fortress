@@ -202,7 +202,7 @@ class GameState:
         self.dwarves: List[Dwarf] = []
         self.animals: List[Animal] = []
         self.characters: List[NPC] = []
-        self.inventory = Inventory(STARTING_RESOURCES, STARTING_SPECIAL_ITEMS)
+        self.inventory = Inventory(dict(STARTING_RESOURCES), dict(STARTING_SPECIAL_ITEMS))
         self.shop_carry = {k: 0 for k in self.inventory.resources.keys()}
         
         spawn_found = False
@@ -417,6 +417,41 @@ class GameState:
         self.event_queue = []
         return events
     # --- End New Event Queue Methods ---
+
+    # --- Bridge Wood Reservation Management ---
+    
+    def get_reserved_wood(self) -> int:
+        """Computes total wood reserved for pending bridge tasks.
+        
+        Counts wood needed for all build_bridge tasks that are either:
+        - Queued in the task_manager
+        - Currently assigned to a dwarf
+        
+        This ensures reservations stay in sync with actual tasks and cannot leak.
+        """
+        from .constants import BRIDGE_WOOD_COST
+        
+        reserved = 0
+        
+        # Count queued tasks
+        for task in self.task_manager.tasks:
+            if task.type == "build_bridge":
+                reserved += BRIDGE_WOOD_COST
+        
+        # Count assigned tasks
+        for dwarf in self.dwarves:
+            if dwarf.task and dwarf.task.type == "build_bridge":
+                reserved += BRIDGE_WOOD_COST
+        
+        return reserved
+    
+    def get_available_wood(self) -> int:
+        """Returns wood available after accounting for bridge reservations."""
+        total_wood = self.inventory.resources.get("wood", 0)
+        reserved = self.get_reserved_wood()
+        return total_wood - reserved
+    
+    # --- End Bridge Wood Reservation Management ---
 
     # --- Helper to spawn initial Oracle ---
     def _spawn_initial_oracle(self, name: str) -> None:

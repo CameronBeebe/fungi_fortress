@@ -48,6 +48,9 @@ ANIMAL_MOVE_CHANCE = 0.2 # Probability (0.0 to 1.0) that an animal will move eac
 MAX_DWARVES = 3 # Maximum number of dwarves allowed in the game.
 BASE_UNDERGROUND_MINING_TICKS = 5 # Base number of ticks to mine/chop resources (modified by dwarf skill). Also used for bridge building.
 
+# Bridge building
+BRIDGE_WOOD_COST = 1 # Wood cost per bridge segment
+
 # Screen dimensions
 MIN_SCREEN_WIDTH = MAP_WIDTH + UI_WIDTH + 2 # Map width + sidebar width + spacing
 MIN_SCREEN_HEIGHT = MAP_HEIGHT + LOG_HEIGHT + 2 # Map height + log height + status lines
