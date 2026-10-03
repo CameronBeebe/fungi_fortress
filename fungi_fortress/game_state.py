@@ -243,11 +243,6 @@ class GameState:
         self.add_debug_message(f"Fungi locations cached: {len(self.magic_fungi_locations)}")
         self.add_debug_message(f"Mission initialized: description={self.mission.get('description', 'None')}, objectives={self.mission.get('objectives', [])}")
 
-        # --- Spawn Initial Oracle (Depth 0 only) ---
-        if self.depth == 0:
-            self._spawn_initial_oracle("Whispering Fungus")
-        # --- End Oracle Spawn ---
-
         self.active_pulses: List[ActivePulse] = [] # For mycelial network pulse effects
         self.world_title: str = ""
         self.world_premise: str = ""
