@@ -235,17 +235,14 @@ def _seed_prompt(rejection: str = "") -> str:
     rules = (
         "Write a JSON object for one Fungi Fortress world. "
         "Return only JSON. ids have no spaces. "
-        'characters must have id, name, description, and kind. '
-        'Each character\'s kind field must be exactly "kin" or "revealed" (no other values). '
-        "Exactly one character is revealed. Kin are ordinary people who covet spice. "
+        "characters need id, name, description, kind, and may include faction, motive, secret, voice. "
+        "kind is kin or revealed. Exactly one character is revealed. Kin are ordinary people who covet spice. "
         "The revealed figure lives in the mycelium and is only half-present at a low dose. "
-        "Characters may also include faction, motive, secret, voice. "
         "places need id, name, description. "
         "quests need id, title, summary, giver_id matching a character id, and requirements. "
-        'A requirement is either {"kind":"collect","resource":"<resource>","count":<number>} '
-        'where resource is one of: food, wood, stone, gold, crystals, fungi, magic_fungi (use these exact names), '
-        'and count is an integer from 1 to 99 (as a number, not a string), '
-        'or {"kind":"reach","place":"<place id>"} where kind is exactly "reach". '
+        "A requirement is either "
+        '{"kind":"collect","resource":"food|wood|stone|gold|crystals|fungi|magic_fungi","count":1-99} '
+        'or {"kind":"reach","place":"<place id>"}. '
         "Include 2 or 3 characters and 1 or 2 quests. "
         "Add success only when the point of the quest is not already the requirements, "
         "as a short sentence such as whether a character is satisfied or a place stayed undisturbed. "
@@ -434,16 +431,13 @@ def _depth_prompt(rejection: str = "") -> str:
         "Return only JSON. This is a mind-region, mythic and archetypal: a cathedral, court, wound, or machine-garden of spice. "
         "Spice is rarer and stronger here than on the surface. "
         "ids have no spaces. "
-        'characters must have id, name, description, and kind. '
-        'Each character\'s kind field must be exactly "kin" or "revealed" (no other values). '
-        "Exactly one character is revealed. "
-        "Characters may also include faction, motive, secret, voice. "
+        "characters need id, name, description, kind, and may include faction, motive, secret, voice. "
+        "kind is kin or revealed. Exactly one character is revealed. "
         "places need id, name, description. "
         "quests need id, title, summary, giver_id, and requirements. "
-        'A requirement is either {"kind":"collect","resource":"<resource>","count":<number>} '
-        'where resource is one of: food, wood, stone, gold, crystals, fungi, magic_fungi (use these exact names), '
-        'and count is an integer from 1 to 99 (as a number, not a string), '
-        'or {"kind":"reach","place":"<place id>"} where kind is exactly "reach". '
+        "A requirement is either "
+        '{"kind":"collect","resource":"food|wood|stone|gold|crystals|fungi|magic_fungi","count":1-99} '
+        'or {"kind":"reach","place":"<place id>"}. '
         "Include 2 characters and 1 quest. The quest should ask for magic_fungi or reaching the place. "
         "The premise is what a dwarf perceives on the stair."
     )
@@ -487,12 +481,6 @@ def _requirement(item: Any, place_ids: set[str]) -> Requirement:
         count = item.get("count")
         if resource not in COLLECTABLE:
             raise ValueError(f"unknown resource {resource}")
-        # Accept string counts and convert them (common LLM mistake)
-        if isinstance(count, str):
-            try:
-                count = int(count)
-            except ValueError:
-                raise ValueError(f"collect count must be an integer from 1 to 99, got string: {count!r}")
         if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= 99:
             raise ValueError("collect count must be an integer from 1 to 99")
         return Requirement(kind="collect", resource=resource, count=count)
