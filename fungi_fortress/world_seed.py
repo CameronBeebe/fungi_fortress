@@ -475,6 +475,17 @@ def _spawn_characters(game: Any, seed: WorldSeed, layer: str = "surface") -> Non
                 character.name,
                 spot[0],
                 spot[1],
+                description=character.description,
+                data={
+                    "description": character.description,
+                    "faction": character.faction,
+                    "motive": character.motive,
+                    "secret": character.secret,
+                    "voice": character.voice,
+                    "seed_id": character.id,
+                    "kind": character.kind,
+                    "layer": layer,
+                },
             )
         else:
             npc = NPC(

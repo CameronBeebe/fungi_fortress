@@ -157,7 +157,16 @@ def test_oracle_specifically_present():
     assert len(oracle_npcs) > 0, \
         "No Oracle NPC found after startup (expected at least one Oracle instance)"
     
-    print(f"✓ Oracle '{oracle_npcs[0].name}' present at ({oracle_npcs[0].x}, {oracle_npcs[0].y})")
+    oracle = oracle_npcs[0]
+    # Verify Oracle preserves seed data
+    assert hasattr(oracle, 'data'), "Oracle missing 'data' attribute"
+    assert oracle.data.get('seed_id'), "Oracle missing 'seed_id' in data"
+    assert oracle.data.get('kind') == 'revealed', "Oracle 'kind' should be 'revealed'"
+    assert oracle.data.get('motive'), "Oracle missing 'motive' in data"
+    
+    print(f"✓ Oracle '{oracle.name}' present at ({oracle.x}, {oracle.y})")
+    print(f"  Data preserved: seed_id={oracle.data.get('seed_id')}, kind={oracle.data.get('kind')}, motive='{oracle.data.get('motive')[:50]}...'")
+
 
 
 if __name__ == "__main__":
