@@ -70,17 +70,48 @@ The Oracle is the proof of concept; every character should work the same way.
 
 The running backlog lives in `TODO.md`.
 
+## Reality model: one core, many views (proposed, open for discussion)
+
+**This section is a draft proposal from the owner's design discussion.** It's open for discussion and subject to change.
+
+The architecture treats reality not as a single layer with overlays, but as one core with many views—different filters or prisms onto the same underlying world.
+
+**Core:** The engine simulates one real, interconnected world state—a deeper psychedelic or holographic core. It holds every entity (dwarves, NPCs, items, terrain), including ones the ordinary view never shows, plus their connections and relationships. The core is what's actually simulated; it's the ground truth. All entities exist here, and the simulation runs only on this core.
+
+**View:** A view is a function, prism, or filter from the core to the player's experience. It determines what's visible, how things look, how characters behave toward you, and which actions are available. The "ordinary" view (baseline perception, no spores) is just one view with no special status—it's not "reality" with hallucinations on top. Avoid the word "layer" because it implies ordinary reality is true and the rest is illusion.
+
+**Spore exposure and trips:** Spore exposure shifts or blends views. Some views are core and dependable: the ordinary view, deeper exposure states that are consistent and repeatable. Trips can generate new views on the fly, without limit, like Minecraft dimensions—but each is a view of the same core, not a separate world. A trip might render the mycelium network as glowing pathways, reveal hidden figures, or recolor the entire world—all transformations of the same underlying state.
+
+**Characters across views:** Characters can differ across views. At high exposure, both the player and NPCs may be "shining" or visually transformed, meeting eye to eye in a shared altered state. Some entities exist in the core but only show up in deep views. The Oracle is one of these: a unique entity that is wholly new at high exposure, not an overlay on another character. She exists in the core all along, but only becomes visible and interactable in certain views.
+
+**Actions act on the core:** Actions taken in any view act on the core, so their effects can carry across views. If you mine a block in a trip, the block is gone when you sober up. If you give an item to the Oracle at high exposure, that item is gone from your inventory in the ordinary view. If an NPC's stance toward you improves during an altered conversation, that relationship change persists.
+
+**General mechanisms over hard-coding:** Special characters and content go through the same generic paths. The Oracle, revealed figures, and future special entities should use the same visibility, dialogue, and interaction systems as ordinary NPCs. Handcrafted content—prebuilt campaigns, characters like a "Whispering Fungus" Oracle, or narrative arcs—should come in as data (e.g. hand-written world seeds with specific personas, places, and quest hooks), not bespoke code paths.
+
+**Naming:** In code, use "core" and "view" for clarity and precision. In player-facing text, consider more evocative terms like "prism," "attunement," "frequency," or "sight." Backend values (exposure numbers, band thresholds, view identifiers) stay hidden in normal play, visible only via a debug toggle (e.g. F1).
+
+**World seed note:** World seeds already have a `layer` field (surface/underground) that describes vertical strata. A future change would generalize this or rename it to avoid confusion with the view model. The `layer` field is about physical depth in the core, not perceptual views.
+
+**Open questions:**
+- How do views blend or transition? Is it a discrete switch, a smooth fade, or a chaotic superposition during trips?
+- Is exposure a single value (0 to 100) or several dimensions (e.g. depth, clarity, resonance)?
+- How are generated views seeded and kept consistent with the core? If a trip generates a new view, does returning to that exposure level recreate the same view?
+- What persists across views? Relationships and core actions clearly do, but what about transient perceptions or promises made to entities visible only in one view?
+- How do NPCs perceive views? Do they experience the same transformations, or does each entity have its own view function?
+
+This model preserves the testability requirement: the core is deterministic, and views are deterministic transformations of it. Random or LLM-generated content seeds the core or defines view functions, but once instantiated, the simulation is reproducible.
+
 ## Spore exposure and perception (draft ideas, open for discussion)
 
-**This section is brainstorming and not decided.** It's open for discussion and subject to change.
+**This section is brainstorming and not decided.** It's open for discussion and subject to change. See "Reality model: one core, many views" above for the architectural framing.
 
 - **Exposure should be felt, not read.** Bands change how the world looks rather than showing numbers. Current debug readouts are for development only; real play hides backend values, with a debug/"show stats" toggle (e.g. F1) for development.
-- **Perception layers:** as exposure rises, an overlay is drawn over the map (glowing mycelium, hidden figures and paths revealed, drifting colors and glyphs). Part of the overlay is true and part is false (water drawn as solid ground, a wall that looks passable). Skilled players learn tells, e.g. false tiles flicker on a rhythm while real ones stay steady. High-exposure visuals and reveals should be very elaborate and detailed.
+- **Visual transformations:** as exposure rises, the view transforms the map (glowing mycelium, hidden figures and paths revealed, drifting colors and glyphs). Part of what you see is true (real entities in the core, now visible) and part is false (water drawn as solid ground, a wall that looks passable). Skilled players learn tells, e.g. false tiles flicker on a rhythm while real ones stay steady. High-exposure visuals and reveals should be very elaborate and detailed.
 - **Pros and cons:** high exposure reveals secrets, unlocks dialogue, and shows what others can't see. It also makes navigation more dangerous (orders sent to things that aren't there, bridges to nowhere), and some creatures may be dangerous or visible only at high exposure.
 - **Decay and tolerance:** exposure fades over time, so it's a resource to manage. Repeated doses may build tolerance or leave lasting traces.
-- **LLM/Jev fit:** Jev judges what is real and what a figure will disclose at the current band; the LLM writes how it looks and sounds, more elaborate and stranger at deeper bands, but within typed schemas so a hallucination can never break the game rules.
-- **Engineering rule:** the engine keeps one true map. Exposure changes only what is drawn and described (a perception layer over a deterministic engine), which keeps it testable.
-- **Open questions:** how much is false vs. true at each band; how decay and tolerance work; whether other NPCs react to the player's exposure; how the debug toggle interacts with the overlay.
+- **LLM/Jev fit:** Jev judges what is real in the core and what a figure will disclose at the current band; the LLM writes how it looks and sounds, more elaborate and stranger at deeper bands, but within typed schemas so a hallucination can never break the game rules.
+- **Engineering rule:** the engine keeps one core. Exposure changes only the view: what is drawn and described (a deterministic transformation over a deterministic core), which keeps it testable.
+- **Open questions:** how much is false vs. true at each band; how decay and tolerance work; whether other NPCs react to the player's exposure; how the debug toggle interacts with view transformations.
 
 ## Phased plan (small PRs, rough effort with agent help)
 
