@@ -13,6 +13,10 @@ A terminal-based strategy/simulation game written in Python using the curses lib
 
 **Quick Setup**: Copy `llm_config.ini.example` → `llm_config.ini`, set your API key as an environment variable, and play! See [LLM Oracle Integration](#llm-oracle-integration) below for details.
 
+## Project Planning & Roadmap
+
+See [`TODO.md`](TODO.md) for the running backlog and [`PLANNING.md`](PLANNING.md) for the overhaul plan and long-term architecture.
+
 ## Features (Current)
 
 *   Curses-based graphical interface
