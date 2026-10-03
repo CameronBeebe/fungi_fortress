@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from .characters import NPC
+from .characters import NPC, Oracle
 from .constants import STARTING_RESOURCES
 from . import llm_client, llm_world
 
@@ -469,21 +469,29 @@ def _spawn_characters(game: Any, seed: WorldSeed, layer: str = "surface") -> Non
         if spot is None:
             game.add_debug_message(f"No room to spawn {character.name}")
             continue
-        npc = NPC(
-            character.name,
-            spot[0],
-            spot[1],
-            data={
-                "description": character.description,
-                "faction": character.faction,
-                "motive": character.motive,
-                "secret": character.secret,
-                "voice": character.voice,
-                "seed_id": character.id,
-                "kind": character.kind,
-                "layer": layer,
-            },
-        )
+        # Create Oracle instance for "revealed" kind characters (oracles/mystical entities)
+        if character.kind == "revealed":
+            npc = Oracle(
+                character.name,
+                spot[0],
+                spot[1],
+            )
+        else:
+            npc = NPC(
+                character.name,
+                spot[0],
+                spot[1],
+                data={
+                    "description": character.description,
+                    "faction": character.faction,
+                    "motive": character.motive,
+                    "secret": character.secret,
+                    "voice": character.voice,
+                    "seed_id": character.id,
+                    "kind": character.kind,
+                    "layer": layer,
+                },
+            )
         game.characters.append(npc)
         occupied.add(spot)
         chosen.append(spot)
@@ -491,7 +499,9 @@ def _spawn_characters(game: Any, seed: WorldSeed, layer: str = "surface") -> Non
 
 
 def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int] | None:
-    """Pick a walkable tile away from the dwarves and from other seeded people."""
+    """Pick a walkable tile away from the dwarves and from other seeded people, verifying reachability."""
+    from .utils import a_star
+    
     spots = []
     for y in range(height):
         for x in range(width):
@@ -508,7 +518,9 @@ def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int
                 continue
             if any(_manhattan(spot, other) < min_peer for other in chosen):
                 continue
-            found.append(spot)
+            # Verify reachability from at least one dwarf
+            if any(a_star(game.map, (dwarf.x, dwarf.y), spot) is not None for dwarf in dwarves):
+                found.append(spot)
         return found
 
     for min_dwarf, min_peer in ((8, 5), (4, 3), (2, 2)):
