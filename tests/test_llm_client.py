@@ -195,7 +195,7 @@ class TestErrorMapping:
         )
         
         config = LLMClientConfig(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -215,7 +215,7 @@ class TestErrorMapping:
         )
         
         config = LLMClientConfig(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -235,7 +235,7 @@ class TestErrorMapping:
         )
         
         config = LLMClientConfig(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -250,7 +250,7 @@ class TestClientFactory:
     def test_create_client_with_no_key(self):
         """Test factory creates mock client with no API key."""
         client = llm_client.create_client_from_config(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key=None,
         )
         
@@ -259,7 +259,7 @@ class TestClientFactory:
     def test_create_client_with_placeholder_key(self):
         """Test factory creates mock client with placeholder key."""
         client = llm_client.create_client_from_config(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key="YOUR_API_KEY_HERE",
         )
         
@@ -268,7 +268,7 @@ class TestClientFactory:
     def test_create_client_with_xai_key(self):
         """Test factory creates XAI client with valid key."""
         client = llm_client.create_client_from_config(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key="xai-test-key",
         )
         

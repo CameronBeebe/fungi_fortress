@@ -20,7 +20,7 @@ class MockGameState:
         self.mission = {"description": mission_desc} if mission_desc else None
         self.player_resources = player_resources if player_resources else {}
         self.oracle_llm_interaction_history = history if history else []
-        self.llm_config = config if config else LLMConfig(api_key=None, model_name="grok-3-mini", context_level="medium")
+        self.llm_config = config if config else LLMConfig(api_key=None, model_name="grok-4.3", context_level="medium")
     
     def get_tile(self, x, y):
         return None

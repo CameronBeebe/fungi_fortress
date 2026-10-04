@@ -137,7 +137,7 @@ def test_with_structured_output():
     try:
         print("\n=== TESTING WITH STRUCTURED OUTPUT ===")
         completion = client.chat.completions.create(
-            model="grok-3-mini", 
+            model="grok-4.3", 
             reasoning_effort="high",
             messages=messages,
             temperature=0.7,
