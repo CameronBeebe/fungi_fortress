@@ -9,10 +9,15 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
-from typing import Iterator, Optional
+from typing import Any, Callable, Iterator, Optional, Type, TypeVar, Union
+
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar('T')
 
 
 # === Typed Exceptions ===
@@ -75,6 +80,50 @@ class LLMClientConfig:
     temperature: float = 0.7
 
 
+# === Schema Helpers ===
+
+
+def _schema_from_model(model_cls: Type[BaseModel], schema_name: str) -> dict[str, Any]:
+    """Convert a Pydantic model to a JSON schema dict for XAI structured outputs.
+    
+    Args:
+        model_cls: Pydantic model class
+        schema_name: Name for the schema
+        
+    Returns:
+        Schema dict suitable for XAI response_format
+    """
+    schema = model_cls.model_json_schema()
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema_name,
+            "strict": True,
+            "schema": schema
+        }
+    }
+
+
+def _schema_from_dict(schema: dict[str, Any], schema_name: str) -> dict[str, Any]:
+    """Wrap a JSON schema dict for XAI structured outputs.
+    
+    Args:
+        schema: JSON schema dict
+        schema_name: Name for the schema
+        
+    Returns:
+        Schema dict suitable for XAI response_format
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema_name,
+            "strict": True,
+            "schema": schema
+        }
+    }
+
+
 # === Mock Provider ===
 
 
@@ -93,7 +142,7 @@ class MockLLMProvider:
     def __init__(self):
         self._call_count = 0
     
-    def chat(self, messages: list[dict], max_tokens: int = 1000) -> str:
+    def chat(self, messages: list[dict], max_tokens: int = 1000, response_format: Optional[dict[str, Any]] = None) -> str:
         """Non-streaming mock response."""
         self._call_count += 1
         user_content = self._extract_user_content(messages)
@@ -173,8 +222,23 @@ class XAIProvider:
             logger.warning("openai library not available (required for XAI)")
             return False
     
-    def chat(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: str = "high", use_json_schema: bool = False) -> str:
-        """Non-streaming chat completion with XAI."""
+    def chat(
+        self,
+        messages: list[dict],
+        max_tokens: int = 1000,
+        reasoning_effort: str = "high",
+        use_json_schema: bool = False,
+        response_format: Optional[dict[str, Any]] = None
+    ) -> str:
+        """Non-streaming chat completion with XAI.
+        
+        Args:
+            messages: List of message dicts
+            max_tokens: Maximum tokens to generate
+            reasoning_effort: XAI reasoning effort for grok-3-mini models
+            use_json_schema: Legacy flag to use hardcoded Oracle schema
+            response_format: Per-call response format schema (overrides use_json_schema)
+        """
         if not self._openai_available:
             raise ConnectionError("OpenAI library not installed (required for XAI API)")
         
@@ -199,8 +263,11 @@ class XAIProvider:
             if "grok-3-mini" in self.config.model.lower():
                 completion_params["reasoning_effort"] = reasoning_effort
             
-            # Add JSON schema if requested
-            if use_json_schema:
+            # Add response format if provided (per-call schema takes precedence)
+            if response_format:
+                completion_params["response_format"] = response_format
+            elif use_json_schema:
+                # Legacy hardcoded Oracle schema
                 oracle_schema = {
                     "type": "json_schema",
                     "json_schema": {
@@ -333,14 +400,22 @@ class LLMClient:
         """Check if using mock provider."""
         return self._use_mock
     
-    def chat(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: str = "high", use_json_schema: bool = False) -> str:
+    def chat(
+        self,
+        messages: list[dict],
+        max_tokens: Optional[int] = None,
+        reasoning_effort: str = "high",
+        use_json_schema: bool = False,
+        response_format: Optional[dict[str, Any]] = None
+    ) -> str:
         """Send a chat completion request (non-streaming).
         
         Args:
             messages: List of message dicts with 'role' and 'content'.
             max_tokens: Override default max tokens.
             reasoning_effort: XAI reasoning effort ("low", "medium", "high") for grok-3-mini models.
-            use_json_schema: Whether to use JSON schema for structured output (XAI only).
+            use_json_schema: Whether to use JSON schema for structured output (XAI only, legacy).
+            response_format: Per-call response format schema (overrides use_json_schema).
             
         Returns:
             Complete response text.
@@ -353,9 +428,9 @@ class LLMClient:
         
         try:
             if self._use_mock:
-                return self._provider.chat(messages, max_tokens)
+                return self._provider.chat(messages, max_tokens, response_format=response_format)
             else:
-                return self._provider.chat(messages, max_tokens, reasoning_effort, use_json_schema)
+                return self._provider.chat(messages, max_tokens, reasoning_effort, use_json_schema, response_format)
         except LLMError:
             raise
         except Exception as e:
@@ -427,3 +502,120 @@ def create_client_from_config(
     )
     
     return LLMClient(config)
+
+
+# === Structured Call Helper ===
+
+
+def _response_preview(response: str | dict[str, Any] | None, max_len: int = 300) -> str:
+    """Format a response for logging, truncating to max_len characters.
+    
+    Sanitizes API keys and other sensitive data from logs.
+    """
+    if not response:
+        return "(no response captured)"
+    
+    if isinstance(response, dict):
+        response = json.dumps(response, indent=2)
+    
+    # Sanitize API keys
+    response = re.sub(r'(api[_-]?key["\s:]+)[^\s,"\']+', r'\1[REDACTED]', response, flags=re.IGNORECASE)
+    response = re.sub(r'(bearer\s+)[^\s,"\']+', r'\1[REDACTED]', response, flags=re.IGNORECASE)
+    response = re.sub(r'xai-[A-Za-z0-9]+', 'xai-REDACTED', response)
+    
+    if len(response) <= max_len:
+        return response
+    
+    return response[:max_len] + "..."
+
+
+def structured_call(
+    client: LLMClient,
+    messages: list[dict],
+    model_cls: Type[BaseModel],
+    schema_name: str = "response",
+    label: str = "Structured call",
+    convert: Optional[Callable[[BaseModel], T]] = None,
+    max_tokens: int = 4000,
+    reasoning_effort: str = "high",
+    attempts: int = 2,
+) -> Optional[Union[BaseModel, T]]:
+    """Make a structured LLM call with validation and retry.
+    
+    Args:
+        client: LLM client instance
+        messages: Initial conversation messages
+        model_cls: Pydantic model class defining the expected response structure
+        schema_name: Name for the JSON schema
+        label: Label for log messages (e.g., "World seed", "Depth seed")
+        convert: Optional converter function that takes the parsed model and returns
+                 a converted object. Should raise ValueError with error details on failure.
+        max_tokens: Maximum tokens to generate
+        reasoning_effort: XAI reasoning effort ("low", "medium", "high")
+        attempts: Maximum number of attempts (including retries)
+        
+    Returns:
+        Converted object (if converter provided), validated Pydantic model instance, or None if all attempts failed
+    """
+    # Generate schema from Pydantic model
+    response_format = _schema_from_model(model_cls, schema_name)
+    
+    conversation = list(messages)
+    
+    for attempt in range(attempts):
+        raw_response = None
+        try:
+            # Request with schema
+            raw_response = client.chat(
+                conversation,
+                max_tokens=max_tokens,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format
+            )
+            
+            # Parse with Pydantic
+            parsed = model_cls.model_validate_json(raw_response)
+            
+            # Run converter if provided (which does semantic validation)
+            if convert:
+                return convert(parsed)
+            
+            # Success!
+            return parsed
+            
+        except (json.JSONDecodeError, ValueError, LLMError) as exc:
+            exc_name = type(exc).__name__
+            error_msg = str(exc)
+            
+            # Log rejection with preview
+            preview = _response_preview(raw_response)
+            logger.warning(
+                "%s rejected on attempt %d: %s: %s. Response preview: %s",
+                label,
+                attempt + 1,
+                exc_name,
+                error_msg,
+                preview
+            )
+            
+            # If this was the last attempt, give up
+            if attempt + 1 >= attempts:
+                logger.error(
+                    "%s failed after %d attempts. Last error: %s",
+                    label,
+                    attempts,
+                    error_msg
+                )
+                return None
+            
+            # Retry with error appended to conversation
+            conversation.append({
+                "role": "assistant",
+                "content": raw_response or "(no response)"
+            })
+            conversation.append({
+                "role": "user",
+                "content": f"That response was rejected: {error_msg}. Please fix the issues and try again."
+            })
+    
+    return None
