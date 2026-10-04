@@ -444,7 +444,7 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
 
 def _seed_prompt(rejection: str = "") -> str:
     rules = (
-        "Write a world for Fungi Fortress. "
+        "Write a JSON world for Fungi Fortress. "
         "Exactly one character must be revealed. Kin are ordinary people who covet spice. "
         "The revealed figure lives in the mycelium and is only half-present at a low dose. "
         "Include 2 or 3 characters and 1 or 2 quests. "
