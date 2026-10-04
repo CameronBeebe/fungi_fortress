@@ -235,7 +235,7 @@ class XAIProvider:
         Args:
             messages: List of message dicts
             max_tokens: Maximum tokens to generate
-            reasoning_effort: XAI reasoning effort for grok-3-mini models
+            reasoning_effort: XAI reasoning effort (none/low/medium/high/xhigh)
             use_json_schema: Legacy flag to use hardcoded Oracle schema
             response_format: Per-call response format schema (overrides use_json_schema)
         """
@@ -257,11 +257,8 @@ class XAIProvider:
                 "messages": messages,
                 "max_tokens": max_tokens,
                 "temperature": self.config.temperature,
+                "reasoning_effort": reasoning_effort,
             }
-            
-            # Add reasoning_effort for grok-3-mini models
-            if "grok-3-mini" in self.config.model.lower():
-                completion_params["reasoning_effort"] = reasoning_effort
             
             # Add response format if provided (per-call schema takes precedence)
             if response_format:
@@ -340,12 +337,9 @@ class XAIProvider:
                 "messages": messages,
                 "max_tokens": max_tokens,
                 "temperature": self.config.temperature,
-                "stream": True
+                "stream": True,
+                "reasoning_effort": reasoning_effort,
             }
-            
-            # Add reasoning_effort for grok-3-mini models
-            if "grok-3-mini" in self.config.model.lower():
-                completion_params["reasoning_effort"] = reasoning_effort
             
             stream = client.chat.completions.create(**completion_params)
             
@@ -413,7 +407,7 @@ class LLMClient:
         Args:
             messages: List of message dicts with 'role' and 'content'.
             max_tokens: Override default max tokens.
-            reasoning_effort: XAI reasoning effort ("low", "medium", "high") for grok-3-mini models.
+            reasoning_effort: XAI reasoning effort (none/low/medium/high/xhigh).
             use_json_schema: Whether to use JSON schema for structured output (XAI only, legacy).
             response_format: Per-call response format schema (overrides use_json_schema).
             
@@ -443,7 +437,7 @@ class LLMClient:
         Args:
             messages: List of message dicts with 'role' and 'content'.
             max_tokens: Override default max tokens.
-            reasoning_effort: XAI reasoning effort ("low", "medium", "high") for grok-3-mini models.
+            reasoning_effort: XAI reasoning effort (none/low/medium/high/xhigh).
             
         Yields:
             Response text chunks as they arrive.
@@ -479,7 +473,7 @@ def create_client_from_config(
     """Create an XAI LLM client from configuration parameters.
     
     Args:
-        model: XAI model name (e.g., 'grok-3-mini')
+        model: XAI model name (e.g., 'grok-4.3')
         api_key: XAI API key (XAI_API_KEY), or None to use mock provider
         max_tokens: Maximum tokens per response
         timeout_seconds: Request timeout
@@ -551,7 +545,7 @@ def structured_call(
         convert: Optional converter function that takes the parsed model and returns
                  a converted object. Should raise ValueError with error details on failure.
         max_tokens: Maximum tokens to generate
-        reasoning_effort: XAI reasoning effort ("low", "medium", "high")
+        reasoning_effort: XAI reasoning effort (none/low/medium/high/xhigh)
         attempts: Maximum number of attempts (including retries)
         
     Returns:
