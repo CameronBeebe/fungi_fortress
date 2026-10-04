@@ -10,16 +10,13 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Iterator, Optional, Type, Union
+from typing import Any, Callable, Iterator, Optional, Type, TypeVar, Union
+
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-try:
-    from pydantic import BaseModel
-    PYDANTIC_AVAILABLE = True
-except ImportError:
-    BaseModel = object  # type: ignore
-    PYDANTIC_AVAILABLE = False
+T = TypeVar('T')
 
 
 # === Typed Exceptions ===
@@ -95,9 +92,6 @@ def _schema_from_model(model_cls: Type[BaseModel], schema_name: str) -> dict[str
     Returns:
         Schema dict suitable for XAI response_format
     """
-    if not PYDANTIC_AVAILABLE:
-        raise RuntimeError("Pydantic is required for structured outputs")
-    
     schema = model_cls.model_json_schema()
     return {
         "type": "json_schema",
@@ -151,17 +145,7 @@ class MockLLMProvider:
         """Non-streaming mock response."""
         self._call_count += 1
         user_content = self._extract_user_content(messages)
-        response = self._mock_response(user_content)
-        
-        # If a schema is provided, validate the response against it
-        if response_format:
-            try:
-                parsed = json.loads(response)
-                self._validate_against_schema(parsed, response_format)
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.warning(f"Mock response validation failed: {e}")
-        
-        return response
+        return self._mock_response(user_content)
     
     def chat_stream(self, messages: list[dict], max_tokens: int = 1000) -> Iterator[str]:
         """Streaming mock response."""
@@ -216,18 +200,6 @@ class MockLLMProvider:
             "narrative": narrative,
             "actions": []
         })
-    
-    def _validate_against_schema(self, data: dict[str, Any], response_format: dict[str, Any]) -> None:
-        """Basic validation that response has required keys from schema."""
-        if "json_schema" not in response_format:
-            return
-        
-        schema = response_format["json_schema"].get("schema", {})
-        required = schema.get("required", [])
-        
-        for key in required:
-            if key not in data:
-                raise ValueError(f"Missing required key: {key}")
 
 
 # === XAI Provider ===
@@ -561,10 +533,11 @@ def structured_call(
     messages: list[dict],
     model_cls: Type[BaseModel],
     schema_name: str = "response",
-    validate: Optional[callable] = None,
+    convert: Optional[Callable[[BaseModel], T]] = None,
     max_tokens: int = 4000,
+    reasoning_effort: str = "high",
     attempts: int = 2,
-) -> Optional[BaseModel]:
+) -> Optional[Union[BaseModel, T]]:
     """Make a structured LLM call with validation and retry.
     
     Args:
@@ -572,17 +545,15 @@ def structured_call(
         messages: Initial conversation messages
         model_cls: Pydantic model class defining the expected response structure
         schema_name: Name for the JSON schema
-        validate: Optional semantic validator function that takes the parsed object
-                  and returns a list of error strings (empty list = valid)
+        convert: Optional converter function that takes the parsed model and returns
+                 a converted object. Should raise ValueError with error details on failure.
         max_tokens: Maximum tokens to generate
+        reasoning_effort: XAI reasoning effort ("low", "medium", "high")
         attempts: Maximum number of attempts (including retries)
         
     Returns:
-        Validated Pydantic model instance, or None if all attempts failed
+        Converted object (if converter provided), validated Pydantic model instance, or None if all attempts failed
     """
-    if not PYDANTIC_AVAILABLE:
-        raise RuntimeError("Pydantic is required for structured_call")
-    
     # Generate schema from Pydantic model
     response_format = _schema_from_model(model_cls, schema_name)
     
@@ -595,19 +566,16 @@ def structured_call(
             raw_response = client.chat(
                 conversation,
                 max_tokens=max_tokens,
-                reasoning_effort="low",
+                reasoning_effort=reasoning_effort,
                 response_format=response_format
             )
             
             # Parse with Pydantic
             parsed = model_cls.model_validate_json(raw_response)
             
-            # Run semantic validation if provided
-            if validate:
-                errors = validate(parsed)
-                if errors:
-                    error_text = "; ".join(errors)
-                    raise ValueError(f"Validation failed: {error_text}")
+            # Run converter if provided (which does semantic validation)
+            if convert:
+                return convert(parsed)
             
             # Success!
             return parsed

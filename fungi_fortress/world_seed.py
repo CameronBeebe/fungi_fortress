@@ -103,120 +103,16 @@ class WorldSeedSchema(BaseModel):
     quests: list[QuestSchema]
 
 
-def _validate_world_seed_schema(seed: WorldSeedSchema) -> list[str]:
-    """Validate semantic constraints on a world seed.
+def _convert_to_world_seed(schema: WorldSeedSchema) -> WorldSeed:
+    """Convert WorldSeedSchema to WorldSeed, running all semantic validation.
     
-    Returns:
-        List of error strings (empty if valid)
+    This uses parse_world_seed as the single source of truth for validation.
+    Raises ValueError with detailed error message if validation fails.
     """
-    errors = []
-    
-    # Check size limits
-    if len(seed.characters) > MAX_CHARACTERS:
-        errors.append(f"Too many characters: {len(seed.characters)} > {MAX_CHARACTERS}")
-    if len(seed.places) > MAX_PLACES:
-        errors.append(f"Too many places: {len(seed.places)} > {MAX_PLACES}")
-    if len(seed.quests) > MAX_QUESTS:
-        errors.append(f"Too many quests: {len(seed.quests)} > {MAX_QUESTS}")
-    
-    # Check text lengths
-    if len(seed.title) > MAX_TEXT:
-        errors.append(f"Title too long: {len(seed.title)} > {MAX_TEXT}")
-    if len(seed.premise) > MAX_TEXT:
-        errors.append(f"Premise too long: {len(seed.premise)} > {MAX_TEXT}")
-    
-    # Exactly one revealed character
-    revealed_count = sum(1 for c in seed.characters if c.kind == CharacterKind.revealed)
-    if revealed_count != 1:
-        errors.append(f"Must have exactly one revealed character, found {revealed_count}")
-    
-    # Build ID sets for cross-reference checking
-    character_ids = {c.id for c in seed.characters}
-    place_ids = {p.id for p in seed.places}
-    
-    # Check for duplicate character IDs
-    if len(character_ids) != len(seed.characters):
-        errors.append("Duplicate character IDs found")
-    
-    # Check for duplicate place IDs
-    if len(place_ids) != len(seed.places):
-        errors.append("Duplicate place IDs found")
-    
-    # Check for duplicate quest IDs
-    quest_ids = [q.id for q in seed.quests]
-    if len(set(quest_ids)) != len(quest_ids):
-        errors.append("Duplicate quest IDs found")
-    
-    # Check at least one quest
-    if not seed.quests:
-        errors.append("Must have at least one quest")
-    
-    # Validate each quest
-    for quest in seed.quests:
-        # Giver must be a character
-        if quest.giver_id not in character_ids:
-            errors.append(f"Quest '{quest.id}' giver_id '{quest.giver_id}' is not a character ID")
-        
-        # Requirements must reference valid places
-        for req in quest.requirements:
-            if isinstance(req, ReachRequirement):
-                if req.place not in place_ids:
-                    errors.append(f"Quest '{quest.id}' reach requirement references unknown place '{req.place}'")
-    
-    # Check for whitespace in IDs
-    for c in seed.characters:
-        if any(ch.isspace() for ch in c.id):
-            errors.append(f"Character ID '{c.id}' contains whitespace")
-    for p in seed.places:
-        if any(ch.isspace() for ch in p.id):
-            errors.append(f"Place ID '{p.id}' contains whitespace")
-    for q in seed.quests:
-        if any(ch.isspace() for ch in q.id):
-            errors.append(f"Quest ID '{q.id}' contains whitespace")
-    
-    return errors
-
-
-def _world_seed_schema_to_dict(seed: WorldSeedSchema) -> dict[str, Any]:
-    """Convert a WorldSeedSchema to a dict compatible with parse_world_seed."""
-    return {
-        "title": seed.title,
-        "premise": seed.premise,
-        "characters": [
-            {
-                "id": c.id,
-                "name": c.name,
-                "description": c.description,
-                "kind": c.kind.value,
-                "faction": c.faction,
-                "motive": c.motive,
-                "secret": c.secret,
-                "voice": c.voice,
-            }
-            for c in seed.characters
-        ],
-        "places": [
-            {"id": p.id, "name": p.name, "description": p.description}
-            for p in seed.places
-        ],
-        "quests": [
-            {
-                "id": q.id,
-                "title": q.title,
-                "summary": q.summary,
-                "giver_id": q.giver_id,
-                "requirements": [
-                    {
-                        "kind": req.kind,
-                        **({"resource": req.resource.value, "count": req.count} if req.kind == "collect" else {"place": req.place})
-                    }
-                    for req in q.requirements
-                ],
-                "success": q.success,
-            }
-            for q in seed.quests
-        ],
-    }
+    # Convert to dict format expected by parse_world_seed
+    seed_dict = schema.model_dump(mode="json")
+    # parse_world_seed does all semantic validation and raises ValueError on failure
+    return parse_world_seed(seed_dict)
 
 
 @dataclass
@@ -370,76 +266,39 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
     Returns one line for the game log. A prepared grove is used when the
     model is missing or both attempts come back invalid.
     """
+    # Get or create an LLM client
     if complete is None:
-        # Try to get an LLM client from game config
         client = _get_llm_client(game)
         if client is None:
             _install_prepared(game)
             return "No language-model key found. Using a prepared grove."
-        
-        # Use structured call with the new schema
-        messages = [
-            {"role": "system", "content": "You write one JSON object and nothing else."},
-            {"role": "user", "content": _seed_prompt()},
-        ]
-        
-        seed_schema = llm_client.structured_call(
-            client,
-            messages,
-            WorldSeedSchema,
-            schema_name="world_seed",
-            validate=_validate_world_seed_schema,
-            max_tokens=4000,
-            attempts=2
-        )
-        
-        if seed_schema is None:
-            _install_prepared(game)
-            return "The new world came back unusable. Using a prepared grove."
-        
-        # Convert to dict and parse with existing logic
-        seed_dict = _world_seed_schema_to_dict(seed_schema)
-        seed = parse_world_seed(seed_dict)
-        apply_world_seed(game, seed)
-        return f"{seed.title}. {seed.quests[0].title}."
+    else:
+        # Wrap the complete function in a minimal client adapter for tests
+        client = _CompleteAdapter(complete)
     
-    # Legacy path for custom complete function (testing)
-    rejection = ""
-    for _attempt in range(2):
-        prompt = _seed_prompt(rejection)
-        raw_response = None
-        try:
-            if callable(complete):
-                result = complete(prompt)
-                # If complete returns a string (old-style _chat), parse it
-                if isinstance(result, str):
-                    raw_response = result
-                    seed_dict = llm_world._extract_json(result)
-                else:
-                    # If complete returns a dict (new-style), use it directly
-                    seed_dict = result
-                seed = parse_world_seed(seed_dict)
-            else:
-                raw_response = complete(prompt)
-                seed = parse_world_seed(llm_world._extract_json(raw_response))
-        except (ValueError, json.JSONDecodeError, OSError) as exc:
-            rejection = str(exc)
-            # Log rejection reason with truncated response preview
-            exc_name = type(exc).__name__
-            preview = llm_client._response_preview(raw_response)
-            logger.warning(
-                "World seed rejected on attempt %d: %s: %s. Response preview: %s",
-                _attempt + 1,
-                exc_name,
-                rejection,
-                preview
-            )
-            continue
-        apply_world_seed(game, seed)
-        return f"{seed.title}. {seed.quests[0].title}."
-
-    _install_prepared(game)
-    return "The new world came back unusable. Using a prepared grove."
+    # Use structured call with schema and converter
+    messages = [
+        {"role": "system", "content": "You write one JSON object and nothing else."},
+        {"role": "user", "content": _seed_prompt()},
+    ]
+    
+    seed = llm_client.structured_call(
+        client,
+        messages,
+        WorldSeedSchema,
+        schema_name="world_seed",
+        convert=_convert_to_world_seed,
+        max_tokens=4000,
+        reasoning_effort="low",
+        attempts=2
+    )
+    
+    if seed is None:
+        _install_prepared(game)
+        return "The new world came back unusable. Using a prepared grove."
+    
+    apply_world_seed(game, seed)
+    return f"{seed.title}. {seed.quests[0].title}."
 
 
 def _seed_prompt(rejection: str = "") -> str:
@@ -485,6 +344,21 @@ def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
         )
     
     return None
+
+
+class _CompleteAdapter:
+    """Minimal adapter that wraps a complete function to look like an LLM client for tests."""
+    
+    def __init__(self, complete_fn: Callable[[str], str]):
+        self._complete = complete_fn
+    
+    def chat(self, messages: list[dict], **kwargs) -> str:
+        """Extract the last user prompt and call the complete function."""
+        # Find the last user message
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                return self._complete(msg["content"])
+        return self._complete("")
 
 
 def _install_prepared(game: Any) -> None:
@@ -548,75 +422,39 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
     if existing is not None:
         return f"{existing.title}. {existing.quests[0].title}."
 
+    # Get or create an LLM client
     if complete is None:
-        # Try to get an LLM client from game config
         client = _get_llm_client(game)
         if client is None:
             game.depth_seed = load_world_seed(_PREPARED_DEPTH)
             return f"{game.depth_seed.title}. The stair uses a prepared depth."
-        
-        # Use structured call with the new schema
-        messages = [
-            {"role": "system", "content": "You write one JSON object and nothing else."},
-            {"role": "user", "content": _depth_prompt()},
-        ]
-        
-        seed_schema = llm_client.structured_call(
-            client,
-            messages,
-            WorldSeedSchema,
-            schema_name="depth_seed",
-            validate=_validate_world_seed_schema,
-            max_tokens=4000,
-            attempts=2
-        )
-        
-        if seed_schema is None:
-            game.depth_seed = load_world_seed(_PREPARED_DEPTH)
-            return f"{game.depth_seed.title}. The new depth came back unusable. Using a prepared depth."
-        
-        # Convert to dict and parse with existing logic
-        seed_dict = _world_seed_schema_to_dict(seed_schema)
-        seed = parse_world_seed(seed_dict)
-        game.depth_seed = seed
-        return f"{seed.title}. {seed.quests[0].title}."
+    else:
+        # Wrap the complete function in a minimal client adapter for tests
+        client = _CompleteAdapter(complete)
     
-    # Legacy path for custom complete function (testing)
-    rejection = ""
-    for _attempt in range(2):
-        raw_response = None
-        try:
-            if callable(complete):
-                result = complete(_depth_prompt(rejection))
-                # If complete returns a string (old-style _chat), parse it
-                if isinstance(result, str):
-                    raw_response = result
-                    seed_dict = llm_world._extract_json(result)
-                else:
-                    # If complete returns a dict (new-style), use it directly
-                    seed_dict = result
-                seed = parse_world_seed(seed_dict)
-            else:
-                raw_response = complete(_depth_prompt(rejection))
-                seed = parse_world_seed(llm_world._extract_json(raw_response))
-        except (ValueError, json.JSONDecodeError, OSError) as exc:
-            rejection = str(exc)
-            # Log rejection reason with truncated response preview
-            exc_name = type(exc).__name__
-            preview = llm_client._response_preview(raw_response)
-            logger.warning(
-                "Depth seed rejected on attempt %d: %s: %s. Response preview: %s",
-                _attempt + 1,
-                exc_name,
-                rejection,
-                preview
-            )
-            continue
-        game.depth_seed = seed
-        return f"{seed.title}. {seed.quests[0].title}."
-
-    game.depth_seed = load_world_seed(_PREPARED_DEPTH)
-    return f"{game.depth_seed.title}. The new depth came back unusable. Using a prepared depth."
+    # Use structured call with schema and converter
+    messages = [
+        {"role": "system", "content": "You write one JSON object and nothing else."},
+        {"role": "user", "content": _depth_prompt()},
+    ]
+    
+    seed = llm_client.structured_call(
+        client,
+        messages,
+        WorldSeedSchema,
+        schema_name="depth_seed",
+        convert=_convert_to_world_seed,
+        max_tokens=4000,
+        reasoning_effort="low",
+        attempts=2
+    )
+    
+    if seed is None:
+        game.depth_seed = load_world_seed(_PREPARED_DEPTH)
+        return f"{game.depth_seed.title}. The new depth came back unusable. Using a prepared depth."
+    
+    game.depth_seed = seed
+    return f"{seed.title}. {seed.quests[0].title}."
 
 
 def enter_depth(game: Any) -> None:
