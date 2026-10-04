@@ -254,7 +254,7 @@ def test_rate_limit_error(mock_openai):
     mock_openai.return_value = mock_client
     mock_client.chat.completions.create.side_effect = openai.RateLimitError(...)
     
-    config = LLMClientConfig(model="grok-3-mini", api_key="test-key")
+    config = LLMClientConfig(model="grok-4.3", api_key="test-key")
     client = LLMClient(config)
     
     with pytest.raises(llm_client.RateLimitError):

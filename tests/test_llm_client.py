@@ -93,7 +93,7 @@ class TestLLMClient:
     def test_client_with_invalid_key_uses_mock(self):
         """Test client with invalid API key uses mock provider."""
         config = LLMClientConfig(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key="YOUR_API_KEY_HERE",
         )
         client = LLMClient(config)
@@ -103,7 +103,7 @@ class TestLLMClient:
     def test_client_force_mock(self):
         """Test forcing mock provider even with valid config."""
         config = LLMClientConfig(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key="real-looking-key",
         )
         client = LLMClient(config, use_mock=True)
@@ -133,7 +133,7 @@ class TestLLMClient:
     def test_client_with_valid_config_not_mock(self):
         """Test client with valid config is not mock."""
         config = LLMClientConfig(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key="xai-real-key",
         )
         client = LLMClient(config)
@@ -147,7 +147,7 @@ class TestLLMClient:
         mock_check.return_value = False
         
         config = LLMClientConfig(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key="xai-test-key",
         )
         client = LLMClient(config)
@@ -173,7 +173,7 @@ class TestErrorMapping:
         )
         
         config = LLMClientConfig(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key="invalid-key",
         )
         client = LLMClient(config)

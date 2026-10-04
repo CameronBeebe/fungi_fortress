@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Direct test of XAI API integration to diagnose grok-3-mini response issues.
+Direct test of XAI API integration.
 """
 
 import os
@@ -37,7 +37,7 @@ def test_xai_direct():
     try:
         print("Making XAI API call...")
         completion = client.chat.completions.create(
-            model="grok-3-mini", 
+            model="grok-4.3", 
             reasoning_effort="high",
             messages=messages,
             temperature=0.7,
