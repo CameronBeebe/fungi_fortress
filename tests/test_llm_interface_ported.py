@@ -112,7 +112,7 @@ def test_handle_game_event_no_query_text():
 
 def test_handle_game_event_non_streaming():
     """Test handle_game_event with non-streaming enabled."""
-    config = LLMConfig(api_key=None, model_name="grok-3-mini", enable_streaming=False)
+    config = LLMConfig(api_key=None, model_name="grok-4.3", enable_streaming=False)
     game_state = MockGameState(config=config)
     event_data = {"type": "ORACLE_QUERY", "details": {"query_text": "Hello"}}
     
@@ -125,7 +125,7 @@ def test_handle_game_event_non_streaming():
 
 def test_handle_game_event_streaming():
     """Test handle_game_event with streaming enabled."""
-    config = LLMConfig(api_key=None, model_name="grok-3-mini", enable_streaming=True)
+    config = LLMConfig(api_key=None, model_name="grok-4.3", enable_streaming=True)
     game_state = MockGameState(config=config)
     event_data = {"type": "ORACLE_QUERY", "details": {"query_text": "Hello", "oracle_name": "Test Oracle"}}
     
@@ -152,14 +152,14 @@ def test_llm_config_api_key_validation():
 
 def test_client_invalid_key_uses_mock():
     """Test that invalid API keys result in mock client."""
-    config = LLMConfig(api_key="YOUR_API_KEY_HERE", model_name="grok-3-mini")
+    config = LLMConfig(api_key="YOUR_API_KEY_HERE", model_name="grok-4.3")
     client = config.create_llm_client()
     assert client.is_mock()
 
 
 def test_client_no_key_uses_mock():
     """Test that no API key results in mock client."""
-    config = LLMConfig(api_key=None, model_name="grok-3-mini")
+    config = LLMConfig(api_key=None, model_name="grok-4.3")
     client = config.create_llm_client()
     assert client.is_mock()
 
@@ -168,7 +168,7 @@ def test_llm_config_defaults():
     """Test that LLMConfig defaults are set correctly."""
     config = LLMConfig()
     assert config.api_key is None
-    assert config.model_name == "grok-3-mini"
+    assert config.model_name == "grok-4.3"
     assert config.context_level == "medium"
     assert not config.is_real_api_key_present
 

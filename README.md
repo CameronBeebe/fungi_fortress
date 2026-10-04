@@ -2,6 +2,8 @@
 
 A terminal-based strategy/simulation game written in Python using the curses library. Manage a dwarf, explore, gather resources, and interact with a world of fungi!
 
+**Contributing?** See [`AGENTS.md`](AGENTS.md) for architecture and working rules for coding agents.
+
 ## 🤖 LLM Integration Status
 
 **✅ OFFLINE + ONLINE MODE** - The Oracle LLM integration supports both offline and online play:
