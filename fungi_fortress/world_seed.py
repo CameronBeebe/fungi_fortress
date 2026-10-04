@@ -234,8 +234,9 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
 
 def _seed_prompt(rejection: str = "") -> str:
     rules = (
-        "Write a JSON object for one Fungi Fortress world. "
-        "Return only JSON. ids have no spaces. "
+        "Return one JSON object with exactly these top-level keys: "
+        "title (string), premise (string), characters (array), places (array), quests (array). "
+        "ids have no spaces. "
         "characters need id, name, description, kind, and may include faction, motive, secret, voice. "
         "kind is kin or revealed. Exactly one character is revealed. Kin are ordinary people who covet spice. "
         "The revealed figure lives in the mycelium and is only half-present at a low dose. "
@@ -428,8 +429,10 @@ def leave_depth(game: Any) -> None:
 
 def _depth_prompt(rejection: str = "") -> str:
     rules = (
-        "Write a JSON object for one depth beneath a Mycelial Nexus. "
-        "Return only JSON. This is a mind-region, mythic and archetypal: a cathedral, court, wound, or machine-garden of spice. "
+        "Return one JSON object with exactly these top-level keys: "
+        "title (string), premise (string), characters (array), places (array), quests (array). "
+        "This is a depth beneath a Mycelial Nexus: a mind-region, mythic and archetypal, "
+        "a cathedral, court, wound, or machine-garden of spice. "
         "Spice is rarer and stronger here than on the surface. "
         "ids have no spaces. "
         "characters need id, name, description, kind, and may include faction, motive, secret, voice. "
