@@ -120,7 +120,7 @@ class TestConfigurationSecurity:
         # Create a temporary config file
         config_content = """[LLM]
 provider = xai
-model_name = grok-4.3
+model_name = test-model
 context_level = medium
 max_tokens = 500
 """
@@ -140,14 +140,14 @@ max_tokens = 500
                     
                     assert config.api_key == test_api_key
                     assert config.is_real_api_key_present == True
-                    assert config.model_name == "grok-4.3"
+                    assert config.model_name == "test-model"
         finally:
             os.unlink(temp_config_path)
     
     def test_load_llm_config_no_env_var(self):
         """Test loading config without API key in environment."""
         config_content = """[LLM]
-model_name = grok-4.3
+model_name = test-model
 """
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
@@ -188,7 +188,7 @@ class TestConfigurationRobustness:
     def test_xai_config_with_api_key(self):
         """Test XAI configuration loading with API key."""
         config_content = """[LLM]
-model_name = grok-4.3
+model_name = test-model
 """
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
@@ -202,7 +202,7 @@ model_name = grok-4.3
                     mock_join.return_value = temp_config_path
                     config = load_llm_config()
                     
-                    assert config.model_name == "grok-4.3"
+                    assert config.model_name == "test-model"
                     assert config.api_key == "test-key"
                     assert config.is_real_api_key_present == True
         finally:

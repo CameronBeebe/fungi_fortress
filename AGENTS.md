@@ -16,7 +16,7 @@ Every LLM call that feeds the game must declare its output type as a Pydantic mo
 
 ## Providers
 
-- **Online:** xAI only. Model is set by `model_name` in `llm_config.ini` (example default `grok-4.3`)
+- **Online:** xAI only. Model is set by `model_name` in `llm_config.ini` (default in `DEFAULT_MODEL` constant)
 - **Offline:** Built-in mock provider for game calls (no API key required)
 - **Judge:** Jev/TypeSafe is separate as a judge, not a game content provider
 
@@ -57,6 +57,7 @@ Backend values—stats, exposure numbers, exposure bands, stance values—are de
 - **Testing philosophy:** Test core contracts (the typed LLM path, validators, world rules, and things that broke before). Don't write wasteful tests or tests that pin details likely to change. The project changes fast, so don't over-invest in tests or box the design in.
 - **Run `uv run pytest` before pushing.** All tests must pass.
 - **Greenfield, no outside users:** When something is replaced or deprecated, remove it completely (no backwards-compatibility fallbacks, aliases, or legacy branches) unless there's a stated reason to keep it.
+- **Config values live in one place:** Model names, defaults, and limits are defined once as constants; never repeat them as literals across code, tests, or docs.
 
 ### Security
 

@@ -58,7 +58,7 @@ If not set, the game automatically uses the mock provider.
 
 ```ini
 [LLM]
-model_name = grok-4.3          # XAI model (default)
+model_name = grok-4.3          # XAI model (see llm_config.ini.example for default)
 context_level = medium         # low, medium, high
 max_tokens = 1000              # Response length limit
 enable_streaming = true        # Word-by-word streaming
@@ -87,10 +87,7 @@ The XAI provider connects to `https://api.x.ai/v1` using the OpenAI SDK:
 
 ### Available Models
 
-- `grok-4.3` (default, recommended)
-- `grok-2-1212`
-- `grok-beta`
-- `grok-vision-beta`
+See `llm_config.ini.example` for the current default and available models.
 
 ### XAI-Specific Parameters
 
@@ -240,7 +237,7 @@ def test_client_uses_mock_without_key():
     assert client.is_mock()
 
 def test_client_with_xai_key():
-    config = LLMClientConfig(model="grok-4.3", api_key="xai-test-key")
+    config = LLMClientConfig(model="test-model", api_key="xai-test-key")
     client = LLMClient(config)
     assert not client.is_mock()
 ```
@@ -254,7 +251,7 @@ def test_rate_limit_error(mock_openai):
     mock_openai.return_value = mock_client
     mock_client.chat.completions.create.side_effect = openai.RateLimitError(...)
     
-    config = LLMClientConfig(model="grok-4.3", api_key="test-key")
+    config = LLMClientConfig(model="test-model", api_key="test-key")
     client = LLMClient(config)
     
     with pytest.raises(llm_client.RateLimitError):

@@ -135,7 +135,8 @@ def query_oracle_streaming(
         logger.info("Using mock provider for Oracle response")
     
     try:
-        yield from client.chat_stream(messages, max_tokens, reasoning_effort="low")
+        from .config_manager import DEFAULT_REASONING_EFFORT
+        yield from client.chat_stream(messages, max_tokens, reasoning_effort=DEFAULT_REASONING_EFFORT)
     except llm_client.LLMError:
         # Re-raise typed errors
         raise
@@ -175,7 +176,8 @@ def query_oracle(
         logger.info("Using mock provider for Oracle response")
     
     try:
-        return client.chat(messages, max_tokens, reasoning_effort="low", use_json_schema=enable_structured_outputs)
+        from .config_manager import DEFAULT_REASONING_EFFORT
+        return client.chat(messages, max_tokens, reasoning_effort=DEFAULT_REASONING_EFFORT, use_json_schema=enable_structured_outputs)
     except llm_client.LLMError:
         # Re-raise typed errors
         raise

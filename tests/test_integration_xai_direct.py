@@ -37,7 +37,7 @@ def test_xai_direct():
     try:
         print("Making XAI API call...")
         completion = client.chat.completions.create(
-            model="grok-4.3", 
+            model="test-model", 
             reasoning_effort="high",
             messages=messages,
             temperature=0.7,
@@ -137,7 +137,7 @@ def test_with_structured_output():
     try:
         print("\n=== TESTING WITH STRUCTURED OUTPUT ===")
         completion = client.chat.completions.create(
-            model="grok-4.3", 
+            model="test-model", 
             reasoning_effort="high",
             messages=messages,
             temperature=0.7,

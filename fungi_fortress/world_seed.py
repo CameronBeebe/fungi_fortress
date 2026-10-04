@@ -290,7 +290,7 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
         label="World seed",
         convert=_convert_to_world_seed,
         max_tokens=4000,
-        reasoning_effort="low",
+        reasoning_effort=config_manager.DEFAULT_REASONING_EFFORT,
         attempts=2
     )
     
@@ -336,8 +336,9 @@ def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
     # Try XAI_API_KEY environment variable as fallback
     xai_key = os.environ.get("XAI_API_KEY", "").strip()
     if xai_key:
+        from . import config_manager
         return llm_client.create_client_from_config(
-            model="grok-4.3",
+            model=config_manager.DEFAULT_MODEL,
             api_key=xai_key,
             max_tokens=4000,
             timeout_seconds=45,
@@ -447,7 +448,7 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
         label="Depth seed",
         convert=_convert_to_world_seed,
         max_tokens=4000,
-        reasoning_effort="low",
+        reasoning_effort=config_manager.DEFAULT_REASONING_EFFORT,
         attempts=2
     )
     

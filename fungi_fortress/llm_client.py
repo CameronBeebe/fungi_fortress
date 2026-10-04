@@ -17,6 +17,9 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+# Import default reasoning effort from config_manager
+from .config_manager import DEFAULT_REASONING_EFFORT
+
 T = TypeVar('T')
 
 
@@ -226,7 +229,7 @@ class XAIProvider:
         self,
         messages: list[dict],
         max_tokens: int = 1000,
-        reasoning_effort: str = "low",
+        reasoning_effort: str = DEFAULT_REASONING_EFFORT,
         use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
@@ -317,7 +320,7 @@ class XAIProvider:
         except Exception as e:
             raise BadResponseError(f"Unexpected XAI error: {e}") from e
     
-    def chat_stream(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: str = "low") -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: str = DEFAULT_REASONING_EFFORT) -> Iterator[str]:
         """Streaming chat completion with XAI."""
         if not self._openai_available:
             raise ConnectionError("OpenAI library not installed (required for XAI API)")
@@ -398,7 +401,7 @@ class LLMClient:
         self,
         messages: list[dict],
         max_tokens: Optional[int] = None,
-        reasoning_effort: str = "low",
+        reasoning_effort: str = DEFAULT_REASONING_EFFORT,
         use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
@@ -431,7 +434,7 @@ class LLMClient:
             logger.error(f"Unexpected error in chat: {e}")
             raise BadResponseError(f"Unexpected error: {e}") from e
     
-    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: str = "low") -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: str = DEFAULT_REASONING_EFFORT) -> Iterator[str]:
         """Send a streaming chat completion request.
         
         Args:
@@ -473,7 +476,7 @@ def create_client_from_config(
     """Create an XAI LLM client from configuration parameters.
     
     Args:
-        model: XAI model name (e.g., 'grok-4.3')
+        model: XAI model name
         api_key: XAI API key (XAI_API_KEY), or None to use mock provider
         max_tokens: Maximum tokens per response
         timeout_seconds: Request timeout
@@ -531,7 +534,7 @@ def structured_call(
     label: str = "Structured call",
     convert: Optional[Callable[[BaseModel], T]] = None,
     max_tokens: int = 4000,
-    reasoning_effort: str = "low",
+    reasoning_effort: str = DEFAULT_REASONING_EFFORT,
     attempts: int = 2,
 ) -> Optional[Union[BaseModel, T]]:
     """Make a structured LLM call with validation and retry.

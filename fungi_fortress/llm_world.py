@@ -42,7 +42,8 @@ def generate_world_seed(
     logger.info("Generating world seed with LLM")
     
     try:
-        response = client.chat(messages, max_tokens, reasoning_effort="low", use_json_schema=False)
+        from . import config_manager
+        response = client.chat(messages, max_tokens, reasoning_effort=config_manager.DEFAULT_REASONING_EFFORT, use_json_schema=False)
     except llm_client.LLMError as e:
         # Convert LLM errors to ValueError for compatibility with existing error handling
         raise ValueError(f"LLM error: {e}") from e

@@ -15,11 +15,16 @@ PACKAGE_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CONFIG_FILENAME = "llm_config.ini"
 # --- End Path configuration ---
 
+# --- LLM defaults (single source of truth) ---
+DEFAULT_MODEL = "grok-4.3"
+DEFAULT_REASONING_EFFORT = "low"
+# --- End LLM defaults ---
+
 @dataclass
 class LLMConfig:
     """Configuration for XAI LLM interactions."""
     api_key: Optional[str] = field(default=None, repr=False)  # Redacted from repr to prevent leaks
-    model_name: str = "grok-4.3"  # Default XAI model
+    model_name: str = DEFAULT_MODEL
     context_level: str = "medium"  # Default context level (low, medium, high)
     enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
     offering_item: Optional[str] = None # Specific item Oracle might ask for (optional)
@@ -65,7 +70,7 @@ class LLMConfig:
             Configured LLMClient instance (may be mock if no valid API key)
         """
         return llm_client.create_client_from_config(
-            model=self.model_name or "grok-4.3",
+            model=self.model_name or DEFAULT_MODEL,
             api_key=self.api_key,
             max_tokens=self.max_tokens,
             timeout_seconds=self.timeout_seconds,
@@ -120,7 +125,7 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
             logger.info("Found XAI_API_KEY in environment, using defaults")
             return LLMConfig(
                 api_key=api_key,
-                model_name="grok-4.3",
+                model_name=DEFAULT_MODEL,
                 context_level="medium",
                 max_tokens=1000,
                 timeout_seconds=60,
@@ -131,7 +136,7 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
         return LLMConfig() 
 
     # Default values
-    model_name: str = "grok-4.3"
+    model_name: str = DEFAULT_MODEL
     context_level: str = "medium"
     
     # Safety settings with defaults
@@ -146,7 +151,7 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
 
     # Load from [LLM] section
     if "LLM" in parser:
-        model_name = parser["LLM"].get("model_name", "grok-4.3")
+        model_name = parser["LLM"].get("model_name", DEFAULT_MODEL)
             
         context_level_from_file = parser["LLM"].get("context_level")
         if context_level_from_file in ["low", "medium", "high"]:
