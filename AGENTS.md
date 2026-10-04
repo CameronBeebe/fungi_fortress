@@ -10,7 +10,7 @@ Fungi Fortress is an agentic gaming harness—a deterministic game engine where 
 
 Every LLM call that feeds the game must declare its output type as a Pydantic model. The harness generates JSON Schema from that type, sends it to xAI via structured outputs (`response_format` json_schema; tool calling when choosing actions), lets the API enforce shape and required fields, runs semantic validators, retries with error feedback (bounded attempts), logs rejections, and falls back on final failure.
 
-**Implementation:** `llm_client.structured_call` exists and world/depth seed generation uses it (Pydantic models `WorldSeedSchema`/`DepthSeedSchema`; `parse_world_seed` is the single set of semantic rules for both LLM and hand-written seeds). Oracle and other calls are not migrated yet.
+**Implementation:** `llm_client.structured_call` exists and world/depth seed generation uses it (Pydantic model `WorldSeedSchema`, reused for both; `parse_world_seed` is the single set of semantic rules for both LLM and hand-written seeds). Oracle and other calls are not migrated yet.
 
 **Never fix a bad model output by tweaking prompt wording alone or by loosening parsers.** If outputs are wrong, the missing piece is schema/validator/retry.
 
