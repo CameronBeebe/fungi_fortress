@@ -4,7 +4,7 @@ Guidance for coding agents (Cursor, Codex, Claude Code, etc.) working on Fungi F
 
 ## What This Is
 
-Fungi Fortress is an agentic gaming harness—a deterministic game engine where LLMs generate content and choices through typed interfaces. The architecture uses general mechanisms over hard-coding: every NPC, character, and Oracle goes through the same code paths; all generated content (world seeds, encounters, revelations) follows Pydantic schemas; handcrafted content comes in as data, not bespoke code.
+Fungi Fortress is an agentic gaming harness—a deterministic game engine where LLMs generate content and choices through typed interfaces. The architecture uses general mechanisms over hard-coding: every NPC, character, and Oracle goes through the same code paths; every LLM call that feeds the game must declare a typed (Pydantic) output (migration in progress); handcrafted content comes in as data, not bespoke code.
 
 ## LLM Contract (Decided Architecture)
 
@@ -24,7 +24,7 @@ Every LLM call that feeds the game declares its output type in code as a Pydanti
 
 ## Providers
 
-- **Online:** xAI only (configured in `llm_config.ini.example`, currently `grok-3-mini`)
+- **Online:** xAI only. Model is set by `model_name` in `llm_config.ini` (example default `grok-3-mini`; the owner runs `grok-4.3`)
 - **Offline:** Built-in mock provider for game calls (no API key required)
 - **Judge:** Jev/TypeSafe is separate as a judge, not a game content provider
 
@@ -34,7 +34,7 @@ Every LLM call that feeds the game declares its output type in code as a Pydanti
 
 Special characters go through the same generic NPC paths. No bespoke code paths or Oracle-only fixes:
 
-- The Oracle is a unique NPC that only becomes visible at high spore exposure, but uses the same dialogue and interaction systems as any NPC
+- The Oracle is a unique NPC planned to only become visible at high spore exposure, using the same dialogue and interaction systems as any NPC
 - NPCs spawn wherever they could live (any habitable tile of the final map); no rules tied to specific mechanics like bridges
 - Handcrafted content (prebuilt campaigns, characters, narrative arcs) comes in as data through the same seed loader, not as code
 
@@ -59,9 +59,9 @@ Backend values—stats, exposure numbers, exposure bands, stance values—are de
 
 ### Code Changes
 
-- **Small reviewable PRs:** A few files, reviewable in minutes. One fix per commit.
+- **Small reviewable PRs:** A few files, reviewable in minutes. If a PR grows past a few files, split it before asking for review. One fix per commit.
 - **Never force-push or rewrite pushed history.** If you need to update a branch that has fallen behind, merge master into it (no rebase).
-- **Fix failing tests at the root cause, not by editing the test.** Tests define the contract; if a test fails, the code is wrong.
+- **Fix failing tests:** Find and fix the root cause; never weaken, skip, or delete a test to make it pass. If a test itself is wrong, say so explicitly in the PR.
 - **Run `uv run pytest` before pushing.** All tests must pass.
 
 ### Security
@@ -74,8 +74,7 @@ Backend values—stats, exposure numbers, exposure bands, stance values—are de
 - **Body must include exact test steps,** saying which folder to run from:
   ```
   Testing:
-  1. From workspace root, run `uv run pytest`
-  2. All tests pass (227 passing)
+  From workspace root, run `uv run pytest`
   ```
 - **Link to related issues** or `TODO.md` items if applicable
 
@@ -91,6 +90,7 @@ Backend values—stats, exposure numbers, exposure bands, stance values—are de
 Key modules (as of Oct 2026):
 
 - **`fungi_fortress/`** — Main package
+  - `app.py` — Startup; `initialize_new_game()` shared by game and tests
   - `game_logic.py` — Core simulation loop and event processing
   - `game_state.py` — World state, player, NPCs, inventory
   - `map_generation.py` — Procedural map and entity spawning
@@ -98,8 +98,10 @@ Key modules (as of Oct 2026):
   - `world_seed.py` — World seed validation and generation (moving to Pydantic)
   - `world_judge.py` — Jev/TypeSafe judge for stance, revelation, mission success
   - `llm_client.py` — LLM client (currently one hard-coded Oracle schema)
+  - `llm_world.py` — World-seed LLM calls
   - `llm_oracle.py`, `oracle_logic.py` — Oracle dialogue and encounter logic
   - `jev_client.py` — Jev/TypeSafe integration
+  - `characters.py` — Dwarf, NPC, and character classes
   - `renderer.py` — Curses-based UI rendering
   - `input_handler.py` — Keyboard input and command mapping
   - `task_manager.py` — Dwarf task queue and execution
@@ -107,7 +109,8 @@ Key modules (as of Oct 2026):
   - `missions.py` — Quest and mission tracking
   - `tiles.py`, `entities.py` — Tile and entity definitions
   - `cli.py` — Entry point (`fungi` command)
-- **`tests/`** — Test suite (227 passing as of Oct 2026)
+  - `seeds/` — Hand-written world/depth seed JSON (data path for handcrafted content)
+- **`tests/`** — Test suite
 - **`logs/`** — Runtime logs (git-ignored)
 - **`main.py`** — Legacy entry point (use `uv run fungi` instead)
 - **`README.md`** — Project overview, setup, and features
