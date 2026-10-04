@@ -8,19 +8,11 @@ Fungi Fortress is an agentic gaming harness—a deterministic game engine where 
 
 ## LLM Contract (Decided Architecture)
 
-Every LLM call that feeds the game declares its output type in code as a Pydantic model. The harness:
+Every LLM call that feeds the game must declare its output type as a Pydantic model. The harness generates JSON Schema from that type, sends it to xAI via structured outputs (`response_format` json_schema; tool calling when choosing actions), lets the API enforce shape and required fields, runs semantic validators, retries with error feedback (bounded attempts), logs rejections, and falls back on final failure.
 
-1. Generates the JSON Schema from that Pydantic type
-2. Sends it to xAI via structured outputs (`response_format` json_schema; tool calling when choosing actions)
-3. Lets the API enforce shape and required fields
-4. Runs semantic validators (cross-references, counts like exactly-one-revealed) on the parsed result
-5. Retries with the specific error message fed back to the model (bounded attempts)
-6. Logs every rejection with a preview
-7. On final failure, uses a prepared fallback and notifies the player
+**Implementation:** `llm_client.structured_call` exists and world/depth seed generation uses it (Pydantic models `WorldSeedSchema`/`DepthSeedSchema`; `parse_world_seed` is the single set of semantic rules for both LLM and hand-written seeds). Oracle and other calls are not migrated yet.
 
 **Never fix a bad model output by tweaking prompt wording alone or by loosening parsers.** If outputs are wrong, the missing piece is schema/validator/retry.
-
-**Note:** Migration to this architecture is in progress. Today `llm_client.py` has one hard-coded Oracle schema and world-seed calls run without a schema.
 
 ## Providers
 
@@ -62,6 +54,7 @@ Backend values—stats, exposure numbers, exposure bands, stance values—are de
 - **Small reviewable PRs:** A few files, reviewable in minutes. If a PR grows past a few files, split it before asking for review. One fix per commit.
 - **Never force-push or rewrite pushed history.** If you need to update a branch that has fallen behind, merge master into it (no rebase).
 - **Fix failing tests:** Find and fix the root cause; never weaken, skip, or delete a test to make it pass. If a test itself is wrong, say so explicitly in the PR.
+- **Testing philosophy:** Test core contracts (the typed LLM path, validators, world rules, and things that broke before). Don't write wasteful tests or tests that pin details likely to change. The project changes fast, so don't over-invest in tests or box the design in.
 - **Run `uv run pytest` before pushing.** All tests must pass.
 
 ### Security
@@ -95,9 +88,9 @@ Key modules (as of Oct 2026):
   - `game_state.py` — World state, player, NPCs, inventory
   - `map_generation.py` — Procedural map and entity spawning
   - `dwarf_mind.py` — Autonomous dwarf task AI (template for systems)
-  - `world_seed.py` — World seed validation and generation (moving to Pydantic)
+  - `world_seed.py` — World seed Pydantic models and validation; `parse_world_seed` semantic rules
   - `world_judge.py` — Jev/TypeSafe judge for stance, revelation, mission success
-  - `llm_client.py` — LLM client (currently one hard-coded Oracle schema)
+  - `llm_client.py` — LLM client with `structured_call` (typed outputs); Oracle not migrated yet
   - `llm_world.py` — World-seed LLM calls
   - `llm_oracle.py`, `oracle_logic.py` — Oracle dialogue and encounter logic
   - `jev_client.py` — Jev/TypeSafe integration
