@@ -10,9 +10,16 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional, Type, Union
 
 logger = logging.getLogger(__name__)
+
+try:
+    from pydantic import BaseModel
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    BaseModel = object  # type: ignore
+    PYDANTIC_AVAILABLE = False
 
 
 # === Typed Exceptions ===
@@ -75,6 +82,53 @@ class LLMClientConfig:
     temperature: float = 0.7
 
 
+# === Schema Helpers ===
+
+
+def _schema_from_model(model_cls: Type[BaseModel], schema_name: str) -> dict[str, Any]:
+    """Convert a Pydantic model to a JSON schema dict for XAI structured outputs.
+    
+    Args:
+        model_cls: Pydantic model class
+        schema_name: Name for the schema
+        
+    Returns:
+        Schema dict suitable for XAI response_format
+    """
+    if not PYDANTIC_AVAILABLE:
+        raise RuntimeError("Pydantic is required for structured outputs")
+    
+    schema = model_cls.model_json_schema()
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema_name,
+            "strict": True,
+            "schema": schema
+        }
+    }
+
+
+def _schema_from_dict(schema: dict[str, Any], schema_name: str) -> dict[str, Any]:
+    """Wrap a JSON schema dict for XAI structured outputs.
+    
+    Args:
+        schema: JSON schema dict
+        schema_name: Name for the schema
+        
+    Returns:
+        Schema dict suitable for XAI response_format
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema_name,
+            "strict": True,
+            "schema": schema
+        }
+    }
+
+
 # === Mock Provider ===
 
 
@@ -93,11 +147,21 @@ class MockLLMProvider:
     def __init__(self):
         self._call_count = 0
     
-    def chat(self, messages: list[dict], max_tokens: int = 1000) -> str:
+    def chat(self, messages: list[dict], max_tokens: int = 1000, response_format: Optional[dict[str, Any]] = None) -> str:
         """Non-streaming mock response."""
         self._call_count += 1
         user_content = self._extract_user_content(messages)
-        return self._mock_response(user_content)
+        response = self._mock_response(user_content)
+        
+        # If a schema is provided, validate the response against it
+        if response_format:
+            try:
+                parsed = json.loads(response)
+                self._validate_against_schema(parsed, response_format)
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"Mock response validation failed: {e}")
+        
+        return response
     
     def chat_stream(self, messages: list[dict], max_tokens: int = 1000) -> Iterator[str]:
         """Streaming mock response."""
@@ -152,6 +216,18 @@ class MockLLMProvider:
             "narrative": narrative,
             "actions": []
         })
+    
+    def _validate_against_schema(self, data: dict[str, Any], response_format: dict[str, Any]) -> None:
+        """Basic validation that response has required keys from schema."""
+        if "json_schema" not in response_format:
+            return
+        
+        schema = response_format["json_schema"].get("schema", {})
+        required = schema.get("required", [])
+        
+        for key in required:
+            if key not in data:
+                raise ValueError(f"Missing required key: {key}")
 
 
 # === XAI Provider ===
@@ -173,8 +249,23 @@ class XAIProvider:
             logger.warning("openai library not available (required for XAI)")
             return False
     
-    def chat(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: str = "high", use_json_schema: bool = False) -> str:
-        """Non-streaming chat completion with XAI."""
+    def chat(
+        self,
+        messages: list[dict],
+        max_tokens: int = 1000,
+        reasoning_effort: str = "high",
+        use_json_schema: bool = False,
+        response_format: Optional[dict[str, Any]] = None
+    ) -> str:
+        """Non-streaming chat completion with XAI.
+        
+        Args:
+            messages: List of message dicts
+            max_tokens: Maximum tokens to generate
+            reasoning_effort: XAI reasoning effort for grok-3-mini models
+            use_json_schema: Legacy flag to use hardcoded Oracle schema
+            response_format: Per-call response format schema (overrides use_json_schema)
+        """
         if not self._openai_available:
             raise ConnectionError("OpenAI library not installed (required for XAI API)")
         
@@ -199,8 +290,11 @@ class XAIProvider:
             if "grok-3-mini" in self.config.model.lower():
                 completion_params["reasoning_effort"] = reasoning_effort
             
-            # Add JSON schema if requested
-            if use_json_schema:
+            # Add response format if provided (per-call schema takes precedence)
+            if response_format:
+                completion_params["response_format"] = response_format
+            elif use_json_schema:
+                # Legacy hardcoded Oracle schema
                 oracle_schema = {
                     "type": "json_schema",
                     "json_schema": {
@@ -333,14 +427,22 @@ class LLMClient:
         """Check if using mock provider."""
         return self._use_mock
     
-    def chat(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: str = "high", use_json_schema: bool = False) -> str:
+    def chat(
+        self,
+        messages: list[dict],
+        max_tokens: Optional[int] = None,
+        reasoning_effort: str = "high",
+        use_json_schema: bool = False,
+        response_format: Optional[dict[str, Any]] = None
+    ) -> str:
         """Send a chat completion request (non-streaming).
         
         Args:
             messages: List of message dicts with 'role' and 'content'.
             max_tokens: Override default max tokens.
             reasoning_effort: XAI reasoning effort ("low", "medium", "high") for grok-3-mini models.
-            use_json_schema: Whether to use JSON schema for structured output (XAI only).
+            use_json_schema: Whether to use JSON schema for structured output (XAI only, legacy).
+            response_format: Per-call response format schema (overrides use_json_schema).
             
         Returns:
             Complete response text.
@@ -353,9 +455,9 @@ class LLMClient:
         
         try:
             if self._use_mock:
-                return self._provider.chat(messages, max_tokens)
+                return self._provider.chat(messages, max_tokens, response_format=response_format)
             else:
-                return self._provider.chat(messages, max_tokens, reasoning_effort, use_json_schema)
+                return self._provider.chat(messages, max_tokens, reasoning_effort, use_json_schema, response_format)
         except LLMError:
             raise
         except Exception as e:
