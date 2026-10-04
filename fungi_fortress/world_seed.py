@@ -337,7 +337,7 @@ def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
     xai_key = os.environ.get("XAI_API_KEY", "").strip()
     if xai_key:
         return llm_client.create_client_from_config(
-            model="grok-3-mini",
+            model="grok-4.3",
             api_key=xai_key,
             max_tokens=4000,
             timeout_seconds=45,
