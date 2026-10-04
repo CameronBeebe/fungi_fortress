@@ -12,7 +12,10 @@ import logging
 import os
 import random
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from enum import Enum
+from typing import Any, Callable, Literal, Optional, Union
+
+from pydantic import BaseModel, Field, field_validator
 
 from .characters import NPC, Oracle
 from .constants import STARTING_RESOURCES
@@ -27,6 +30,89 @@ MAX_QUESTS = 8
 MAX_TEXT = 400
 _PREPARED_SEED = os.path.join(os.path.dirname(__file__), "seeds", "example_world.json")
 _PREPARED_DEPTH = os.path.join(os.path.dirname(__file__), "seeds", "example_depth.json")
+
+
+# === Pydantic Models for Structured Outputs ===
+
+
+class ResourceEnum(str, Enum):
+    """Valid resource types for collection requirements."""
+    food = "food"
+    wood = "wood"
+    stone = "stone"
+    gold = "gold"
+    crystals = "crystals"
+    fungi = "fungi"
+    magic_fungi = "magic_fungi"
+
+
+class CharacterKind(str, Enum):
+    """Character kinds: ordinary kin or mystical revealed."""
+    kin = "kin"
+    revealed = "revealed"
+
+
+class CollectRequirement(BaseModel):
+    """Requirement to collect a specific resource."""
+    kind: Literal["collect"]
+    resource: ResourceEnum
+    count: int = Field(ge=1, le=99)
+
+
+class ReachRequirement(BaseModel):
+    """Requirement to reach a specific place."""
+    kind: Literal["reach"]
+    place: str
+
+
+class CharacterSchema(BaseModel):
+    """Character in a world seed."""
+    id: str
+    name: str
+    description: str
+    kind: CharacterKind
+    faction: str = ""
+    motive: str = ""
+    secret: str = ""
+    voice: str = ""
+
+
+class PlaceSchema(BaseModel):
+    """Place in a world seed."""
+    id: str
+    name: str
+    description: str
+
+
+class QuestSchema(BaseModel):
+    """Quest in a world seed."""
+    id: str
+    title: str
+    summary: str
+    giver_id: str
+    requirements: list[Union[CollectRequirement, ReachRequirement]]
+    success: str = ""
+
+
+class WorldSeedSchema(BaseModel):
+    """Complete world seed with structured validation."""
+    title: str
+    premise: str
+    characters: list[CharacterSchema]
+    places: list[PlaceSchema]
+    quests: list[QuestSchema]
+
+
+def _convert_to_world_seed(schema: WorldSeedSchema) -> WorldSeed:
+    """Convert WorldSeedSchema to WorldSeed, running all semantic validation.
+    
+    This uses parse_world_seed as the single source of truth for validation.
+    Raises ValueError with detailed error message if validation fails.
+    """
+    # Convert to dict format expected by parse_world_seed
+    seed_dict = schema.model_dump(mode="json")
+    # parse_world_seed does all semantic validation and raises ValueError on failure
+    return parse_world_seed(seed_dict)
 
 
 @dataclass
@@ -180,77 +266,55 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
     Returns one line for the game log. A prepared grove is used when the
     model is missing or both attempts come back invalid.
     """
+    # Get or create an LLM client
     if complete is None:
-        # Try to get an LLM client from game config
         client = _get_llm_client(game)
         if client is None:
             _install_prepared(game)
             return "No language-model key found. Using a prepared grove."
-        
-        def complete(prompt: str, _client=client) -> str:
-            return llm_world.generate_world_seed(_client, prompt, max_tokens=4000)
-
-    rejection = ""
-    for _attempt in range(2):
-        prompt = _seed_prompt(rejection)
-        raw_response = None
-        try:
-            if callable(complete):
-                result = complete(prompt)
-                # If complete returns a string (old-style _chat), parse it
-                if isinstance(result, str):
-                    raw_response = result
-                    seed_dict = llm_world._extract_json(result)
-                else:
-                    # If complete returns a dict (new-style), use it directly
-                    seed_dict = result
-                seed = parse_world_seed(seed_dict)
-            else:
-                raw_response = complete(prompt)
-                seed = parse_world_seed(llm_world._extract_json(raw_response))
-        except (ValueError, json.JSONDecodeError, OSError) as exc:
-            rejection = str(exc)
-            # Log rejection reason with truncated response preview
-            exc_name = type(exc).__name__
-            preview = ""
-            if raw_response and isinstance(raw_response, str):
-                preview = raw_response[:300]
-                if len(raw_response) > 300:
-                    preview += "..."
-            logger.warning(
-                "World seed rejected on attempt %d: %s: %s. Response preview: %s",
-                _attempt + 1,
-                exc_name,
-                rejection,
-                preview or "(no response captured)"
-            )
-            continue
-        apply_world_seed(game, seed)
-        return f"{seed.title}. {seed.quests[0].title}."
-
-    _install_prepared(game)
-    return "The new world came back unusable. Using a prepared grove."
+    else:
+        # Wrap the complete function in a minimal client adapter for tests
+        client = _CompleteAdapter(complete)
+    
+    # Use structured call with schema and converter
+    messages = [
+        {"role": "system", "content": "You write one JSON object and nothing else."},
+        {"role": "user", "content": _seed_prompt()},
+    ]
+    
+    seed = llm_client.structured_call(
+        client,
+        messages,
+        WorldSeedSchema,
+        schema_name="world_seed",
+        label="World seed",
+        convert=_convert_to_world_seed,
+        max_tokens=4000,
+        reasoning_effort="low",
+        attempts=2
+    )
+    
+    if seed is None:
+        _install_prepared(game)
+        return "The new world came back unusable. Using a prepared grove."
+    
+    apply_world_seed(game, seed)
+    return f"{seed.title}. {seed.quests[0].title}."
 
 
 def _seed_prompt(rejection: str = "") -> str:
     rules = (
-        "Write a JSON object for one Fungi Fortress world. "
-        "Return only JSON. ids have no spaces. "
-        "characters need id, name, description, kind, and may include faction, motive, secret, voice. "
-        "kind is kin or revealed. Exactly one character is revealed. Kin are ordinary people who covet spice. "
+        "Write a JSON world for Fungi Fortress. "
+        "Exactly one character must be revealed. Kin are ordinary people who covet spice. "
         "The revealed figure lives in the mycelium and is only half-present at a low dose. "
-        "places need id, name, description. "
-        "quests need id, title, summary, giver_id matching a character id, and requirements. "
-        "A requirement is either "
-        '{"kind":"collect","resource":"food|wood|stone|gold|crystals|fungi|magic_fungi","count":1-99} '
-        'or {"kind":"reach","place":"<place id>"}. '
         "Include 2 or 3 characters and 1 or 2 quests. "
         "Add success only when the point of the quest is not already the requirements, "
         "as a short sentence such as whether a character is satisfied or a place stayed undisturbed. "
-        "The premise and secrets are facts the inhabitants know."
+        "The premise and secrets are facts the inhabitants know. "
+        "All IDs must be unique and contain no spaces."
     )
     if rejection:
-        return rules + " The previous JSON was rejected: " + rejection
+        return rules + " The previous response was rejected: " + rejection
     return rules
 
 
@@ -281,6 +345,21 @@ def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
         )
     
     return None
+
+
+class _CompleteAdapter:
+    """Minimal adapter that wraps a complete function to look like an LLM client for tests."""
+    
+    def __init__(self, complete_fn: Callable[[str], str]):
+        self._complete = complete_fn
+    
+    def chat(self, messages: list[dict], **kwargs) -> str:
+        """Extract the last user prompt and call the complete function."""
+        # Find the last user message
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                return self._complete(msg["content"])
+        return self._complete("")
 
 
 def _install_prepared(game: Any) -> None:
@@ -344,55 +423,40 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
     if existing is not None:
         return f"{existing.title}. {existing.quests[0].title}."
 
+    # Get or create an LLM client
     if complete is None:
-        # Try to get an LLM client from game config
         client = _get_llm_client(game)
         if client is None:
             game.depth_seed = load_world_seed(_PREPARED_DEPTH)
             return f"{game.depth_seed.title}. The stair uses a prepared depth."
-        
-        def complete(prompt: str, _client=client) -> str:
-            return llm_world.generate_world_seed(_client, prompt, max_tokens=4000)
-
-    rejection = ""
-    for _attempt in range(2):
-        raw_response = None
-        try:
-            if callable(complete):
-                result = complete(_depth_prompt(rejection))
-                # If complete returns a string (old-style _chat), parse it
-                if isinstance(result, str):
-                    raw_response = result
-                    seed_dict = llm_world._extract_json(result)
-                else:
-                    # If complete returns a dict (new-style), use it directly
-                    seed_dict = result
-                seed = parse_world_seed(seed_dict)
-            else:
-                raw_response = complete(_depth_prompt(rejection))
-                seed = parse_world_seed(llm_world._extract_json(raw_response))
-        except (ValueError, json.JSONDecodeError, OSError) as exc:
-            rejection = str(exc)
-            # Log rejection reason with truncated response preview
-            exc_name = type(exc).__name__
-            preview = ""
-            if raw_response and isinstance(raw_response, str):
-                preview = raw_response[:300]
-                if len(raw_response) > 300:
-                    preview += "..."
-            logger.warning(
-                "Depth seed rejected on attempt %d: %s: %s. Response preview: %s",
-                _attempt + 1,
-                exc_name,
-                rejection,
-                preview or "(no response captured)"
-            )
-            continue
-        game.depth_seed = seed
-        return f"{seed.title}. {seed.quests[0].title}."
-
-    game.depth_seed = load_world_seed(_PREPARED_DEPTH)
-    return f"{game.depth_seed.title}. The new depth came back unusable. Using a prepared depth."
+    else:
+        # Wrap the complete function in a minimal client adapter for tests
+        client = _CompleteAdapter(complete)
+    
+    # Use structured call with schema and converter
+    messages = [
+        {"role": "system", "content": "You write one JSON object and nothing else."},
+        {"role": "user", "content": _depth_prompt()},
+    ]
+    
+    seed = llm_client.structured_call(
+        client,
+        messages,
+        WorldSeedSchema,
+        schema_name="depth_seed",
+        label="Depth seed",
+        convert=_convert_to_world_seed,
+        max_tokens=4000,
+        reasoning_effort="low",
+        attempts=2
+    )
+    
+    if seed is None:
+        game.depth_seed = load_world_seed(_PREPARED_DEPTH)
+        return f"{game.depth_seed.title}. The new depth came back unusable. Using a prepared depth."
+    
+    game.depth_seed = seed
+    return f"{seed.title}. {seed.quests[0].title}."
 
 
 def enter_depth(game: Any) -> None:
@@ -428,22 +492,16 @@ def leave_depth(game: Any) -> None:
 
 def _depth_prompt(rejection: str = "") -> str:
     rules = (
-        "Write a JSON object for one depth beneath a Mycelial Nexus. "
-        "Return only JSON. This is a mind-region, mythic and archetypal: a cathedral, court, wound, or machine-garden of spice. "
+        "Write a depth beneath a Mycelial Nexus. "
+        "This is a mind-region, mythic and archetypal: a cathedral, court, wound, or machine-garden of spice. "
         "Spice is rarer and stronger here than on the surface. "
-        "ids have no spaces. "
-        "characters need id, name, description, kind, and may include faction, motive, secret, voice. "
-        "kind is kin or revealed. Exactly one character is revealed. "
-        "places need id, name, description. "
-        "quests need id, title, summary, giver_id, and requirements. "
-        "A requirement is either "
-        '{"kind":"collect","resource":"food|wood|stone|gold|crystals|fungi|magic_fungi","count":1-99} '
-        'or {"kind":"reach","place":"<place id>"}. '
+        "Exactly one character must be revealed. "
         "Include 2 characters and 1 quest. The quest should ask for magic_fungi or reaching the place. "
-        "The premise is what a dwarf perceives on the stair."
+        "The premise is what a dwarf perceives on the stair. "
+        "All IDs must be unique and contain no spaces."
     )
     if rejection:
-        return rules + " The previous JSON was rejected: " + rejection
+        return rules + " The previous response was rejected: " + rejection
     return rules
 
 

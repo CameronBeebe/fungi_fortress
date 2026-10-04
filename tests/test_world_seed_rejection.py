@@ -29,15 +29,15 @@ def test_grow_world_logs_rejection_warnings(caplog):
     game = MockGame()
     
     def bad_complete(prompt):
-        # Return JSON with invalid resource name
+        # Return JSON with invalid giver_id (semantic error caught by parse_world_seed)
         return json.dumps({
             "title": "Bad World",
             "premise": "Test",
             "characters": [{"id": "c1", "name": "Test", "description": "Test", "kind": "revealed"}],
             "places": [{"id": "p1", "name": "Place", "description": "Test"}],
             "quests": [{
-                "id": "q1", "title": "Quest", "summary": "Test", "giver_id": "c1",
-                "requirements": [{"kind": "collect", "resource": "invalid_resource", "count": 5}]
+                "id": "q1", "title": "Quest", "summary": "Test", "giver_id": "invalid_id",
+                "requirements": [{"kind": "reach", "place": "p1"}]
             }]
         })
     
@@ -49,9 +49,11 @@ def test_grow_world_logs_rejection_warnings(caplog):
     assert len(warning_logs) == 2
     
     for i, log in enumerate(warning_logs, 1):
+        assert "World seed rejected" in log.message
         assert f"attempt {i}" in log.message.lower()
         assert "ValueError" in log.message
-        assert "unknown resource" in log.message
+        # Check for specific parse_world_seed error about unknown giver
+        assert "giver" in log.message.lower() and "invalid_id" in log.message
         assert "Response preview:" in log.message
         # Verify preview is truncated to ~300 chars
         assert len(log.message.split("Response preview:")[-1]) <= 350
@@ -62,6 +64,7 @@ def test_grow_depth_logs_rejection_warnings(caplog):
     game = MockGame()
     
     def bad_complete(prompt):
+        # Missing at least one quest
         return json.dumps({"title": "Bad", "premise": "Test", "characters": [], "places": [], "quests": []})
     
     with caplog.at_level(logging.WARNING):
@@ -92,6 +95,7 @@ def test_grow_world_logs_json_parse_errors(caplog):
     assert len(warning_logs) == 2
     
     for log in warning_logs:
-        assert "JSONDecodeError" in log.message
+        # Pydantic wraps JSON errors as ValidationError
+        assert "ValidationError" in log.message
         assert "Response preview:" in log.message
 
