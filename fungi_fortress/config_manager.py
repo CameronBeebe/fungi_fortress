@@ -19,7 +19,7 @@ DEFAULT_CONFIG_FILENAME = "llm_config.ini"
 class LLMConfig:
     """Configuration for XAI LLM interactions."""
     api_key: Optional[str] = field(default=None, repr=False)  # Redacted from repr to prevent leaks
-    model_name: str = "grok-3-mini"  # Default XAI model
+    model_name: str = "grok-4.3"  # Default XAI model
     context_level: str = "medium"  # Default context level (low, medium, high)
     enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
     offering_item: Optional[str] = None # Specific item Oracle might ask for (optional)
@@ -65,7 +65,7 @@ class LLMConfig:
             Configured LLMClient instance (may be mock if no valid API key)
         """
         return llm_client.create_client_from_config(
-            model=self.model_name or "grok-3-mini",
+            model=self.model_name or "grok-4.3",
             api_key=self.api_key,
             max_tokens=self.max_tokens,
             timeout_seconds=self.timeout_seconds,
@@ -120,7 +120,7 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
             logger.info("Found XAI_API_KEY in environment, using defaults")
             return LLMConfig(
                 api_key=api_key,
-                model_name="grok-3-mini",
+                model_name="grok-4.3",
                 context_level="medium",
                 max_tokens=1000,
                 timeout_seconds=60,
@@ -131,7 +131,7 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
         return LLMConfig() 
 
     # Default values
-    model_name: str = "grok-3-mini"
+    model_name: str = "grok-4.3"
     context_level: str = "medium"
     
     # Safety settings with defaults
@@ -146,7 +146,7 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
 
     # Load from [LLM] section
     if "LLM" in parser:
-        model_name = parser["LLM"].get("model_name", "grok-3-mini")
+        model_name = parser["LLM"].get("model_name", "grok-4.3")
             
         context_level_from_file = parser["LLM"].get("context_level")
         if context_level_from_file in ["low", "medium", "high"]:
