@@ -226,7 +226,7 @@ class XAIProvider:
         self,
         messages: list[dict],
         max_tokens: int = 1000,
-        reasoning_effort: str = "high",
+        reasoning_effort: str = "low",
         use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
