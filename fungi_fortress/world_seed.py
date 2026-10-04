@@ -12,7 +12,10 @@ import logging
 import os
 import random
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from enum import Enum
+from typing import Any, Callable, Literal, Optional, Union
+
+from pydantic import BaseModel, Field, field_validator
 
 from .characters import NPC, Oracle
 from .constants import STARTING_RESOURCES
@@ -27,6 +30,193 @@ MAX_QUESTS = 8
 MAX_TEXT = 400
 _PREPARED_SEED = os.path.join(os.path.dirname(__file__), "seeds", "example_world.json")
 _PREPARED_DEPTH = os.path.join(os.path.dirname(__file__), "seeds", "example_depth.json")
+
+
+# === Pydantic Models for Structured Outputs ===
+
+
+class ResourceEnum(str, Enum):
+    """Valid resource types for collection requirements."""
+    food = "food"
+    wood = "wood"
+    stone = "stone"
+    gold = "gold"
+    crystals = "crystals"
+    fungi = "fungi"
+    magic_fungi = "magic_fungi"
+
+
+class CharacterKind(str, Enum):
+    """Character kinds: ordinary kin or mystical revealed."""
+    kin = "kin"
+    revealed = "revealed"
+
+
+class CollectRequirement(BaseModel):
+    """Requirement to collect a specific resource."""
+    kind: Literal["collect"]
+    resource: ResourceEnum
+    count: int = Field(ge=1, le=99)
+
+
+class ReachRequirement(BaseModel):
+    """Requirement to reach a specific place."""
+    kind: Literal["reach"]
+    place: str
+
+
+class CharacterSchema(BaseModel):
+    """Character in a world seed."""
+    id: str
+    name: str
+    description: str
+    kind: CharacterKind
+    faction: str = ""
+    motive: str = ""
+    secret: str = ""
+    voice: str = ""
+
+
+class PlaceSchema(BaseModel):
+    """Place in a world seed."""
+    id: str
+    name: str
+    description: str
+
+
+class QuestSchema(BaseModel):
+    """Quest in a world seed."""
+    id: str
+    title: str
+    summary: str
+    giver_id: str
+    requirements: list[Union[CollectRequirement, ReachRequirement]]
+    success: str = ""
+
+
+class WorldSeedSchema(BaseModel):
+    """Complete world seed with structured validation."""
+    title: str
+    premise: str
+    characters: list[CharacterSchema]
+    places: list[PlaceSchema]
+    quests: list[QuestSchema]
+
+
+def _validate_world_seed_schema(seed: WorldSeedSchema) -> list[str]:
+    """Validate semantic constraints on a world seed.
+    
+    Returns:
+        List of error strings (empty if valid)
+    """
+    errors = []
+    
+    # Check size limits
+    if len(seed.characters) > MAX_CHARACTERS:
+        errors.append(f"Too many characters: {len(seed.characters)} > {MAX_CHARACTERS}")
+    if len(seed.places) > MAX_PLACES:
+        errors.append(f"Too many places: {len(seed.places)} > {MAX_PLACES}")
+    if len(seed.quests) > MAX_QUESTS:
+        errors.append(f"Too many quests: {len(seed.quests)} > {MAX_QUESTS}")
+    
+    # Check text lengths
+    if len(seed.title) > MAX_TEXT:
+        errors.append(f"Title too long: {len(seed.title)} > {MAX_TEXT}")
+    if len(seed.premise) > MAX_TEXT:
+        errors.append(f"Premise too long: {len(seed.premise)} > {MAX_TEXT}")
+    
+    # Exactly one revealed character
+    revealed_count = sum(1 for c in seed.characters if c.kind == CharacterKind.revealed)
+    if revealed_count != 1:
+        errors.append(f"Must have exactly one revealed character, found {revealed_count}")
+    
+    # Build ID sets for cross-reference checking
+    character_ids = {c.id for c in seed.characters}
+    place_ids = {p.id for p in seed.places}
+    
+    # Check for duplicate character IDs
+    if len(character_ids) != len(seed.characters):
+        errors.append("Duplicate character IDs found")
+    
+    # Check for duplicate place IDs
+    if len(place_ids) != len(seed.places):
+        errors.append("Duplicate place IDs found")
+    
+    # Check for duplicate quest IDs
+    quest_ids = [q.id for q in seed.quests]
+    if len(set(quest_ids)) != len(quest_ids):
+        errors.append("Duplicate quest IDs found")
+    
+    # Check at least one quest
+    if not seed.quests:
+        errors.append("Must have at least one quest")
+    
+    # Validate each quest
+    for quest in seed.quests:
+        # Giver must be a character
+        if quest.giver_id not in character_ids:
+            errors.append(f"Quest '{quest.id}' giver_id '{quest.giver_id}' is not a character ID")
+        
+        # Requirements must reference valid places
+        for req in quest.requirements:
+            if isinstance(req, ReachRequirement):
+                if req.place not in place_ids:
+                    errors.append(f"Quest '{quest.id}' reach requirement references unknown place '{req.place}'")
+    
+    # Check for whitespace in IDs
+    for c in seed.characters:
+        if any(ch.isspace() for ch in c.id):
+            errors.append(f"Character ID '{c.id}' contains whitespace")
+    for p in seed.places:
+        if any(ch.isspace() for ch in p.id):
+            errors.append(f"Place ID '{p.id}' contains whitespace")
+    for q in seed.quests:
+        if any(ch.isspace() for ch in q.id):
+            errors.append(f"Quest ID '{q.id}' contains whitespace")
+    
+    return errors
+
+
+def _world_seed_schema_to_dict(seed: WorldSeedSchema) -> dict[str, Any]:
+    """Convert a WorldSeedSchema to a dict compatible with parse_world_seed."""
+    return {
+        "title": seed.title,
+        "premise": seed.premise,
+        "characters": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "description": c.description,
+                "kind": c.kind.value,
+                "faction": c.faction,
+                "motive": c.motive,
+                "secret": c.secret,
+                "voice": c.voice,
+            }
+            for c in seed.characters
+        ],
+        "places": [
+            {"id": p.id, "name": p.name, "description": p.description}
+            for p in seed.places
+        ],
+        "quests": [
+            {
+                "id": q.id,
+                "title": q.title,
+                "summary": q.summary,
+                "giver_id": q.giver_id,
+                "requirements": [
+                    {
+                        "kind": req.kind,
+                        **({"resource": req.resource.value, "count": req.count} if req.kind == "collect" else {"place": req.place})
+                    }
+                    for req in q.requirements
+                ],
+                "success": q.success,
+            }
+            for q in seed.quests
+        ],
+    }
 
 
 @dataclass
@@ -187,9 +377,33 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
             _install_prepared(game)
             return "No language-model key found. Using a prepared grove."
         
-        def complete(prompt: str, _client=client) -> str:
-            return llm_world.generate_world_seed(_client, prompt, max_tokens=4000)
-
+        # Use structured call with the new schema
+        messages = [
+            {"role": "system", "content": "You write one JSON object and nothing else."},
+            {"role": "user", "content": _seed_prompt()},
+        ]
+        
+        seed_schema = llm_client.structured_call(
+            client,
+            messages,
+            WorldSeedSchema,
+            schema_name="world_seed",
+            validate=_validate_world_seed_schema,
+            max_tokens=4000,
+            attempts=2
+        )
+        
+        if seed_schema is None:
+            _install_prepared(game)
+            return "The new world came back unusable. Using a prepared grove."
+        
+        # Convert to dict and parse with existing logic
+        seed_dict = _world_seed_schema_to_dict(seed_schema)
+        seed = parse_world_seed(seed_dict)
+        apply_world_seed(game, seed)
+        return f"{seed.title}. {seed.quests[0].title}."
+    
+    # Legacy path for custom complete function (testing)
     rejection = ""
     for _attempt in range(2):
         prompt = _seed_prompt(rejection)
@@ -212,17 +426,13 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
             rejection = str(exc)
             # Log rejection reason with truncated response preview
             exc_name = type(exc).__name__
-            preview = ""
-            if raw_response and isinstance(raw_response, str):
-                preview = raw_response[:300]
-                if len(raw_response) > 300:
-                    preview += "..."
+            preview = llm_client._response_preview(raw_response)
             logger.warning(
                 "World seed rejected on attempt %d: %s: %s. Response preview: %s",
                 _attempt + 1,
                 exc_name,
                 rejection,
-                preview or "(no response captured)"
+                preview
             )
             continue
         apply_world_seed(game, seed)
@@ -234,23 +444,17 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
 
 def _seed_prompt(rejection: str = "") -> str:
     rules = (
-        "Write a JSON object for one Fungi Fortress world. "
-        "Return only JSON. ids have no spaces. "
-        "characters need id, name, description, kind, and may include faction, motive, secret, voice. "
-        "kind is kin or revealed. Exactly one character is revealed. Kin are ordinary people who covet spice. "
+        "Write a world for Fungi Fortress. "
+        "Exactly one character must be revealed. Kin are ordinary people who covet spice. "
         "The revealed figure lives in the mycelium and is only half-present at a low dose. "
-        "places need id, name, description. "
-        "quests need id, title, summary, giver_id matching a character id, and requirements. "
-        "A requirement is either "
-        '{"kind":"collect","resource":"food|wood|stone|gold|crystals|fungi|magic_fungi","count":1-99} '
-        'or {"kind":"reach","place":"<place id>"}. '
         "Include 2 or 3 characters and 1 or 2 quests. "
         "Add success only when the point of the quest is not already the requirements, "
         "as a short sentence such as whether a character is satisfied or a place stayed undisturbed. "
-        "The premise and secrets are facts the inhabitants know."
+        "The premise and secrets are facts the inhabitants know. "
+        "All IDs must be unique and contain no spaces."
     )
     if rejection:
-        return rules + " The previous JSON was rejected: " + rejection
+        return rules + " The previous response was rejected: " + rejection
     return rules
 
 
@@ -351,9 +555,33 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
             game.depth_seed = load_world_seed(_PREPARED_DEPTH)
             return f"{game.depth_seed.title}. The stair uses a prepared depth."
         
-        def complete(prompt: str, _client=client) -> str:
-            return llm_world.generate_world_seed(_client, prompt, max_tokens=4000)
-
+        # Use structured call with the new schema
+        messages = [
+            {"role": "system", "content": "You write one JSON object and nothing else."},
+            {"role": "user", "content": _depth_prompt()},
+        ]
+        
+        seed_schema = llm_client.structured_call(
+            client,
+            messages,
+            WorldSeedSchema,
+            schema_name="depth_seed",
+            validate=_validate_world_seed_schema,
+            max_tokens=4000,
+            attempts=2
+        )
+        
+        if seed_schema is None:
+            game.depth_seed = load_world_seed(_PREPARED_DEPTH)
+            return f"{game.depth_seed.title}. The new depth came back unusable. Using a prepared depth."
+        
+        # Convert to dict and parse with existing logic
+        seed_dict = _world_seed_schema_to_dict(seed_schema)
+        seed = parse_world_seed(seed_dict)
+        game.depth_seed = seed
+        return f"{seed.title}. {seed.quests[0].title}."
+    
+    # Legacy path for custom complete function (testing)
     rejection = ""
     for _attempt in range(2):
         raw_response = None
@@ -375,17 +603,13 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
             rejection = str(exc)
             # Log rejection reason with truncated response preview
             exc_name = type(exc).__name__
-            preview = ""
-            if raw_response and isinstance(raw_response, str):
-                preview = raw_response[:300]
-                if len(raw_response) > 300:
-                    preview += "..."
+            preview = llm_client._response_preview(raw_response)
             logger.warning(
                 "Depth seed rejected on attempt %d: %s: %s. Response preview: %s",
                 _attempt + 1,
                 exc_name,
                 rejection,
-                preview or "(no response captured)"
+                preview
             )
             continue
         game.depth_seed = seed
@@ -428,22 +652,16 @@ def leave_depth(game: Any) -> None:
 
 def _depth_prompt(rejection: str = "") -> str:
     rules = (
-        "Write a JSON object for one depth beneath a Mycelial Nexus. "
-        "Return only JSON. This is a mind-region, mythic and archetypal: a cathedral, court, wound, or machine-garden of spice. "
+        "Write a depth beneath a Mycelial Nexus. "
+        "This is a mind-region, mythic and archetypal: a cathedral, court, wound, or machine-garden of spice. "
         "Spice is rarer and stronger here than on the surface. "
-        "ids have no spaces. "
-        "characters need id, name, description, kind, and may include faction, motive, secret, voice. "
-        "kind is kin or revealed. Exactly one character is revealed. "
-        "places need id, name, description. "
-        "quests need id, title, summary, giver_id, and requirements. "
-        "A requirement is either "
-        '{"kind":"collect","resource":"food|wood|stone|gold|crystals|fungi|magic_fungi","count":1-99} '
-        'or {"kind":"reach","place":"<place id>"}. '
+        "Exactly one character must be revealed. "
         "Include 2 characters and 1 quest. The quest should ask for magic_fungi or reaching the place. "
-        "The premise is what a dwarf perceives on the stair."
+        "The premise is what a dwarf perceives on the stair. "
+        "All IDs must be unique and contain no spaces."
     )
     if rejection:
-        return rules + " The previous JSON was rejected: " + rejection
+        return rules + " The previous response was rejected: " + rejection
     return rules
 
 
