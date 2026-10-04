@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Optional, Type, TypeVar, Union
 
@@ -517,10 +518,10 @@ def _response_preview(response: str | dict[str, Any] | None, max_len: int = 300)
     if isinstance(response, dict):
         response = json.dumps(response, indent=2)
     
-    # Basic sanitization: remove common API key patterns
-    import re
+    # Sanitize API keys
     response = re.sub(r'(api[_-]?key["\s:]+)[^\s,"\']+', r'\1[REDACTED]', response, flags=re.IGNORECASE)
     response = re.sub(r'(bearer\s+)[^\s,"\']+', r'\1[REDACTED]', response, flags=re.IGNORECASE)
+    response = re.sub(r'xai-[A-Za-z0-9]+', 'xai-REDACTED', response)
     
     if len(response) <= max_len:
         return response
@@ -533,6 +534,7 @@ def structured_call(
     messages: list[dict],
     model_cls: Type[BaseModel],
     schema_name: str = "response",
+    label: str = "Structured call",
     convert: Optional[Callable[[BaseModel], T]] = None,
     max_tokens: int = 4000,
     reasoning_effort: str = "high",
@@ -545,6 +547,7 @@ def structured_call(
         messages: Initial conversation messages
         model_cls: Pydantic model class defining the expected response structure
         schema_name: Name for the JSON schema
+        label: Label for log messages (e.g., "World seed", "Depth seed")
         convert: Optional converter function that takes the parsed model and returns
                  a converted object. Should raise ValueError with error details on failure.
         max_tokens: Maximum tokens to generate
@@ -587,7 +590,8 @@ def structured_call(
             # Log rejection with preview
             preview = _response_preview(raw_response)
             logger.warning(
-                "Structured call rejected on attempt %d: %s: %s. Response preview: %s",
+                "%s rejected on attempt %d: %s: %s. Response preview: %s",
+                label,
                 attempt + 1,
                 exc_name,
                 error_msg,
@@ -597,7 +601,8 @@ def structured_call(
             # If this was the last attempt, give up
             if attempt + 1 >= attempts:
                 logger.error(
-                    "Structured call failed after %d attempts. Last error: %s",
+                    "%s failed after %d attempts. Last error: %s",
+                    label,
                     attempts,
                     error_msg
                 )

@@ -49,8 +49,11 @@ def test_grow_world_logs_rejection_warnings(caplog):
     assert len(warning_logs) == 2
     
     for i, log in enumerate(warning_logs, 1):
+        assert "World seed rejected" in log.message
         assert f"attempt {i}" in log.message.lower()
         assert "ValueError" in log.message
+        # Check for specific parse_world_seed error about unknown giver
+        assert "giver" in log.message.lower() and "invalid_id" in log.message
         assert "Response preview:" in log.message
         # Verify preview is truncated to ~300 chars
         assert len(log.message.split("Response preview:")[-1]) <= 350
@@ -72,7 +75,7 @@ def test_grow_depth_logs_rejection_warnings(caplog):
     assert len(warning_logs) == 2
     
     for log in warning_logs:
-        assert "rejected" in log.message.lower()
+        assert "Depth seed rejected" in log.message
         assert "ValueError" in log.message
         assert "Response preview:" in log.message
 
