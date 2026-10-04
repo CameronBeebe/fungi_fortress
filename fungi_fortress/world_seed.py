@@ -8,6 +8,7 @@ characters richer. Requirement fields are the only part the game executes.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import random
 from dataclasses import dataclass, field
@@ -16,6 +17,8 @@ from typing import Any, Callable, Optional
 from .characters import NPC, Oracle
 from .constants import STARTING_RESOURCES
 from . import llm_client, llm_world
+
+logger = logging.getLogger(__name__)
 
 COLLECTABLE = frozenset(STARTING_RESOURCES)
 MAX_CHARACTERS = 12
@@ -190,20 +193,37 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
     rejection = ""
     for _attempt in range(2):
         prompt = _seed_prompt(rejection)
+        raw_response = None
         try:
             if callable(complete):
                 result = complete(prompt)
                 # If complete returns a string (old-style _chat), parse it
                 if isinstance(result, str):
+                    raw_response = result
                     seed_dict = llm_world._extract_json(result)
                 else:
                     # If complete returns a dict (new-style), use it directly
                     seed_dict = result
                 seed = parse_world_seed(seed_dict)
             else:
-                seed = parse_world_seed(llm_world._extract_json(complete(prompt)))
+                raw_response = complete(prompt)
+                seed = parse_world_seed(llm_world._extract_json(raw_response))
         except (ValueError, json.JSONDecodeError, OSError) as exc:
             rejection = str(exc)
+            # Log rejection reason with truncated response preview
+            exc_name = type(exc).__name__
+            preview = ""
+            if raw_response and isinstance(raw_response, str):
+                preview = raw_response[:300]
+                if len(raw_response) > 300:
+                    preview += "..."
+            logger.warning(
+                "World seed rejected on attempt %d: %s: %s. Response preview: %s",
+                _attempt + 1,
+                exc_name,
+                rejection,
+                preview or "(no response captured)"
+            )
             continue
         apply_world_seed(game, seed)
         return f"{seed.title}. {seed.quests[0].title}."
@@ -336,20 +356,37 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
 
     rejection = ""
     for _attempt in range(2):
+        raw_response = None
         try:
             if callable(complete):
                 result = complete(_depth_prompt(rejection))
                 # If complete returns a string (old-style _chat), parse it
                 if isinstance(result, str):
+                    raw_response = result
                     seed_dict = llm_world._extract_json(result)
                 else:
                     # If complete returns a dict (new-style), use it directly
                     seed_dict = result
                 seed = parse_world_seed(seed_dict)
             else:
-                seed = parse_world_seed(llm_world._extract_json(complete(_depth_prompt(rejection))))
+                raw_response = complete(_depth_prompt(rejection))
+                seed = parse_world_seed(llm_world._extract_json(raw_response))
         except (ValueError, json.JSONDecodeError, OSError) as exc:
             rejection = str(exc)
+            # Log rejection reason with truncated response preview
+            exc_name = type(exc).__name__
+            preview = ""
+            if raw_response and isinstance(raw_response, str):
+                preview = raw_response[:300]
+                if len(raw_response) > 300:
+                    preview += "..."
+            logger.warning(
+                "Depth seed rejected on attempt %d: %s: %s. Response preview: %s",
+                _attempt + 1,
+                exc_name,
+                rejection,
+                preview or "(no response captured)"
+            )
             continue
         game.depth_seed = seed
         return f"{seed.title}. {seed.quests[0].title}."
