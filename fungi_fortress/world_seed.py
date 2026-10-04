@@ -20,6 +20,21 @@ from . import llm_client, llm_world
 
 logger = logging.getLogger(__name__)
 
+
+def _response_preview(response: str | dict[str, Any] | None, max_len: int = 300) -> str:
+    """Format a response for logging, truncating to max_len characters."""
+    if not response:
+        return "(no response captured)"
+    
+    if isinstance(response, dict):
+        response = json.dumps(response, indent=2)
+    
+    if len(response) <= max_len:
+        return response
+    
+    return response[:max_len] + "..."
+
+
 COLLECTABLE = frozenset(STARTING_RESOURCES)
 MAX_CHARACTERS = 12
 MAX_PLACES = 12
@@ -203,6 +218,7 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
                     seed_dict = llm_world._extract_json(result)
                 else:
                     # If complete returns a dict (new-style), use it directly
+                    raw_response = result
                     seed_dict = result
                 seed = parse_world_seed(seed_dict)
             else:
@@ -210,19 +226,12 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
                 seed = parse_world_seed(llm_world._extract_json(raw_response))
         except (ValueError, json.JSONDecodeError, OSError) as exc:
             rejection = str(exc)
-            # Log rejection reason with truncated response preview
-            exc_name = type(exc).__name__
-            preview = ""
-            if raw_response and isinstance(raw_response, str):
-                preview = raw_response[:300]
-                if len(raw_response) > 300:
-                    preview += "..."
             logger.warning(
                 "World seed rejected on attempt %d: %s: %s. Response preview: %s",
                 _attempt + 1,
-                exc_name,
+                type(exc).__name__,
                 rejection,
-                preview or "(no response captured)"
+                _response_preview(raw_response)
             )
             continue
         apply_world_seed(game, seed)
@@ -234,8 +243,9 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
 
 def _seed_prompt(rejection: str = "") -> str:
     rules = (
-        "Write a JSON object for one Fungi Fortress world. "
-        "Return only JSON. ids have no spaces. "
+        "Return one JSON object with exactly these top-level keys: "
+        "title (string), premise (string), characters (array), places (array), quests (array). "
+        "ids have no spaces. "
         "characters need id, name, description, kind, and may include faction, motive, secret, voice. "
         "kind is kin or revealed. Exactly one character is revealed. Kin are ordinary people who covet spice. "
         "The revealed figure lives in the mycelium and is only half-present at a low dose. "
@@ -366,6 +376,7 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
                     seed_dict = llm_world._extract_json(result)
                 else:
                     # If complete returns a dict (new-style), use it directly
+                    raw_response = result
                     seed_dict = result
                 seed = parse_world_seed(seed_dict)
             else:
@@ -373,19 +384,12 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
                 seed = parse_world_seed(llm_world._extract_json(raw_response))
         except (ValueError, json.JSONDecodeError, OSError) as exc:
             rejection = str(exc)
-            # Log rejection reason with truncated response preview
-            exc_name = type(exc).__name__
-            preview = ""
-            if raw_response and isinstance(raw_response, str):
-                preview = raw_response[:300]
-                if len(raw_response) > 300:
-                    preview += "..."
             logger.warning(
                 "Depth seed rejected on attempt %d: %s: %s. Response preview: %s",
                 _attempt + 1,
-                exc_name,
+                type(exc).__name__,
                 rejection,
-                preview or "(no response captured)"
+                _response_preview(raw_response)
             )
             continue
         game.depth_seed = seed
@@ -428,8 +432,10 @@ def leave_depth(game: Any) -> None:
 
 def _depth_prompt(rejection: str = "") -> str:
     rules = (
-        "Write a JSON object for one depth beneath a Mycelial Nexus. "
-        "Return only JSON. This is a mind-region, mythic and archetypal: a cathedral, court, wound, or machine-garden of spice. "
+        "Return one JSON object with exactly these top-level keys: "
+        "title (string), premise (string), characters (array), places (array), quests (array). "
+        "This is a depth beneath a Mycelial Nexus: a mind-region, mythic and archetypal, "
+        "a cathedral, court, wound, or machine-garden of spice. "
         "Spice is rarer and stronger here than on the surface. "
         "ids have no spaces. "
         "characters need id, name, description, kind, and may include faction, motive, secret, voice. "
