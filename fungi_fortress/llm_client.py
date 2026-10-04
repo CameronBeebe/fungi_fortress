@@ -195,7 +195,7 @@ class MockLLMProvider:
         else:
             narrative = self.RESPONSES["default"]
         
-        # Return structured JSON response
+        # Return structured JSON response matching NpcReply schema
         import json
         return json.dumps({
             "narrative": narrative,
@@ -227,7 +227,6 @@ class XAIProvider:
         messages: list[dict],
         max_tokens: int = 1000,
         reasoning_effort: str = "high",
-        use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
         """Non-streaming chat completion with XAI.
@@ -236,8 +235,7 @@ class XAIProvider:
             messages: List of message dicts
             max_tokens: Maximum tokens to generate
             reasoning_effort: XAI reasoning effort for grok-3-mini models
-            use_json_schema: Legacy flag to use hardcoded Oracle schema
-            response_format: Per-call response format schema (overrides use_json_schema)
+            response_format: Per-call response format schema
         """
         if not self._openai_available:
             raise ConnectionError("OpenAI library not installed (required for XAI API)")
@@ -263,43 +261,9 @@ class XAIProvider:
             if "grok-3-mini" in self.config.model.lower():
                 completion_params["reasoning_effort"] = reasoning_effort
             
-            # Add response format if provided (per-call schema takes precedence)
+            # Add response format if provided
             if response_format:
                 completion_params["response_format"] = response_format
-            elif use_json_schema:
-                # Legacy hardcoded Oracle schema
-                oracle_schema = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "oracle_response",
-                        "strict": True,
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "narrative": {
-                                    "type": "string",
-                                    "description": "The Oracle's narrative response"
-                                },
-                                "actions": {
-                                    "type": "array",
-                                    "description": "Game actions to execute",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "action_type": {"type": "string"},
-                                            "details": {"type": "object"}
-                                        },
-                                        "required": ["action_type", "details"],
-                                        "additionalProperties": False
-                                    }
-                                }
-                            },
-                            "required": ["narrative", "actions"],
-                            "additionalProperties": False
-                        }
-                    }
-                }
-                completion_params["response_format"] = oracle_schema
             
             completion = client.chat.completions.create(**completion_params)
             
@@ -405,7 +369,6 @@ class LLMClient:
         messages: list[dict],
         max_tokens: Optional[int] = None,
         reasoning_effort: str = "high",
-        use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
         """Send a chat completion request (non-streaming).
@@ -414,8 +377,7 @@ class LLMClient:
             messages: List of message dicts with 'role' and 'content'.
             max_tokens: Override default max tokens.
             reasoning_effort: XAI reasoning effort ("low", "medium", "high") for grok-3-mini models.
-            use_json_schema: Whether to use JSON schema for structured output (XAI only, legacy).
-            response_format: Per-call response format schema (overrides use_json_schema).
+            response_format: Per-call response format schema.
             
         Returns:
             Complete response text.
@@ -430,7 +392,7 @@ class LLMClient:
             if self._use_mock:
                 return self._provider.chat(messages, max_tokens, response_format=response_format)
             else:
-                return self._provider.chat(messages, max_tokens, reasoning_effort, use_json_schema, response_format)
+                return self._provider.chat(messages, max_tokens, reasoning_effort, response_format)
         except LLMError:
             raise
         except Exception as e:

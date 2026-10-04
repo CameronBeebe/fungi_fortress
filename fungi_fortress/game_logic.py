@@ -579,6 +579,7 @@ class GameLogic:
                     oracle_name,
                     streaming_details.get("game_context"),
                     streaming_details.get("history"),
+                    streaming_details.get("reasoning_effort", "high"),
                 )
                 self.game_state.oracle_streaming_active = True
                 self.game_state.oracle_streaming_buffer = ""

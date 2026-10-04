@@ -5,6 +5,7 @@ from unittest.mock import Mock
 
 from fungi_fortress import llm_client, llm_oracle
 from fungi_fortress.llm_client import LLMClient
+from fungi_fortress.world_seed import NpcReply
 
 
 class TestOracleMessageBuilding:
@@ -91,13 +92,13 @@ class TestOracleMessageBuilding:
 
 
 class TestOracleQueryNonStreaming:
-    """Tests for non-streaming Oracle queries."""
+    """Tests for non-streaming Oracle queries with structured output."""
     
-    def test_query_oracle_mock(self):
-        """Test querying Oracle with mock provider."""
+    def test_query_oracle_mock_returns_npc_reply(self):
+        """Test querying Oracle with mock provider returns NpcReply."""
         client = LLMClient(use_mock=True)
         
-        response = llm_oracle.query_oracle(
+        reply = llm_oracle.query_oracle(
             client=client,
             oracle_name="Test Oracle",
             player_query="Hello",
@@ -105,10 +106,13 @@ class TestOracleQueryNonStreaming:
             history=[],
         )
         
-        assert isinstance(response, str)
-        assert len(response) > 0
+        assert reply is not None
+        assert isinstance(reply, NpcReply)
+        assert isinstance(reply.narrative, str)
+        assert len(reply.narrative) > 0
         # Mock should give greeting response
-        assert "greet" in response.lower() or "mycelial" in response.lower()
+        assert "greet" in reply.narrative.lower() or "mycelial" in reply.narrative.lower()
+        assert isinstance(reply.actions, list)
     
     def test_query_oracle_different_queries(self):
         """Test Oracle gives appropriate responses to different queries."""
@@ -116,30 +120,32 @@ class TestOracleQueryNonStreaming:
         game_context = {"tick": 100, "depth": 1}
         
         # Test quest query
-        quest_response = llm_oracle.query_oracle(
+        quest_reply = llm_oracle.query_oracle(
             client=client,
             oracle_name="Test Oracle",
             player_query="What is my quest?",
             game_context=game_context,
             history=[],
         )
-        assert "path" in quest_response.lower() or "quest" in quest_response.lower()
+        assert quest_reply is not None
+        assert "path" in quest_reply.narrative.lower() or "quest" in quest_reply.narrative.lower()
         
         # Test fungi query
-        fungi_response = llm_oracle.query_oracle(
+        fungi_reply = llm_oracle.query_oracle(
             client=client,
             oracle_name="Test Oracle",
             player_query="Tell me about the fungi",
             game_context=game_context,
             history=[],
         )
-        assert "fungi" in fungi_response.lower()
+        assert fungi_reply is not None
+        assert "fungi" in fungi_reply.narrative.lower()
     
     def test_query_oracle_with_max_tokens(self):
         """Test querying Oracle with max_tokens parameter."""
         client = LLMClient(use_mock=True)
         
-        response = llm_oracle.query_oracle(
+        reply = llm_oracle.query_oracle(
             client=client,
             oracle_name="Test Oracle",
             player_query="Hello",
@@ -149,8 +155,9 @@ class TestOracleQueryNonStreaming:
         )
         
         # Should still work (mock doesn't enforce token limits strictly)
-        assert isinstance(response, str)
-        assert len(response) > 0
+        assert reply is not None
+        assert isinstance(reply, NpcReply)
+        assert len(reply.narrative) > 0
 
 
 class TestOracleQueryStreaming:
@@ -218,7 +225,7 @@ class TestOracleIntegration:
         history = []
         
         # First query
-        response1 = llm_oracle.query_oracle(
+        reply1 = llm_oracle.query_oracle(
             client=client,
             oracle_name="Test Oracle",
             player_query="Hello Oracle",
@@ -226,10 +233,11 @@ class TestOracleIntegration:
             history=history,
         )
         
-        history.append({"player": "Hello Oracle", "oracle": response1})
+        assert reply1 is not None
+        history.append({"player": "Hello Oracle", "oracle": reply1.narrative})
         
         # Second query with history
-        response2 = llm_oracle.query_oracle(
+        reply2 = llm_oracle.query_oracle(
             client=client,
             oracle_name="Test Oracle",
             player_query="What is my quest?",
@@ -237,12 +245,13 @@ class TestOracleIntegration:
             history=history,
         )
         
-        assert response1 != response2  # Different queries should get different responses
+        assert reply2 is not None
+        assert reply1.narrative != reply2.narrative  # Different queries should get different responses
         
-        history.append({"player": "What is my quest?", "oracle": response2})
+        history.append({"player": "What is my quest?", "oracle": reply2.narrative})
         
         # Third query with more history
-        response3 = llm_oracle.query_oracle(
+        reply3 = llm_oracle.query_oracle(
             client=client,
             oracle_name="Test Oracle",
             player_query="Help me find fungi",
@@ -250,8 +259,9 @@ class TestOracleIntegration:
             history=history,
         )
         
-        assert isinstance(response3, str)
-        assert len(response3) > 0
+        assert reply3 is not None
+        assert isinstance(reply3.narrative, str)
+        assert len(reply3.narrative) > 0
     
     def test_oracle_mock_indicator(self):
         """Test that code can detect when using mock provider."""
@@ -261,6 +271,69 @@ class TestOracleIntegration:
         assert client.is_mock()
         
         # This allows game to show "offline mode" indicator
+
+
+class TestTypedLLMContract:
+    """Tests for typed LLM contract (core contracts only)."""
+    
+    def test_npc_reply_schema_has_required_fields(self):
+        """Test NpcReply schema has required fields and typed actions."""
+        # Valid minimal reply
+        reply = NpcReply(narrative="Test", actions=[])
+        assert reply.narrative == "Test"
+        assert reply.actions == []
+        
+        # Valid reply with add_message action
+        from fungi_fortress.world_seed import AddMessageAction
+        reply_with_action = NpcReply(
+            narrative="The Oracle speaks",
+            actions=[AddMessageAction(action_type="add_message", text="A message")]
+        )
+        assert len(reply_with_action.actions) == 1
+        assert reply_with_action.actions[0].text == "A message"
+    
+    def test_npc_reply_actions_are_typed(self):
+        """Test that NpcReply actions have proper typed fields, not empty object details."""
+        from fungi_fortress.world_seed import SpawnCharacterAction
+        
+        # Spawn action with typed fields
+        spawn_action = SpawnCharacterAction(
+            action_type="spawn_character",
+            type="Oracle",
+            name="Mystic",
+            x=10,
+            y=20
+        )
+        
+        reply = NpcReply(
+            narrative="A figure appears",
+            actions=[spawn_action]
+        )
+        
+        # Verify action has actual typed fields, not empty 'details' object
+        assert reply.actions[0].type == "Oracle"
+        assert reply.actions[0].name == "Mystic"
+        assert reply.actions[0].x == 10
+        assert reply.actions[0].y == 20
+    
+    def test_mock_provider_returns_valid_npc_reply(self):
+        """Test mock provider returns valid NpcReply that parses correctly."""
+        client = LLMClient(use_mock=True)
+        
+        reply = llm_oracle.query_oracle(
+            client=client,
+            oracle_name="Test Oracle",
+            player_query="Hello",
+            game_context={"tick": 0, "depth": 1},
+            history=[],
+        )
+        
+        # Mock must return valid NpcReply
+        assert reply is not None
+        assert isinstance(reply, NpcReply)
+        assert isinstance(reply.narrative, str)
+        assert len(reply.narrative) > 0
+        assert isinstance(reply.actions, list)
 
 
 if __name__ == "__main__":

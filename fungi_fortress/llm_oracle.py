@@ -10,6 +10,7 @@ import logging
 from typing import Any, Iterator, Optional
 
 from . import llm_client
+from .world_seed import NpcReply
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,6 @@ def build_oracle_messages(
     player_query: str,
     game_context: dict[str, Any],
     history: list[dict[str, str]],
-    enable_structured_outputs: bool = False,
 ) -> list[dict]:
     """Build message list for Oracle query.
     
@@ -28,39 +28,17 @@ def build_oracle_messages(
         player_query: Player's question
         game_context: Dict with tick, depth, mission, resources, etc.
         history: Recent conversation history
-        enable_structured_outputs: Whether to request JSON schema format
         
     Returns:
         List of message dicts for LLM API
     """
-    # System message with action instructions
+    # System message
     system_content = (
         f"You are {oracle_name}, a wise, ancient, and somewhat cryptic Oracle "
         f"in the Fungi Fortress. Respond to the player's query with insightful, "
         f"thematic, and sometimes enigmatic guidance. Your responses should be "
         f"a single paragraph."
     )
-    
-    # Add action instructions based on output format
-    if enable_structured_outputs:
-        system_content += (
-            "\n\nYour entire response MUST be a single JSON object. This JSON object must have two keys: "
-            "'narrative' (string) and 'actions' (array). "
-            "The 'narrative' should contain your textual response to the player. "
-            "The 'actions' array should contain any game actions to execute. Each action in the array "
-            "must be an object with 'action_type' (string) and 'details' (object) keys. "
-            "Example: "
-            '{"narrative": "A strange energy emanates from the east.", "actions": [{"action_type": "add_message", "details": {"text": "Energy pulse detected."}}]} '
-            "If no actions are needed, provide an empty array for 'actions'."
-        )
-    else:
-        system_content += (
-            "\n\nIf you wish to suggest a game event or action, embed it in your response using the format: "
-            "ACTION::action_type::{\"json_key\": \"json_value\"}. For example: "
-            "ACTION::add_message::{\"text\": \"A strange energy emanates from the east.\"} or "
-            "ACTION::spawn_character::{\"type\": \"Mystic Fungoid\", \"name\": \"Glimmercap\", \"x\": 10, \"y\": 12}. "
-            "Use double quotes in JSON and ensure the JSON is valid. Actions are optional - only include them if meaningful to your response."
-        )
     
     # Build context string
     context_parts = []
@@ -108,9 +86,13 @@ def query_oracle_streaming(
     game_context: dict[str, Any],
     history: list[dict[str, str]],
     max_tokens: Optional[int] = None,
-    enable_structured_outputs: bool = False,
+    reasoning_effort: str = "high",
 ) -> Iterator[str]:
-    """Query the Oracle with streaming response.
+    """Query the Oracle with streaming response (narrative only, no structured actions).
+    
+    Note: xAI structured outputs don't support streaming, so this function streams
+    raw narrative text without typed actions. For structured replies with actions,
+    use query_oracle() instead.
     
     Args:
         client: LLM client instance
@@ -119,7 +101,7 @@ def query_oracle_streaming(
         game_context: Game state context
         history: Recent conversation history
         max_tokens: Max tokens to generate
-        enable_structured_outputs: Whether to request JSON schema format
+        reasoning_effort: Reasoning effort level (from config)
         
     Yields:
         Response chunks as they arrive
@@ -127,7 +109,7 @@ def query_oracle_streaming(
     Raises:
         llm_client.LLMError: On API errors
     """
-    messages = build_oracle_messages(oracle_name, player_query, game_context, history, enable_structured_outputs)
+    messages = build_oracle_messages(oracle_name, player_query, game_context, history)
     
     logger.info(f"Oracle query (streaming): {player_query[:50]}...")
     
@@ -135,8 +117,8 @@ def query_oracle_streaming(
         logger.info("Using mock provider for Oracle response")
     
     try:
-        # Use high reasoning effort for Oracle interactions (XAI grok-3-mini)
-        yield from client.chat_stream(messages, max_tokens, reasoning_effort="high")
+        # No structured output for streaming
+        yield from client.chat_stream(messages, max_tokens, reasoning_effort)
     except llm_client.LLMError:
         # Re-raise typed errors
         raise
@@ -149,9 +131,9 @@ def query_oracle(
     game_context: dict[str, Any],
     history: list[dict[str, str]],
     max_tokens: Optional[int] = None,
-    enable_structured_outputs: bool = False,
-) -> str:
-    """Query the Oracle with non-streaming response.
+    reasoning_effort: str = "high",
+) -> Optional[NpcReply]:
+    """Query the Oracle with non-streaming response using structured output.
     
     Args:
         client: LLM client instance
@@ -160,24 +142,29 @@ def query_oracle(
         game_context: Game state context
         history: Recent conversation history
         max_tokens: Max tokens to generate
-        enable_structured_outputs: Whether to request JSON schema format
+        reasoning_effort: Reasoning effort level (from config)
         
     Returns:
-        Complete Oracle response
+        Validated NpcReply or None on failure
         
     Raises:
         llm_client.LLMError: On API errors
     """
-    messages = build_oracle_messages(oracle_name, player_query, game_context, history, enable_structured_outputs)
+    messages = build_oracle_messages(oracle_name, player_query, game_context, history)
     
     logger.info(f"Oracle query (non-streaming): {player_query[:50]}...")
     
     if client.is_mock():
         logger.info("Using mock provider for Oracle response")
     
-    try:
-        # Use high reasoning effort and JSON schema if requested (XAI grok-3-mini)
-        return client.chat(messages, max_tokens, reasoning_effort="high", use_json_schema=enable_structured_outputs)
-    except llm_client.LLMError:
-        # Re-raise typed errors
-        raise
+    # Use structured_call with validation
+    return llm_client.structured_call(
+        client,
+        messages,
+        NpcReply,
+        schema_name="npc_reply",
+        label="Oracle reply",
+        max_tokens=max_tokens or 1000,
+        reasoning_effort=reasoning_effort,
+        attempts=2,
+    )

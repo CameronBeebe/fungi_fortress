@@ -61,14 +61,14 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
     history_limit = history_limits.get(context_level, 3)
     trimmed_history = game_state.oracle_llm_interaction_history[-history_limit:] if game_state.oracle_llm_interaction_history else []
     
-    enable_structured_outputs = getattr(game_state.llm_config, 'enable_structured_outputs', False)
+    # Get reasoning effort from config
+    reasoning_effort = getattr(game_state.llm_config, 'reasoning_effort', 'high')
     
     messages = llm_oracle.build_oracle_messages(
         oracle_name=oracle_name,
         player_query=player_query,
         game_context=game_context,
         history=trimmed_history,
-        enable_structured_outputs=enable_structured_outputs,
     )
     
     # Convert messages to a single prompt string for compatibility
@@ -93,6 +93,7 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
             "oracle_name": oracle_name,
             "game_context": game_context,
             "history": trimmed_history,  # Use trimmed history based on context_level
+            "reasoning_effort": reasoning_effort,
         }
     }]
 
@@ -131,49 +132,70 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
     elif not timestamp_utc.endswith("Z"):
         timestamp_utc += "Z"
     
+    # Get reasoning effort from config
+    reasoning_effort = getattr(game_state.llm_config, 'reasoning_effort', 'high')
+    
     try:
-        response = llm_oracle.query_oracle(
+        reply = llm_oracle.query_oracle(
             client=client,
             oracle_name=oracle_name,
             player_query=player_query,
             game_context=game_context,
             history=trimmed_history,
             max_tokens=game_state.llm_config.max_tokens,
-            enable_structured_outputs=getattr(game_state.llm_config, 'enable_structured_outputs', False),
+            reasoning_effort=reasoning_effort,
         )
         
-        # Parse response for narrative and actions
-        parsed_narrative, parsed_actions = _parse_llm_response(response)
-        
-        # Add narrative to dialogue
-        if parsed_narrative:
+        if reply is None:
+            # Structured call failed after retries
+            error_message = "The Oracle's words are unclear and fade into silence."
             actions_to_execute.append({
                 "action_type": "add_oracle_dialogue",
-                "details": {"text": parsed_narrative, "is_llm_response": True}
+                "details": {"text": error_message, "is_llm_response": True}
             })
-        
-        # Add any game actions from the response
-        if parsed_actions:
-            actions_to_execute.extend(parsed_actions)
-        
-        # Update history with narrative only
-        game_state.oracle_llm_interaction_history.append({
-            "player": player_query,
-            "oracle": parsed_narrative
-        })
-        if len(game_state.oracle_llm_interaction_history) > 10:
-            game_state.oracle_llm_interaction_history.pop(0)
-        
-        # Log interaction
-        _log_oracle_interaction(
-            timestamp=timestamp_utc,
-            player_query=player_query,
-            response=response,
-            is_mock=client.is_mock(),
-            error=None,
-            parsed_narrative=parsed_narrative,
-            parsed_actions=parsed_actions,
-        )
+            
+            game_state.oracle_llm_interaction_history.append({
+                "player": player_query,
+                "oracle": error_message
+            })
+            
+            _log_oracle_interaction(
+                timestamp=timestamp_utc,
+                player_query=player_query,
+                response=None,
+                is_mock=client.is_mock(),
+                error="Structured call failed after retries",
+            )
+        else:
+            # Add narrative to dialogue
+            if reply.narrative:
+                actions_to_execute.append({
+                    "action_type": "add_oracle_dialogue",
+                    "details": {"text": reply.narrative, "is_llm_response": True}
+                })
+            
+            # Add any game actions from the structured reply
+            for action in reply.actions:
+                actions_to_execute.append(action.model_dump())
+            
+            # Update history with narrative only
+            game_state.oracle_llm_interaction_history.append({
+                "player": player_query,
+                "oracle": reply.narrative
+            })
+            if len(game_state.oracle_llm_interaction_history) > 10:
+                game_state.oracle_llm_interaction_history.pop(0)
+            
+            # Log interaction
+            _log_oracle_interaction(
+                timestamp=timestamp_utc,
+                player_query=player_query,
+                response=reply.model_dump_json(),
+                is_mock=client.is_mock(),
+                error=None,
+                parsed_narrative=reply.narrative,
+                parsed_actions=[action.model_dump() for action in reply.actions],
+            )
         
     except llm_client.LLMError as e:
         error_message = e.user_message()
@@ -216,6 +238,7 @@ def process_enhanced_oracle_streaming(
     oracle_name: str,
     game_context: Optional[Dict[str, Any]] = None,
     history: Optional[List[Dict[str, str]]] = None,
+    reasoning_effort: str = "high",
 ) -> Iterator[Dict[str, Any]]:
     """Process enhanced Oracle streaming with the unified client.
     
@@ -229,6 +252,7 @@ def process_enhanced_oracle_streaming(
         oracle_name: Name of the Oracle
         game_context: Game state context dict
         history: Conversation history
+        reasoning_effort: Reasoning effort level (from config)
         
     Yields:
         Action dictionaries for the game logic to process
@@ -264,8 +288,6 @@ def process_enhanced_oracle_streaming(
         def llm_iterator():
             nonlocal complete_response, error_for_log
             
-            enable_structured_outputs = getattr(llm_config, 'enable_structured_outputs', False)
-            
             try:
                 for chunk in llm_oracle.query_oracle_streaming(
                     client=client,
@@ -274,7 +296,7 @@ def process_enhanced_oracle_streaming(
                     game_context=game_context,
                     history=history,
                     max_tokens=llm_config.max_tokens,
-                    enable_structured_outputs=enable_structured_outputs,
+                    reasoning_effort=reasoning_effort,
                 ):
                     complete_response += chunk
                     yield chunk
