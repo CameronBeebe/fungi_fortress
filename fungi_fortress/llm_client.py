@@ -529,3 +529,120 @@ def create_client_from_config(
     )
     
     return LLMClient(config)
+
+
+# === Structured Call Helper ===
+
+
+def _response_preview(response: str | dict[str, Any] | None, max_len: int = 300) -> str:
+    """Format a response for logging, truncating to max_len characters.
+    
+    Sanitizes API keys and other sensitive data from logs.
+    """
+    if not response:
+        return "(no response captured)"
+    
+    if isinstance(response, dict):
+        response = json.dumps(response, indent=2)
+    
+    # Basic sanitization: remove common API key patterns
+    import re
+    response = re.sub(r'(api[_-]?key["\s:]+)[^\s,"\']+', r'\1[REDACTED]', response, flags=re.IGNORECASE)
+    response = re.sub(r'(bearer\s+)[^\s,"\']+', r'\1[REDACTED]', response, flags=re.IGNORECASE)
+    
+    if len(response) <= max_len:
+        return response
+    
+    return response[:max_len] + "..."
+
+
+def structured_call(
+    client: LLMClient,
+    messages: list[dict],
+    model_cls: Type[BaseModel],
+    schema_name: str = "response",
+    validate: Optional[callable] = None,
+    max_tokens: int = 4000,
+    attempts: int = 2,
+) -> Optional[BaseModel]:
+    """Make a structured LLM call with validation and retry.
+    
+    Args:
+        client: LLM client instance
+        messages: Initial conversation messages
+        model_cls: Pydantic model class defining the expected response structure
+        schema_name: Name for the JSON schema
+        validate: Optional semantic validator function that takes the parsed object
+                  and returns a list of error strings (empty list = valid)
+        max_tokens: Maximum tokens to generate
+        attempts: Maximum number of attempts (including retries)
+        
+    Returns:
+        Validated Pydantic model instance, or None if all attempts failed
+    """
+    if not PYDANTIC_AVAILABLE:
+        raise RuntimeError("Pydantic is required for structured_call")
+    
+    # Generate schema from Pydantic model
+    response_format = _schema_from_model(model_cls, schema_name)
+    
+    conversation = list(messages)
+    
+    for attempt in range(attempts):
+        raw_response = None
+        try:
+            # Request with schema
+            raw_response = client.chat(
+                conversation,
+                max_tokens=max_tokens,
+                reasoning_effort="low",
+                response_format=response_format
+            )
+            
+            # Parse with Pydantic
+            parsed = model_cls.model_validate_json(raw_response)
+            
+            # Run semantic validation if provided
+            if validate:
+                errors = validate(parsed)
+                if errors:
+                    error_text = "; ".join(errors)
+                    raise ValueError(f"Validation failed: {error_text}")
+            
+            # Success!
+            return parsed
+            
+        except (json.JSONDecodeError, ValueError, LLMError) as exc:
+            exc_name = type(exc).__name__
+            error_msg = str(exc)
+            
+            # Log rejection with preview
+            preview = _response_preview(raw_response)
+            logger.warning(
+                "Structured call rejected on attempt %d: %s: %s. Response preview: %s",
+                attempt + 1,
+                exc_name,
+                error_msg,
+                preview
+            )
+            
+            # If this was the last attempt, give up
+            if attempt + 1 >= attempts:
+                logger.error(
+                    "Structured call failed after %d attempts. Last error: %s",
+                    attempts,
+                    error_msg
+                )
+                return None
+            
+            # Retry with error appended to conversation
+            conversation.append({
+                "role": "assistant",
+                "content": raw_response or "(no response)"
+            })
+            conversation.append({
+                "role": "user",
+                "content": f"That response was rejected: {error_msg}. Please fix the issues and try again."
+            })
+    
+    return None
