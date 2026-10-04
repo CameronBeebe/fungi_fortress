@@ -58,7 +58,7 @@ If not set, the game automatically uses the mock provider.
 
 ```ini
 [LLM]
-model_name = grok-3-mini       # XAI model (default)
+model_name = grok-4.3          # XAI model (default)
 context_level = medium         # low, medium, high
 max_tokens = 1000              # Response length limit
 enable_streaming = true        # Word-by-word streaming
@@ -87,10 +87,7 @@ The XAI provider connects to `https://api.x.ai/v1` using the OpenAI SDK:
 
 ### Available Models
 
-- `grok-3-mini` (default, recommended)
-- `grok-3-mini-fast`
-- `grok-3`
-- `grok-3-beta`
+- `grok-4.3` (default, recommended)
 - `grok-2-1212`
 - `grok-beta`
 - `grok-vision-beta`
@@ -99,7 +96,7 @@ The XAI provider connects to `https://api.x.ai/v1` using the OpenAI SDK:
 
 #### `reasoning_effort`
 
-Controls the depth of reasoning for `grok-3-mini` models:
+Controls the depth of reasoning (none/low/medium/high/xhigh):
 - `"high"` - Oracle dialogue (better quality, slower)
 - `"low"` - World seed generation (faster, cheaper)
 - `"medium"` - balanced
@@ -243,7 +240,7 @@ def test_client_uses_mock_without_key():
     assert client.is_mock()
 
 def test_client_with_xai_key():
-    config = LLMClientConfig(model="grok-3-mini", api_key="xai-test-key")
+    config = LLMClientConfig(model="grok-4.3", api_key="xai-test-key")
     client = LLMClient(config)
     assert not client.is_mock()
 ```

@@ -24,10 +24,7 @@ cp llm_config.ini.example llm_config.ini
 ```
 
 Available XAI models:
-- `grok-3-mini` (default, recommended)
-- `grok-3-mini-fast`
-- `grok-3`
-- `grok-3-beta`
+- `grok-4.3` (default, recommended)
 - `grok-2-1212`
 - `grok-beta`
 - `grok-vision-beta`
@@ -43,7 +40,7 @@ uv run fungi
 
 Edit `llm_config.ini` to customize:
 
-- **model_name**: Choose your preferred XAI model (default: `grok-3-mini`)
+- **model_name**: Choose your preferred XAI model (default: `grok-4.3`)
 - **context_level**: `low`, `medium` (default), `high` - controls game context sent to Oracle
 - **max_tokens**: Response length limit (cost control, default: 1000)
 - **enable_structured_outputs**: Use JSON Schema for reliable action parsing (default: false)

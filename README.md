@@ -251,9 +251,7 @@ The unified LLM client supports both online (xAI/Grok) and offline (mock) modes.
 The Oracle uses **XAI (Grok)** via `https://api.x.ai/v1`:
 
 - **Available Models**:
-  - `grok-3-mini` (default, recommended)
-  - `grok-3-mini-fast`
-  - `grok-3`, `grok-3-beta`
+  - `grok-4.3` (default, recommended)
   - `grok-2-1212`
   - `grok-beta`, `grok-vision-beta`
 
@@ -276,10 +274,9 @@ Copy `llm_config.ini.example` to `llm_config.ini` and configure your settings:
 # If not set, the game uses the built-in mock provider (offline mode)
 
 # Model to use (XAI Grok models only):
-#   grok-3-mini (default, recommended)
-#   grok-3-mini-fast, grok-3, grok-3-beta
+#   grok-4.3 (default, recommended)
 #   grok-2-1212, grok-beta, grok-vision-beta
-model_name = grok-3-mini
+model_name = grok-4.3
 
 # Context level for game information (low, medium, high)
 # low = tick + depth, 1 history turn
