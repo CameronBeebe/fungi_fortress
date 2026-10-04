@@ -317,7 +317,7 @@ class XAIProvider:
         except Exception as e:
             raise BadResponseError(f"Unexpected XAI error: {e}") from e
     
-    def chat_stream(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: str = "high") -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: str = "low") -> Iterator[str]:
         """Streaming chat completion with XAI."""
         if not self._openai_available:
             raise ConnectionError("OpenAI library not installed (required for XAI API)")
@@ -398,7 +398,7 @@ class LLMClient:
         self,
         messages: list[dict],
         max_tokens: Optional[int] = None,
-        reasoning_effort: str = "high",
+        reasoning_effort: str = "low",
         use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
@@ -431,7 +431,7 @@ class LLMClient:
             logger.error(f"Unexpected error in chat: {e}")
             raise BadResponseError(f"Unexpected error: {e}") from e
     
-    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: str = "high") -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: str = "low") -> Iterator[str]:
         """Send a streaming chat completion request.
         
         Args:
@@ -531,7 +531,7 @@ def structured_call(
     label: str = "Structured call",
     convert: Optional[Callable[[BaseModel], T]] = None,
     max_tokens: int = 4000,
-    reasoning_effort: str = "high",
+    reasoning_effort: str = "low",
     attempts: int = 2,
 ) -> Optional[Union[BaseModel, T]]:
     """Make a structured LLM call with validation and retry.
