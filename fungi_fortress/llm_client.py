@@ -8,11 +8,9 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import re
-from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Optional, Type, TypeVar, Union
 
+import openai
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -198,16 +196,13 @@ class XAIProvider:
     def __init__(self, config):
         """Initialize with config_manager.LLMConfig."""
         self.config = config
-        self._openai_available = self._check_openai()
-    
-    def _check_openai(self) -> bool:
-        """Check if OpenAI library is available (used for XAI API calls)."""
-        try:
-            import openai
-            return True
-        except ImportError:
-            logger.warning("openai library not available (required for XAI)")
-            return False
+        # Build OpenAI client once in __init__
+        self.client = openai.OpenAI(
+            api_key=config.api_key,
+            base_url="https://api.x.ai/v1",
+            timeout=config.timeout_seconds,
+            max_retries=config.max_retries
+        )
     
     def chat(
         self,
@@ -226,17 +221,7 @@ class XAIProvider:
             use_json_schema: Legacy flag to use hardcoded Oracle schema
             response_format: Per-call response format schema (overrides use_json_schema)
         """
-        if not self._openai_available:
-            raise ConnectionError("OpenAI library not installed (required for XAI API)")
-        
-        import openai
-        
         try:
-            client = openai.OpenAI(
-                api_key=self.config.api_key,
-                base_url="https://api.x.ai/v1",
-                timeout=self.config.timeout_seconds
-            )
             
             # Build completion parameters
             completion_params = {
@@ -285,7 +270,7 @@ class XAIProvider:
                 }
                 completion_params["response_format"] = oracle_schema
             
-            completion = client.chat.completions.create(**completion_params)
+            completion = self.client.chat.completions.create(**completion_params)
             
             content = completion.choices[0].message.content
             if not content:
