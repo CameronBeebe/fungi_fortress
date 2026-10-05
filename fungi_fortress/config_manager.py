@@ -93,7 +93,7 @@ def _validate_fields(config: LLMConfig) -> None:
     
     # Validate reasoning_effort
     if config.reasoning_effort not in ALLOWED_REASONING_EFFORTS:
-        default_value = field_defaults.get("reasoning_effort", "low")
+        default_value = field_defaults["reasoning_effort"]
         logger.warning(
             f"Config field 'reasoning_effort' value '{config.reasoning_effort}' not in "
             f"{ALLOWED_REASONING_EFFORTS}. Using default: '{default_value}'"
@@ -102,7 +102,7 @@ def _validate_fields(config: LLMConfig) -> None:
     
     # Validate context_level
     if config.context_level not in ALLOWED_CONTEXT_LEVELS:
-        default_value = field_defaults.get("context_level", "medium")
+        default_value = field_defaults["context_level"]
         logger.warning(
             f"Config field 'context_level' value '{config.context_level}' not in "
             f"{ALLOWED_CONTEXT_LEVELS}. Using default: '{default_value}'"

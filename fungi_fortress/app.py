@@ -131,7 +131,7 @@ def game_loop(stdscr: curses.window):
     logging.info("Loading LLM configuration...")
     llm_config = load_llm_config()
     
-    # Log the loaded  masking the API key
+        # Log the loaded config, masking the API key
     if llm_config:
         masked_api_key = "'****'" if llm_config.api_key and llm_config.is_real_api_key_present else f"'{llm_config.api_key}'"
         logging.info(f"Loaded llm_config. API Key: {masked_api_key}, Model: {llm_config.model_name}, Real Key Present: {llm_config.is_real_api_key_present}, Type: {type(llm_config)}")
