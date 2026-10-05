@@ -15,16 +15,12 @@ PACKAGE_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CONFIG_FILENAME = "llm_config.ini"
 # --- End Path configuration ---
 
-# --- LLM defaults (single source of truth) ---
-DEFAULT_MODEL = "grok-4.3"
-DEFAULT_REASONING_EFFORT = "low"
-# --- End LLM defaults ---
-
 @dataclass
 class LLMConfig:
-    """Configuration for XAI LLM interactions."""
+    """Configuration for XAI LLM interactions (defaults are single source of truth)."""
     api_key: Optional[str] = field(default=None, repr=False)  # Redacted from repr to prevent leaks
-    model_name: str = DEFAULT_MODEL
+    model_name: str = "grok-4.3"
+    reasoning_effort: str = "low"  # XAI reasoning effort (none/low/medium/high/xhigh)
     context_level: str = "medium"  # Default context level (low, medium, high)
     enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
     offering_item: Optional[str] = None # Specific item Oracle might ask for (optional)
@@ -69,13 +65,7 @@ class LLMConfig:
         Returns:
             Configured LLMClient instance (may be mock if no valid API key)
         """
-        return llm_client.create_client_from_config(
-            model=self.model_name or DEFAULT_MODEL,
-            api_key=self.api_key,
-            max_tokens=self.max_tokens,
-            timeout_seconds=self.timeout_seconds,
-            temperature=0.7,
-        )
+        return llm_client.LLMClient(self)
 
 def get_xai_api_key_from_env() -> Optional[str]:
     """Get XAI API key from environment variables.
@@ -118,116 +108,65 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
             parser.read_file(f)
     except FileNotFoundError:
         logger.info(f"Configuration file '{config_file_path}' not found.")
-        
-        # Check for XAI API key in environment even without config file
+        # Use defaults from LLMConfig, override api_key from env if present
         api_key = get_xai_api_key_from_env()
-        if api_key:
-            logger.info("Found XAI_API_KEY in environment, using defaults")
-            return LLMConfig(
-                api_key=api_key,
-                model_name=DEFAULT_MODEL,
-                context_level="medium",
-                max_tokens=1000,
-                timeout_seconds=60,
-            )
-        
-        # No API key found
-        logger.info("No XAI_API_KEY found in environment. LLM will use mock provider (offline mode).")
-        return LLMConfig() 
+        return LLMConfig(api_key=api_key) 
 
-    # Default values
-    model_name: str = DEFAULT_MODEL
-    context_level: str = "medium"
+    # Start with defaults from LLMConfig dataclass
+    config = LLMConfig()
     
-    # Safety settings with defaults
-    max_tokens: int = 500
-    timeout_seconds: int = 30
-    max_retries: int = 2
-    retry_delay_seconds: float = 1.0
-    daily_request_limit: int = 100
-    enable_request_logging: bool = True
-    enable_structured_outputs: bool = True
-    enable_streaming: bool = True
-
-    # Load from [LLM] section
+    # Override api_key from environment
+    config.api_key = get_xai_api_key_from_env()
+    
+    # Override fields from [LLM] section if present
     if "LLM" in parser:
-        model_name = parser["LLM"].get("model_name", DEFAULT_MODEL)
-            
-        context_level_from_file = parser["LLM"].get("context_level")
-        if context_level_from_file in ["low", "medium", "high"]:
-            context_level = context_level_from_file
-        elif context_level_from_file:
-            logger.warning(f"Invalid 'context_level' in '{config_file_path}'. Using default '{context_level}'.")
+        if "model_name" in parser["LLM"]:
+            config.model_name = parser["LLM"]["model_name"]
         
-        # Load safety settings from config file with validation
-        try:
-            max_tokens = parser["LLM"].getint("max_tokens", fallback=500)
-            if max_tokens <= 0 or max_tokens > 4000:
-                logger.warning(f"max_tokens value {max_tokens} in config is outside safe range. Using 500.")
-                max_tokens = 500
-        except ValueError:
-            logger.warning(f"Invalid max_tokens value in config. Using default 500.")
-            max_tokens = 500
+        if "reasoning_effort" in parser["LLM"]:
+            config.reasoning_effort = parser["LLM"]["reasoning_effort"]
             
+        context_level = parser["LLM"].get("context_level")
+        if context_level in ["low", "medium", "high"]:
+            config.context_level = context_level
+        elif context_level:
+            logger.warning(f"Invalid 'context_level' in '{config_file_path}'. Using default.")
+        
+        # Load safety settings with validation
+        for field, safe_range, default in [
+            ("max_tokens", (1, 4000), 500),
+            ("timeout_seconds", (1, 120), 30),
+            ("max_retries", (0, 5), 2),
+            ("daily_request_limit", (0, 1000), 100),
+        ]:
+            try:
+                value = parser["LLM"].getint(field, fallback=getattr(config, field))
+                if not (safe_range[0] <= value <= safe_range[1]):
+                    logger.warning(f"{field} value {value} outside safe range {safe_range}. Using default.")
+                else:
+                    setattr(config, field, value)
+            except ValueError:
+                logger.warning(f"Invalid {field} value in config. Using default.")
+        
         try:
-            timeout_seconds = parser["LLM"].getint("timeout_seconds", fallback=30)
-            if timeout_seconds <= 0 or timeout_seconds > 120:
-                logger.warning(f"timeout_seconds value {timeout_seconds} in config is outside safe range. Using 30.")
-                timeout_seconds = 30
+            value = parser["LLM"].getfloat("retry_delay_seconds", fallback=config.retry_delay_seconds)
+            if not (0 <= value <= 10):
+                logger.warning(f"retry_delay_seconds value {value} outside safe range. Using default.")
+            else:
+                config.retry_delay_seconds = value
         except ValueError:
-            logger.warning(f"Invalid timeout_seconds value in config. Using default 30.")
-            timeout_seconds = 30
+            logger.warning(f"Invalid retry_delay_seconds value in config. Using default.")
             
-        try:
-            max_retries = parser["LLM"].getint("max_retries", fallback=2)
-            if max_retries < 0 or max_retries > 5:
-                logger.warning(f"max_retries value {max_retries} in config is outside safe range. Using 2.")
-                max_retries = 2
-        except ValueError:
-            logger.warning(f"Invalid max_retries value in config. Using default 2.")
-            max_retries = 2
-            
-        try:
-            retry_delay_seconds = parser["LLM"].getfloat("retry_delay_seconds", fallback=1.0)
-            if retry_delay_seconds < 0 or retry_delay_seconds > 10:
-                logger.warning(f"retry_delay_seconds value {retry_delay_seconds} in config is outside safe range. Using 1.0.")
-                retry_delay_seconds = 1.0
-        except ValueError:
-            logger.warning(f"Invalid retry_delay_seconds value in config. Using default 1.0.")
-            retry_delay_seconds = 1.0
-            
-        try:
-            daily_request_limit = parser["LLM"].getint("daily_request_limit", fallback=100)
-            if daily_request_limit < 0 or daily_request_limit > 1000:
-                logger.warning(f"daily_request_limit value {daily_request_limit} in config is outside safe range (0-1000, 0=unlimited). Using 100.")
-                daily_request_limit = 100
-        except ValueError:
-            logger.warning(f"Invalid daily_request_limit value in config. Using default 100.")
-            daily_request_limit = 100
-            
-        enable_request_logging = parser["LLM"].getboolean("enable_request_logging", fallback=True)
-        enable_structured_outputs = parser["LLM"].getboolean("enable_structured_outputs", fallback=True)
-        enable_streaming = parser["LLM"].getboolean("enable_streaming", fallback=True)
-
+        for bool_field in ["enable_request_logging", "enable_structured_outputs", "enable_streaming"]:
+            if bool_field in parser["LLM"]:
+                try:
+                    setattr(config, bool_field, parser["LLM"].getboolean(bool_field))
+                except ValueError:
+                    logger.warning(f"Invalid {bool_field} value in config. Using default.")
     else:
-        logger.warning(f"[LLM] section not found in '{config_file_path}'. LLM features may be unavailable.")
-
-    # Get API key from environment variables
-    api_key = get_xai_api_key_from_env()
-
-    return LLMConfig(
-        api_key=api_key, 
-        model_name=model_name, 
-        context_level=context_level,
-        max_tokens=max_tokens,
-        timeout_seconds=timeout_seconds,
-        max_retries=max_retries,
-        retry_delay_seconds=retry_delay_seconds,
-        daily_request_limit=daily_request_limit,
-        enable_request_logging=enable_request_logging,
-        enable_structured_outputs=enable_structured_outputs,
-        enable_streaming=enable_streaming
-    )
+        logger.warning(f"[LLM] section not found in '{config_file_path}'. Using defaults.")
+    
+    return config
 
 if __name__ == "__main__":
     # Example usage and test

@@ -6,7 +6,6 @@ from unittest.mock import Mock, patch
 from fungi_fortress import llm_client
 from fungi_fortress.llm_client import (
     LLMClient,
-    LLMClientConfig,
     MockLLMProvider,
     AuthenticationError,
     RateLimitError,
@@ -14,6 +13,7 @@ from fungi_fortress.llm_client import (
     ConnectionError as LLMConnectionError,
     BadResponseError,
 )
+from fungi_fortress.config_manager import LLMConfig
 
 
 class TestMockProvider:
@@ -85,14 +85,14 @@ class TestLLMClient:
     """Tests for the unified LLM client."""
     
     def test_client_with_no_config_uses_mock(self):
-        """Test client without config uses mock provider."""
-        client = LLMClient()
-        
+        """Test client with no API key uses mock provider."""
+        config = LLMConfig()  # No API key
+        client = LLMClient(config)
         assert client.is_mock()
     
     def test_client_with_invalid_key_uses_mock(self):
         """Test client with invalid API key uses mock provider."""
-        config = LLMClientConfig(
+        config = LLMConfig(
             model="test-model",
             api_key="YOUR_API_KEY_HERE",
         )
@@ -102,7 +102,7 @@ class TestLLMClient:
     
     def test_client_force_mock(self):
         """Test forcing mock provider even with valid config."""
-        config = LLMClientConfig(
+        config = LLMConfig(
             model="test-model",
             api_key="real-looking-key",
         )
@@ -132,7 +132,7 @@ class TestLLMClient:
     
     def test_client_with_valid_config_not_mock(self):
         """Test client with valid config is not mock."""
-        config = LLMClientConfig(
+        config = LLMConfig(
             model="test-model",
             api_key="xai-real-key",
         )
@@ -146,7 +146,7 @@ class TestLLMClient:
         """Test XAI provider with missing OpenAI library."""
         mock_check.return_value = False
         
-        config = LLMClientConfig(
+        config = LLMConfig(
             model="test-model",
             api_key="xai-test-key",
         )
@@ -172,7 +172,7 @@ class TestErrorMapping:
             body=None
         )
         
-        config = LLMClientConfig(
+        config = LLMConfig(
             model="test-model",
             api_key="invalid-key",
         )
@@ -194,7 +194,7 @@ class TestErrorMapping:
             body=None
         )
         
-        config = LLMClientConfig(
+        config = LLMConfig(
             model="test-model",
             api_key="test-key",
         )
@@ -214,7 +214,7 @@ class TestErrorMapping:
             request=Mock()
         )
         
-        config = LLMClientConfig(
+        config = LLMConfig(
             model="test-model",
             api_key="test-key",
         )
@@ -234,7 +234,7 @@ class TestErrorMapping:
             request=Mock()
         )
         
-        config = LLMClientConfig(
+        config = LLMConfig(
             model="test-model",
             api_key="test-key",
         )
