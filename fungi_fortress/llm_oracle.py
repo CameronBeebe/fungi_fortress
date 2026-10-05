@@ -10,7 +10,7 @@ import logging
 from typing import Any, Iterator, Optional
 
 from . import llm_client
-from .world_seed import NpcReply
+from .npc_reply import NpcReply
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +85,6 @@ def query_oracle_streaming(
     player_query: str,
     game_context: dict[str, Any],
     history: list[dict[str, str]],
-    max_tokens: Optional[int] = None,
-    reasoning_effort: str = "high",
 ) -> Iterator[str]:
     """Query the Oracle with streaming response (narrative only, no structured actions).
     
@@ -100,8 +98,6 @@ def query_oracle_streaming(
         player_query: Player's question
         game_context: Game state context
         history: Recent conversation history
-        max_tokens: Max tokens to generate
-        reasoning_effort: Reasoning effort level (from config)
         
     Yields:
         Response chunks as they arrive
@@ -118,7 +114,7 @@ def query_oracle_streaming(
     
     try:
         # No structured output for streaming
-        yield from client.chat_stream(messages, max_tokens, reasoning_effort)
+        yield from client.chat_stream(messages)
     except llm_client.LLMError:
         # Re-raise typed errors
         raise
@@ -130,8 +126,6 @@ def query_oracle(
     player_query: str,
     game_context: dict[str, Any],
     history: list[dict[str, str]],
-    max_tokens: Optional[int] = None,
-    reasoning_effort: str = "high",
 ) -> Optional[NpcReply]:
     """Query the Oracle with non-streaming response using structured output.
     
@@ -141,8 +135,6 @@ def query_oracle(
         player_query: Player's question
         game_context: Game state context
         history: Recent conversation history
-        max_tokens: Max tokens to generate
-        reasoning_effort: Reasoning effort level (from config)
         
     Returns:
         Validated NpcReply or None on failure
@@ -164,7 +156,5 @@ def query_oracle(
         NpcReply,
         schema_name="npc_reply",
         label="Oracle reply",
-        max_tokens=max_tokens or 1000,
-        reasoning_effort=reasoning_effort,
         attempts=2,
     )

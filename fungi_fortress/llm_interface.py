@@ -27,14 +27,9 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
     """
     event_type = event_data.get("type")
     
+    # Oracle queries always use non-streaming to get typed actions
     if event_type == "ORACLE_QUERY" and game_state.llm_config:
-        # Check if streaming is enabled
-        enable_streaming = getattr(game_state.llm_config, 'enable_streaming', True)
-        
-        if enable_streaming:
-            return handle_oracle_query_streaming(event_data, game_state)
-        else:
-            return handle_oracle_query_non_streaming(event_data, game_state)
+        return handle_oracle_query_non_streaming(event_data, game_state)
     
     return None
 
@@ -132,18 +127,58 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
     elif not timestamp_utc.endswith("Z"):
         timestamp_utc += "Z"
     
-    # Get reasoning effort from config
-    reasoning_effort = getattr(game_state.llm_config, 'reasoning_effort', 'high')
+    # Build messages
+    messages = llm_oracle.build_oracle_messages(
+        oracle_name=oracle_name,
+        player_query=player_query,
+        game_context=game_context,
+        history=trimmed_history,
+    )
+    
+    # Validator for NpcReply
+    def validate_reply(reply):
+        """Validate NpcReply semantics and raise ValueError with specific errors."""
+        from .npc_reply import NpcReply, SpawnCharacterAction
+        from .constants import MAP_WIDTH, MAP_HEIGHT
+        
+        if not isinstance(reply, NpcReply):
+            return reply
+        
+        errors = []
+        
+        for action in reply.actions:
+            if isinstance(action, SpawnCharacterAction):
+                # Check bounds
+                if action.x < 0 or action.x >= MAP_WIDTH:
+                    errors.append(f"spawn x={action.x} is out of bounds (must be 0-{MAP_WIDTH-1})")
+                if action.y < 0 or action.y >= MAP_HEIGHT:
+                    errors.append(f"spawn y={action.y} is out of bounds (must be 0-{MAP_HEIGHT-1})")
+                
+                # Check tile is walkable if in bounds
+                if 0 <= action.x < MAP_WIDTH and 0 <= action.y < MAP_HEIGHT:
+                    tile = game_state.get_tile(action.x, action.y) if hasattr(game_state, "get_tile") else game_state.map[action.y][action.x]
+                    if not tile or not getattr(tile, "walkable", False):
+                        errors.append(f"spawn location ({action.x}, {action.y}) is not walkable")
+                
+                # Check character type
+                valid_types = {"Oracle", "NPC"}
+                if action.type not in valid_types:
+                    errors.append(f"spawn type '{action.type}' is invalid (must be one of {valid_types})")
+        
+        if errors:
+            raise ValueError("; ".join(errors))
+        
+        return reply
     
     try:
-        reply = llm_oracle.query_oracle(
-            client=client,
-            oracle_name=oracle_name,
-            player_query=player_query,
-            game_context=game_context,
-            history=trimmed_history,
-            max_tokens=game_state.llm_config.max_tokens,
-            reasoning_effort=reasoning_effort,
+        reply = llm_client.structured_call(
+            client,
+            messages,
+            llm_oracle.NpcReply,
+            schema_name="npc_reply",
+            label="Oracle reply",
+            convert=validate_reply,
+            attempts=2,
         )
         
         if reply is None:
@@ -175,8 +210,14 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
                 })
             
             # Add any game actions from the structured reply
+            # Convert typed actions to game_logic format (action_type + details)
             for action in reply.actions:
-                actions_to_execute.append(action.model_dump())
+                action_dict = action.model_dump()
+                action_type = action_dict.pop("action_type")
+                actions_to_execute.append({
+                    "action_type": action_type,
+                    "details": action_dict
+                })
             
             # Update history with narrative only
             game_state.oracle_llm_interaction_history.append({
@@ -194,7 +235,7 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
                 is_mock=client.is_mock(),
                 error=None,
                 parsed_narrative=reply.narrative,
-                parsed_actions=[action.model_dump() for action in reply.actions],
+                parsed_actions=[{"action_type": action.model_dump()["action_type"], "details": {k: v for k, v in action.model_dump().items() if k != "action_type"}} for action in reply.actions],
             )
         
     except llm_client.LLMError as e:
@@ -238,7 +279,6 @@ def process_enhanced_oracle_streaming(
     oracle_name: str,
     game_context: Optional[Dict[str, Any]] = None,
     history: Optional[List[Dict[str, str]]] = None,
-    reasoning_effort: str = "high",
 ) -> Iterator[Dict[str, Any]]:
     """Process enhanced Oracle streaming with the unified client.
     
@@ -252,7 +292,6 @@ def process_enhanced_oracle_streaming(
         oracle_name: Name of the Oracle
         game_context: Game state context dict
         history: Conversation history
-        reasoning_effort: Reasoning effort level (from config)
         
     Yields:
         Action dictionaries for the game logic to process
@@ -295,8 +334,6 @@ def process_enhanced_oracle_streaming(
                     player_query=player_query,
                     game_context=game_context,
                     history=history,
-                    max_tokens=llm_config.max_tokens,
-                    reasoning_effort=reasoning_effort,
                 ):
                     complete_response += chunk
                     yield chunk

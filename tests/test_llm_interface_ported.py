@@ -124,19 +124,18 @@ def test_handle_game_event_non_streaming():
 
 
 def test_handle_game_event_streaming():
-    """Test handle_game_event with streaming enabled."""
+    """Test handle_game_event with Oracle (now always uses non-streaming for typed actions)."""
     config = LLMConfig(api_key=None, model_name="grok-3-mini", enable_streaming=True)
     game_state = MockGameState(config=config)
     event_data = {"type": "ORACLE_QUERY", "details": {"query_text": "Hello", "oracle_name": "Test Oracle"}}
     
     actions = handle_game_event(event_data, game_state)
     
-    # Should return start_enhanced_oracle_streaming action
+    # Oracle now always uses non-streaming typed path, so should return dialogue + state actions
     assert actions is not None
-    assert len(actions) == 1
-    assert actions[0]["action_type"] == "start_enhanced_oracle_streaming"
-    assert "player_query" in actions[0]["details"]
-    assert "game_context" in actions[0]["details"]
+    assert len(actions) == 2
+    assert actions[0]["action_type"] == "add_oracle_dialogue"
+    assert actions[1]["action_type"] == "set_oracle_state"
 
 
 # Config tests

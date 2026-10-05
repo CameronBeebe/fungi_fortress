@@ -23,42 +23,6 @@ from . import llm_client, llm_world
 
 logger = logging.getLogger(__name__)
 
-
-# === NPC Reply Models ===
-
-
-class ActionKind(str, Enum):
-    """Valid action types for NPC/Oracle replies."""
-    add_message = "add_message"
-    spawn_character = "spawn_character"
-
-
-class AddMessageAction(BaseModel):
-    """Action to add a debug message."""
-    action_type: Literal["add_message"]
-    text: str
-
-
-class SpawnCharacterAction(BaseModel):
-    """Action to spawn a character on the map."""
-    action_type: Literal["spawn_character"]
-    type: str
-    name: str
-    x: int = Field(ge=0)
-    y: int = Field(ge=0)
-
-
-class NpcReply(BaseModel):
-    """Reply from an NPC or Oracle with narrative and optional actions.
-    
-    Used for all NPC dialogue, including the Oracle.
-    """
-    narrative: str = Field(description="The NPC's spoken response")
-    actions: list[Union[AddMessageAction, SpawnCharacterAction]] = Field(
-        default_factory=list,
-        description="Game actions to execute"
-    )
-
 COLLECTABLE = frozenset(STARTING_RESOURCES)
 MAX_CHARACTERS = 12
 MAX_PLACES = 12

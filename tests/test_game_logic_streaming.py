@@ -10,7 +10,9 @@ from fungi_fortress.config_manager import LLMConfig
 
 
 def test_game_logic_streaming_oracle_with_mock_client(monkeypatch):
-    """Test GameLogic streaming path with mock LLM client.
+    """Test GameLogic Oracle interaction with mock LLM client (non-streaming path).
+    
+    Oracle now always uses non-streaming typed path to get structured actions.
     
     Verifies:
     1. Oracle history grows by exactly 1 turn
@@ -26,17 +28,22 @@ def test_game_logic_streaming_oracle_with_mock_client(monkeypatch):
     def mock_response_with_action(self, user_content):
         # Call original to get the response type
         import re
+        import json
         normalized = user_content.lower()
         def has_word(pattern: str) -> bool:
             return bool(re.search(r'\b' + re.escape(pattern) + r'\b', normalized))
         
-        # For fungi queries, return ACTION:: format (not JSON) for testing
+        # For fungi queries, return JSON format (Oracle now uses non-streaming)
         if any(has_word(word) for word in ["fungi", "mushroom", "spore"]):
-            return (
-                "The sacred fungi hold memories of ages past. They grow in places of deep magic, "
-                "where stone and root intertwine.\n\n"
-                "ACTION::add_message::{\"text\": \"Test action from mock\"}"
-            )
+            return json.dumps({
+                "narrative": "The sacred fungi hold memories of ages past. They grow in places of deep magic, where stone and root intertwine.",
+                "actions": [
+                    {
+                        "action_type": "add_message",
+                        "text": "Test action from mock"
+                    }
+                ]
+            })
         else:
             # Use original for other queries
             return original_mock_response(self, user_content)
@@ -81,16 +88,16 @@ def test_game_logic_streaming_oracle_with_mock_client(monkeypatch):
         "oracle_name": "Test Oracle"
     })
     
-    # Process until streaming completes (mock needs ~325 ticks, cap at 2000)
+    # Process until Oracle completes (non-streaming should be immediate)
     game_logic.update()
     
-    max_ticks = 2000
+    max_ticks = 100
     for tick in range(max_ticks):
         if game_state.oracle_interaction_state == "AWAITING_PROMPT":
             break
         game_logic.update()
     else:
-        pytest.fail(f"Streaming did not complete within {max_ticks} ticks")
+        pytest.fail(f"Oracle query did not complete within {max_ticks} ticks")
     
     # Verify 1: History grew by exactly 1 turn
     final_history_len = len(game_state.oracle_llm_interaction_history)
@@ -116,7 +123,7 @@ def test_game_logic_streaming_oracle_with_mock_client(monkeypatch):
     # Verify 3: Mock action ran exactly once (not doubled)
     assert add_message_count == 1, f"add_message action ran {add_message_count} times (expected exactly 1)"
     
-    print(f"✓ Streaming test passed:")
+    print(f"✓ Oracle test passed (non-streaming typed path):")
     print(f"  - History grew from {initial_history_len} to {final_history_len}")
     print(f"  - No disruption errors")
     print(f"  - Completed in {tick} ticks")
