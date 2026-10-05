@@ -58,7 +58,7 @@ If not set, the game automatically uses the mock provider.
 
 ```ini
 [LLM]
-model_name = grok-4.3          # XAI model (see llm_config.ini.example for default)
+# model_name = grok-4.3       # XAI model (default: see LLMConfig in config_manager.py)
 context_level = medium         # low, medium, high
 max_tokens = 1000              # Response length limit
 enable_streaming = true        # Word-by-word streaming

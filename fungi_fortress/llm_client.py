@@ -134,7 +134,7 @@ class MockLLMProvider:
         user_content = self._extract_user_content(messages)
         return self._mock_response(user_content)
     
-    def chat_stream(self, messages: list[dict], max_tokens: int = 1000) -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None) -> Iterator[str]:
         """Streaming mock response."""
         self._call_count += 1
         user_content = self._extract_user_content(messages)
@@ -243,7 +243,7 @@ class XAIProvider:
                 "model": self.config.model_name,
                 "messages": messages,
                 "max_tokens": max_tokens if max_tokens is not None else self.config.max_tokens,
-                "temperature": 0.7,
+                "temperature": self.config.temperature,
                 "reasoning_effort": reasoning_effort if reasoning_effort is not None else self.config.reasoning_effort,
             }
             
@@ -323,7 +323,7 @@ class XAIProvider:
                 "model": self.config.model_name,
                 "messages": messages,
                 "max_tokens": max_tokens if max_tokens is not None else self.config.max_tokens,
-                "temperature": 0.7,
+                "temperature": self.config.temperature,
                 "stream": True,
                 "reasoning_effort": reasoning_effort if reasoning_effort is not None else self.config.reasoning_effort,
             }
@@ -407,8 +407,7 @@ class LLMClient:
         """
         try:
             if self._use_mock:
-                # Mock provider doesn't use max_tokens from config
-                return self._provider.chat(messages, max_tokens or 1000, response_format=response_format)
+                return self._provider.chat(messages, max_tokens or self.config.max_tokens, response_format=response_format)
             else:
                 return self._provider.chat(messages, max_tokens, reasoning_effort, use_json_schema, response_format)
         except LLMError:
@@ -433,7 +432,7 @@ class LLMClient:
         """
         try:
             if self._use_mock:
-                yield from self._provider.chat_stream(messages, max_tokens or 1000)
+                yield from self._provider.chat_stream(messages, max_tokens or self.config.max_tokens)
             else:
                 yield from self._provider.chat_stream(messages, max_tokens, reasoning_effort)
         except LLMError:

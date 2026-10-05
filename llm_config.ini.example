@@ -8,12 +8,10 @@
 # If no XAI_API_KEY is set, the game will use a deterministic mock provider
 # for offline play (Oracle will give pre-scripted responses based on keywords)
 
-# Model to use (XAI Grok models only):
-#   grok-4.3 (default, recommended)
-#   grok-2-1212
-#   grok-beta
-#   grok-vision-beta
-model_name = grok-4.3
+# Model to use (default defined in LLMConfig dataclass in config_manager.py)
+# XAI Grok models: grok-4.3 (default), grok-2-1212, grok-beta, grok-vision-beta
+# Uncomment to override:
+# model_name = grok-4.3
 
 # Context detail level for game state information (low, medium, high)
 # Controls how much game context is sent to the Oracle and history size:

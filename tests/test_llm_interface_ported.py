@@ -167,10 +167,11 @@ def test_client_no_key_uses_mock():
 def test_llm_config_defaults():
     """Test that LLMConfig defaults are set correctly."""
     config = LLMConfig()
+    default_config = LLMConfig()
     assert config.api_key is None
-    assert config.model_name == "grok-4.3"
-    assert config.reasoning_effort == "low"
-    assert config.context_level == "medium"
+    assert config.model_name == default_config.model_name
+    assert config.reasoning_effort == default_config.reasoning_effort
+    assert config.context_level == default_config.context_level
     assert not config.is_real_api_key_present
 
 

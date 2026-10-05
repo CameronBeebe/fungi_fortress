@@ -272,8 +272,8 @@ Copy `llm_config.ini.example` to `llm_config.ini` and configure your settings:
 #
 # If not set, the game uses the built-in mock provider (offline mode)
 
-# Model to use (see llm_config.ini.example for default and available models)
-model_name = grok-4.3
+# Model to use (default: see LLMConfig in config_manager.py)
+# model_name = grok-4.3
 
 # Context level for game information (low, medium, high)
 # low = tick + depth, 1 history turn

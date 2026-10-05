@@ -318,10 +318,17 @@ def _seed_prompt(rejection: str = "") -> str:
 
 
 def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
-    """Get an LLM client from game configuration or environment.
+    """Get the LLM client from game's loaded config.
     
-    Returns None if no valid API key is available.
+    Args:
+        game: Game object with llm_config
+        
+    Returns:
+        LLMClient or None if no valid config/key available
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     config = getattr(game, "llm_config", None)
     if config is not None:
         try:
@@ -329,8 +336,8 @@ def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
             # Only return if it's not using mock (i.e., has a real key)
             if not client.is_mock():
                 return client
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to create LLM client for world generation: {e}")
     
     return None
 

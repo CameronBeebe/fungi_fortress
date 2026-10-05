@@ -21,6 +21,7 @@ class LLMConfig:
     api_key: Optional[str] = field(default=None, repr=False)  # Redacted from repr to prevent leaks
     model_name: str = "grok-4.3"
     reasoning_effort: str = "low"  # XAI reasoning effort (none/low/medium/high/xhigh)
+    temperature: float = 0.7  # Sampling temperature for generation
     context_level: str = "medium"  # Default context level (low, medium, high)
     enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
     offering_item: Optional[str] = None # Specific item Oracle might ask for (optional)
@@ -136,11 +137,11 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
             logger.warning(f"Invalid 'context_level' in '{config_file_path}'. Using default.")
         
         # Load safety settings with validation
-        for field, safe_range, default in [
-            ("max_tokens", (1, 4000), 500),
-            ("timeout_seconds", (1, 120), 30),
-            ("max_retries", (0, 5), 2),
-            ("daily_request_limit", (0, 1000), 100),
+        for field, safe_range in [
+            ("max_tokens", (1, 4000)),
+            ("timeout_seconds", (1, 120)),
+            ("max_retries", (0, 5)),
+            ("daily_request_limit", (0, 1000)),
         ]:
             try:
                 value = parser["LLM"].getint(field, fallback=getattr(config, field))
