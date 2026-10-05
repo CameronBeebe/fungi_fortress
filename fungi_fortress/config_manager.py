@@ -24,6 +24,9 @@ FIELD_VALIDATION_RANGES = {
     "daily_request_limit": (0, 1000),
 }
 
+# Placeholder API keys that should be treated as missing (single source of truth)
+PLACEHOLDER_API_KEYS = frozenset({"YOUR_API_KEY_HERE", "None", ""})
+
 @dataclass
 class LLMConfig:
     """Configuration for XAI LLM interactions (defaults are single source of truth)."""
@@ -35,7 +38,6 @@ class LLMConfig:
     enable_llm_fallback_responses: bool = True # Whether to use LLM for generic fallbacks if available
     offering_item: Optional[str] = None # Specific item Oracle might ask for (optional)
     offering_amount: int = 0 # Amount of specific item (if any)
-    is_real_api_key_present: bool = False # True if api_key is not None, empty, or a known placeholder
     
     # Cost control and safety settings
     max_tokens: int = 500  # Maximum tokens per response to prevent runaway costs
@@ -134,11 +136,8 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
     # Start with defaults from LLMConfig dataclass
     config = LLMConfig()
     
-    # Override api_key from environment
+    # Override api_key from environment (is_real_api_key_present computed via @property)
     config.api_key = get_xai_api_key_from_env()
-    config.is_real_api_key_present = bool(
-        config.api_key and config.api_key not in ("", "YOUR_API_KEY_HERE", "testkey123")
-    )
     
     # Override fields from [LLM] section if present
     if "LLM" in parser:

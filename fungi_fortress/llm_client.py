@@ -363,12 +363,8 @@ class LLMClient:
         """
         self.config = config
         
-        # Check if we should use mock
-        should_mock = (
-            use_mock 
-            or not config.api_key 
-            or config.api_key in ("YOUR_API_KEY_HERE", "testkey123")
-        )
+        # Check if we should use mock (use config's property for real key check)
+        should_mock = use_mock or not config.is_real_api_key_present
         self._use_mock = should_mock
         
         if self._use_mock:
