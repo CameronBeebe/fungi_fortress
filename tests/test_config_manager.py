@@ -256,5 +256,8 @@ def test_load_llm_config_logs_invalid_context_level(mock_open_func, mock_os_path
     mock_os_path_join.return_value = mock_config_path
 
     load_llm_config(file_basename)
-    # The warning message in load_llm_config uses the full path.
-    mock_logger.warning.assert_any_call(f"Invalid 'context_level' in '{mock_config_path}'. Using default.")
+    config = load_llm_config(file_basename)
+    assert config.context_level == "medium"
+    # Check that validation warned about invalid context_level
+    warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
+    assert any("context_level" in call and "super_high" in call for call in warning_calls)
