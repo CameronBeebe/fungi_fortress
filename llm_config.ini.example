@@ -12,35 +12,35 @@
 # All defaults are defined in LLMConfig dataclass in fungi_fortress/config_manager.py
 # Uncomment any line below to override the default
 
-# Model to use - XAI Grok models: grok-4.3, grok-2-1212, grok-beta, grok-vision-beta
+# Default model (see config_manager.py LLMConfig for current default):
 # model_name = grok-4.3
 
-# Context detail level for game state information
+# XAI reasoning effort (quality vs speed tradeoff):
+# Options: none, low, medium, high
+# Oracle uses low by default; world generation may adjust per-call
+# reasoning_effort = low
+
+# Sampling temperature (0.0-2.0, lower = more focused):
+# temperature = 0.7
+
+# Context detail level for game state information:
+# Options: low, medium, high
 # context_level = medium
 
 # === COST CONTROL & SAFETY SETTINGS ===
 # All these have safe defaults in LLMConfig - uncomment to customize
 
-# Maximum tokens per response
+# Maximum tokens per response:
 # max_tokens = 500
 
-# API request timeout in seconds
+# API request timeout in seconds:
 # timeout_seconds = 30
 
-# Maximum retry attempts on failure
+# Maximum retry attempts on failure:
 # max_retries = 2
 
-# Delay between retry attempts in seconds
-# retry_delay_seconds = 1.0
-
-# Daily request limit (0 = unlimited)
-# daily_request_limit = 100
-
-# Enable detailed request logging
-# enable_request_logging = true
-
-# Enable XAI structured outputs
+# Enable XAI structured outputs:
 # enable_structured_outputs = true
 
-# Enable streaming responses
+# Enable streaming responses:
 # enable_streaming = true
