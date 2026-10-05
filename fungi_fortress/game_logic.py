@@ -393,10 +393,6 @@ class GameLogic:
                 else:
                     self.game_state.add_debug_message(f"Oracle state change ignored (dialogue closed): {new_state}")
 
-                self.game_state.oracle_streaming_buffer = ""
-                self.game_state.oracle_interaction_state = "STREAMING_RESPONSE"
-                self.game_state.add_debug_message(f"Started Oracle streaming response from {oracle_name}")
-
         elif action_type == "start_oracle_dialogue_stream":
             if (self.game_state.show_oracle_dialog and 
                 self.game_state.oracle_interaction_state == "STREAMING_RESPONSE"):
