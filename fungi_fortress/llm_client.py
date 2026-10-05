@@ -17,9 +17,6 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-# Import default reasoning effort from config_manager
-from .config_manager import DEFAULT_REASONING_EFFORT
-
 T = TypeVar('T')
 
 
@@ -229,7 +226,7 @@ class XAIProvider:
         self,
         messages: list[dict],
         max_tokens: int = 1000,
-        reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+        reasoning_effort: Optional[str] = None,
         use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
@@ -246,6 +243,7 @@ class XAIProvider:
             raise ConnectionError("OpenAI library not installed (required for XAI API)")
         
         import openai
+        from .config_manager import DEFAULT_REASONING_EFFORT
         
         try:
             client = openai.OpenAI(
@@ -260,7 +258,7 @@ class XAIProvider:
                 "messages": messages,
                 "max_tokens": max_tokens,
                 "temperature": self.config.temperature,
-                "reasoning_effort": reasoning_effort,
+                "reasoning_effort": reasoning_effort if reasoning_effort is not None else DEFAULT_REASONING_EFFORT,
             }
             
             # Add response format if provided (per-call schema takes precedence)
@@ -320,12 +318,13 @@ class XAIProvider:
         except Exception as e:
             raise BadResponseError(f"Unexpected XAI error: {e}") from e
     
-    def chat_stream(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: str = DEFAULT_REASONING_EFFORT) -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: Optional[str] = None) -> Iterator[str]:
         """Streaming chat completion with XAI."""
         if not self._openai_available:
             raise ConnectionError("OpenAI library not installed (required for XAI API)")
         
         import openai
+        from .config_manager import DEFAULT_REASONING_EFFORT
         
         try:
             client = openai.OpenAI(
@@ -341,7 +340,7 @@ class XAIProvider:
                 "max_tokens": max_tokens,
                 "temperature": self.config.temperature,
                 "stream": True,
-                "reasoning_effort": reasoning_effort,
+                "reasoning_effort": reasoning_effort if reasoning_effort is not None else DEFAULT_REASONING_EFFORT,
             }
             
             stream = client.chat.completions.create(**completion_params)
@@ -401,7 +400,7 @@ class LLMClient:
         self,
         messages: list[dict],
         max_tokens: Optional[int] = None,
-        reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+        reasoning_effort: Optional[str] = None,
         use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
@@ -434,7 +433,7 @@ class LLMClient:
             logger.error(f"Unexpected error in chat: {e}")
             raise BadResponseError(f"Unexpected error: {e}") from e
     
-    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: str = DEFAULT_REASONING_EFFORT) -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: Optional[str] = None) -> Iterator[str]:
         """Send a streaming chat completion request.
         
         Args:
@@ -534,7 +533,7 @@ def structured_call(
     label: str = "Structured call",
     convert: Optional[Callable[[BaseModel], T]] = None,
     max_tokens: int = 4000,
-    reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+    reasoning_effort: Optional[str] = None,
     attempts: int = 2,
 ) -> Optional[Union[BaseModel, T]]:
     """Make a structured LLM call with validation and retry.
@@ -556,6 +555,11 @@ def structured_call(
     """
     # Generate schema from Pydantic model
     response_format = _schema_from_model(model_cls, schema_name)
+    
+    # Get default reasoning effort if not provided
+    from .config_manager import DEFAULT_REASONING_EFFORT
+    if reasoning_effort is None:
+        reasoning_effort = DEFAULT_REASONING_EFFORT
     
     conversation = list(messages)
     
