@@ -443,7 +443,7 @@ def structured_call(
     schema_name: str = "response",
     label: str = "Structured call",
     convert: Optional[Callable[[BaseModel], T]] = None,
-    max_tokens: int = 4000,
+    max_tokens: Optional[int] = None,
     reasoning_effort: Optional[str] = None,
     attempts: int = 2,
 ) -> Optional[Union[BaseModel, T]]:
@@ -457,13 +457,17 @@ def structured_call(
         label: Label for log messages (e.g., "World seed", "Depth seed")
         convert: Optional converter function that takes the parsed model and returns
                  a converted object. Should raise ValueError with error details on failure.
-        max_tokens: Maximum tokens to generate (overrides config default)
+        max_tokens: Maximum tokens to generate (None = use client config default)
         reasoning_effort: Override config reasoning_effort if provided
         attempts: Maximum number of attempts (including retries)
         
     Returns:
         Converted object (if converter provided), validated Pydantic model instance, or None if all attempts failed
     """
+    # Resolve max_tokens: explicit > client config default
+    if max_tokens is None:
+        max_tokens = client.config.max_tokens
+    
     # Generate schema from Pydantic model
     response_format = _schema_from_model(model_cls, schema_name)
     

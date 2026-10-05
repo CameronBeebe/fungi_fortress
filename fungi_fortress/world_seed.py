@@ -23,6 +23,9 @@ from . import llm_client
 
 logger = logging.getLogger(__name__)
 
+# World generation token budget (higher than interactive Oracle for richer world content)
+WORLD_GEN_MAX_TOKENS = 4000
+
 COLLECTABLE = frozenset(STARTING_RESOURCES)
 MAX_CHARACTERS = 12
 MAX_PLACES = 12
