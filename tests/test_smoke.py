@@ -5,7 +5,7 @@ openai.OpenAI to return canned responses. Tests both streaming Oracle dialogue
 and world generation paths.
 """
 import pytest
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 from fungi_fortress.config_manager import LLMConfig
 from fungi_fortress.game_state import GameState
 from fungi_fortress.game_logic import GameLogic

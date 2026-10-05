@@ -2,7 +2,7 @@
 """Test that LLM prompt context adapts to context_level setting."""
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from fungi_fortress.game_state import GameState
 from fungi_fortress.config_manager import LLMConfig
@@ -91,10 +91,6 @@ def test_streaming_context_levels(context_level, expected_history_len, expect_mi
         # Low/medium context shouldn't have resources
         assert "resources" not in game_context or game_context.get("resources") is None, \
             f"Context level {context_level} should not include resources"
-    
-    # Check mission presence
-    
-    # Check resources presence
 
 
 @pytest.mark.parametrize("context_level,expected_history_len,expect_mission,expect_resources", [
@@ -183,9 +179,23 @@ def test_non_streaming_context_levels(context_level, expected_history_len, expec
         assert oracle_lines == expected_history_len, \
             f"Expected {expected_history_len} Oracle lines in history, got {oracle_lines}"
         
-        # Check mission presence
+        # Check mission presence in prompt (context gating)
+        if expect_mission:
+            assert "Test mission description" in prompt, \
+                f"Context level {context_level} should include mission in prompt"
+        else:
+            assert "Test mission description" not in prompt, \
+                f"Context level {context_level} should not include mission in prompt"
         
-        # Check resources presence
+        # Check resources presence in prompt (context gating)
+        if expect_resources:
+            assert "wood" in prompt.lower(), \
+                f"Context level {context_level} should include resources in prompt"
+        else:
+            # For low/medium, resources shouldn't be mentioned
+            if context_level in ["low", "medium"]:
+                assert "wood: 10" not in prompt, \
+                    f"Context level {context_level} should not include detailed resources"
     
     finally:
         llm_config.create_llm_client = original_create

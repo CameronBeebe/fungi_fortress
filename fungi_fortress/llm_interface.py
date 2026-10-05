@@ -61,14 +61,6 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
     history_limit = HISTORY_LIMITS[game_state.llm_config.context_level]
     trimmed_history = game_state.oracle_llm_interaction_history[-history_limit:] if game_state.oracle_llm_interaction_history else []
     
-    messages = llm_oracle.build_oracle_messages(
-        oracle_name=oracle_name,
-        player_query=player_query,
-        game_context=game_context,
-        history=trimmed_history,
-        enable_structured_outputs=game_state.llm_config.enable_structured_outputs,
-    )
-    
     # Return action to start enhanced streaming (without API key in details)
     return [{
         "action_type": "start_enhanced_oracle_streaming",

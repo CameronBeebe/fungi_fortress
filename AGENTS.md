@@ -90,11 +90,11 @@ Key modules (as of Oct 2026):
   - `game_state.py` — World state, player, NPCs, inventory
   - `map_generation.py` — Procedural map and entity spawning
   - `dwarf_mind.py` — Autonomous dwarf task AI (template for systems)
-  - `world_seed.py` — World seed Pydantic models and validation; `parse_world_seed` semantic rules
+  - `world_seed.py` — World seed Pydantic models, validation, and LLM integration; `parse_world_seed` semantic rules
   - `world_judge.py` — Jev/TypeSafe judge for stance, revelation, mission success
   - `llm_client.py` — LLM client with `structured_call` (typed outputs); Oracle not migrated yet
-  - `llm_world.py` — World-seed LLM calls
   - `llm_oracle.py`, `oracle_logic.py` — Oracle dialogue and encounter logic
+  - `llm_interface.py` — Game event handlers for LLM-driven actions
   - `jev_client.py` — Jev/TypeSafe integration
   - `characters.py` — Dwarf, NPC, and character classes
   - `renderer.py` — Curses-based UI rendering
@@ -106,6 +106,7 @@ Key modules (as of Oct 2026):
   - `cli.py` — Entry point (`fungi` command)
   - `seeds/` — Hand-written world/depth seed JSON (data path for handcrafted content)
 - **`tests/`** — Test suite
+  - `tests/test_smoke.py` — End-to-end smoke test of core gameplay paths (Oracle dialogue, world generation) with only the network faked; every PR must keep it passing, and new core paths get a case there
 - **`logs/`** — Runtime logs (git-ignored)
 - **`main.py`** — Legacy entry point (use `uv run fungi` instead)
 - **`README.md`** — Project overview, setup, and features
