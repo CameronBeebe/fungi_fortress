@@ -17,9 +17,6 @@ logger = logging.getLogger(__name__)
 # Context level history limits (single source of truth)
 HISTORY_LIMITS = {'low': 1, 'medium': 3, 'high': 5}
 
-# Context level history limits (single source of truth)
-HISTORY_LIMITS = {'low': 1, 'medium': 3, 'high': 5}
-
 
 def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[List[Dict[str, Any]]]:
     """Process a game event, potentially triggering LLM interaction.
@@ -60,7 +57,7 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
     game_context = _build_game_context(game_state)
     
     # Trim history based on context level
-    history_limit = HISTORY_LIMITS.get(game_state.llm_config.context_level, 3)
+    history_limit = HISTORY_LIMITS[game_state.llm_config.context_level]
     trimmed_history = game_state.oracle_llm_interaction_history[-history_limit:] if game_state.oracle_llm_interaction_history else []
     
     messages = llm_oracle.build_oracle_messages(
@@ -85,9 +82,6 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
     return [{
         "action_type": "start_enhanced_oracle_streaming",
         "details": {
-            "prompt": prompt,
-            "model_name": game_state.llm_config.model_name,
-            "provider_hint": "xai",  # Fixed to XAI provider
             # NOTE: llm_config NOT included here to prevent API key leaks in logs
             "player_query": player_query,
             "oracle_name": oracle_name,
@@ -119,7 +113,7 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
     game_context = _build_game_context(game_state)
     
     # Trim history based on context level
-    history_limit = HISTORY_LIMITS.get(game_state.llm_config.context_level, 3)
+    history_limit = HISTORY_LIMITS[game_state.llm_config.context_level]
     trimmed_history = game_state.oracle_llm_interaction_history[-history_limit:] if game_state.oracle_llm_interaction_history else []
     
     # Log interaction timestamp

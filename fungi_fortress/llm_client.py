@@ -292,18 +292,7 @@ class XAIProvider:
     
     def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: Optional[str] = None) -> Iterator[str]:
         """Streaming chat completion with XAI."""
-        if not self._openai_available:
-            raise ConnectionError("OpenAI library not installed (required for XAI API)")
-        
-        import openai
-        
         try:
-            client = openai.OpenAI(
-                api_key=self.config.api_key,
-                base_url="https://api.x.ai/v1",
-                timeout=self.config.timeout_seconds
-            )
-            
             # Build completion parameters
             completion_params = {
                 "model": self.config.model_name,
@@ -314,7 +303,7 @@ class XAIProvider:
                 "reasoning_effort": reasoning_effort if reasoning_effort is not None else self.config.reasoning_effort,
             }
             
-            stream = client.chat.completions.create(**completion_params)
+            stream = self.client.chat.completions.create(**completion_params)
             
             for chunk in stream:
                 if chunk.choices and len(chunk.choices) > 0:
