@@ -76,7 +76,6 @@ def test_semantic_failure_triggers_retry_with_error():
         [{"role": "user", "content": "Generate"}],
         WorldSeedSchema,
         convert=converter,
-        attempts=2
     )
     
     assert result is not None
@@ -100,7 +99,6 @@ def test_final_failure_returns_none_and_logs_warning(caplog):
             mock_client,
             [{"role": "user", "content": "Generate"}],
             WorldSeedSchema,
-            attempts=2
         )
     
     assert result is None

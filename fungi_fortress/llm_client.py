@@ -19,10 +19,6 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
 
-# === Constants ===
-
-DEFAULT_RETRY_ATTEMPTS = 2  # Default number of retry attempts for structured calls
-
 
 # === Typed Exceptions ===
 
@@ -504,7 +500,6 @@ def structured_call(
     convert: Optional[Callable[[BaseModel], T]] = None,
     max_tokens: int = 4000,
     reasoning_effort: str = "high",
-    attempts: Optional[int] = None,
 ) -> Optional[Union[BaseModel, T]]:
     """Make a structured LLM call with validation and retry.
     
@@ -518,13 +513,16 @@ def structured_call(
                  a converted object. Should raise ValueError with error details on failure.
         max_tokens: Maximum tokens to generate
         reasoning_effort: XAI reasoning effort ("low", "medium", "high")
-        attempts: Maximum number of attempts (including retries). If None, uses DEFAULT_RETRY_ATTEMPTS.
         
     Returns:
         Converted object (if converter provided), validated Pydantic model instance, or None if all attempts failed
     """
-    if attempts is None:
-        attempts = DEFAULT_RETRY_ATTEMPTS
+    # Get retry attempts from client config when available (PR #14), fallback to 2
+    attempts = 2
+    if hasattr(client, 'config') and client.config is not None:
+        max_retries = getattr(client.config, 'max_retries', None)
+        if isinstance(max_retries, int):
+            attempts = max_retries
     
     # Generate schema from Pydantic model
     response_format = _schema_from_model(model_cls, schema_name)

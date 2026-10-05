@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterator, List, Optional
 
 from . import llm_client, llm_oracle
 from .text_streaming import text_streaming_engine
+from .npc_reply import validate_npc_reply
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,6 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
     
     # Validator wrapper for structured_call
     def validator(reply):
-        from .npc_reply import validate_npc_reply
         return validate_npc_reply(reply, game_state)
     
     try:

@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, field_validator
 from .characters import NPC, Oracle
 from .constants import STARTING_RESOURCES
 from . import llm_client, llm_world
+from .world_rules import CharacterKind, is_open_tile
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +45,6 @@ class ResourceEnum(str, Enum):
     crystals = "crystals"
     fungi = "fungi"
     magic_fungi = "magic_fungi"
-
-
-class CharacterKind(str, Enum):
-    """Character kinds: ordinary kin or mystical revealed."""
-    kin = "kin"
-    revealed = "revealed"
 
 
 class CollectRequirement(BaseModel):
@@ -596,24 +591,6 @@ def _spawn_characters(game: Any, seed: WorldSeed, layer: str = "surface") -> Non
         game.add_debug_message(f"{character.name} is at ({spot[0]}, {spot[1]})")
 
 
-def is_open_tile(game, x: int, y: int) -> bool:
-    """Check if a tile can hold a spawned character (walkable and unoccupied)."""
-    # Check bounds
-    if not hasattr(game, 'map') or not game.map:
-        return False
-    height = len(game.map)
-    width = len(game.map[0]) if height else 0
-    if x < 0 or x >= width or y < 0 or y >= height:
-        return False
-    
-    # Check tile is walkable
-    tile = game.get_tile(x, y) if hasattr(game, "get_tile") else game.map[y][x]
-    if not tile or not getattr(tile, "walkable", False):
-        return False
-    
-    return True
-
-
 def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int] | None:
     """Pick a walkable tile away from the dwarves and from other seeded people."""
     spots = []
@@ -621,7 +598,8 @@ def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int
         for x in range(width):
             if (x, y) in occupied:
                 continue
-            if is_open_tile(game, x, y):
+            is_valid, _ = is_open_tile(game, x, y)
+            if is_valid:
                 spots.append((x, y))
 
     def away(min_dwarf: int, min_peer: int):
