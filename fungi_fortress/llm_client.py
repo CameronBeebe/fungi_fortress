@@ -128,13 +128,13 @@ class MockLLMProvider:
     def __init__(self):
         self._call_count = 0
     
-    def chat(self, messages: list[dict], max_tokens: int = 1000, response_format: Optional[dict[str, Any]] = None) -> str:
+    def chat(self, messages: list[dict], max_tokens: int, response_format: Optional[dict[str, Any]] = None) -> str:
         """Non-streaming mock response."""
         self._call_count += 1
         user_content = self._extract_user_content(messages)
         return self._mock_response(user_content)
     
-    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None) -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: int) -> Iterator[str]:
         """Streaming mock response."""
         self._call_count += 1
         user_content = self._extract_user_content(messages)
