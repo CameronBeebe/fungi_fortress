@@ -141,19 +141,25 @@ class TestLLMClient:
         # Should not be mock (would try to use real API)
         assert not client.is_mock()
     
-    @patch('fungi_fortress.llm_client.XAIProvider._check_openai')
-    def test_xai_provider_missing_library(self, mock_check):
-        """Test XAI provider with missing OpenAI library."""
-        mock_check.return_value = False
-        
+    @patch('fungi_fortress.llm_client.openai.OpenAI')
+    def test_xai_provider_init_with_config(self, mock_openai_class):
+        """Test that XAI provider builds OpenAI client correctly."""
         config = LLMConfig(
             model_name="test-model",
-            api_key="xai-test-key",
+            api_key="test-key",
+            max_retries=3,
+            timeout_seconds=45
         )
+        
         client = LLMClient(config)
         
-        with pytest.raises(LLMConnectionError, match="OpenAI library not installed"):
-            client.chat([{"role": "user", "content": "test"}])
+        # Verify OpenAI client was created with correct parameters
+        mock_openai_class.assert_called_once_with(
+            api_key="test-key",
+            base_url="https://api.x.ai/v1",
+            timeout=45,
+            max_retries=3
+        )
 
 
 class TestErrorMapping:
