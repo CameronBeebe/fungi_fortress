@@ -255,7 +255,6 @@ def test_load_llm_config_logs_invalid_context_level(mock_open_func, mock_os_path
     mock_config_path = f"mocked/path/to/{file_basename}"
     mock_os_path_join.return_value = mock_config_path
 
-    load_llm_config(file_basename)
     config = load_llm_config(file_basename)
     assert config.context_level == "medium"
     # Check that validation warned about invalid context_level
