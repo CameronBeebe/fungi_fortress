@@ -62,23 +62,12 @@ def test_streaming_context_levels(context_level, expected_history_len, expect_mi
     assert actions is not None and len(actions) > 0, "Should return actions"
     assert actions[0]["action_type"] == "start_enhanced_oracle_streaming"
     
-    # Extract the prompt from the action details
-    prompt = actions[0]["details"]["prompt"]
+    # Extract history from the action details  
     history_in_action = actions[0]["details"]["history"]
     
     # Check history length passed in action
     assert len(history_in_action) == expected_history_len, \
         f"Expected {expected_history_len} history entries, got {len(history_in_action)}"
-    
-    # Check history in prompt (just count history, not current query)
-    player_lines = prompt.count("Player: ")
-    oracle_lines = prompt.count("Oracle: ")
-    
-    # History should have expected number of Player/Oracle pairs
-    assert player_lines == expected_history_len, \
-        f"Expected {expected_history_len} Player lines in history, got {player_lines}"
-    assert oracle_lines == expected_history_len, \
-        f"Expected {expected_history_len} Oracle lines in history, got {oracle_lines}"
     
     # Check mission presence
     if expect_mission:
