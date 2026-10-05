@@ -2,7 +2,7 @@ import configparser
 from typing import Optional, Dict, List
 import os
 import logging
-from dataclasses import dataclass, field, fields, MISSING
+from dataclasses import dataclass, field, fields, MISSING as DATACLASS_MISSING
 
 from . import llm_client
 
@@ -73,7 +73,7 @@ def _validate_numeric_fields(config: LLMConfig) -> None:
         config: LLMConfig instance to validate (modified in place)
     """
     # Get dataclass field defaults for fallback
-    field_defaults = {f.name: f.default for f in fields(LLMConfig) if f.default is not dataclass.MISSING}
+    field_defaults = {f.name: f.default for f in fields(LLMConfig) if f.default is not DATACLASS_MISSING}
     
     for field_name, (min_val, max_val) in FIELD_VALIDATION_RANGES.items():
         current_value = getattr(config, field_name)
