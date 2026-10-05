@@ -156,5 +156,4 @@ def query_oracle(
         NpcReply,
         schema_name="npc_reply",
         label="Oracle reply",
-        attempts=2,
     )
