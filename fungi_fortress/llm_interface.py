@@ -68,7 +68,7 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
         player_query=player_query,
         game_context=game_context,
         history=trimmed_history,
-        enable_structured_outputs=enable_structured_outputs,
+        enable_structured_outputs=game_state.llm_config.enable_structured_outputs,
     )
     
     # Convert messages to a single prompt string for compatibility
