@@ -159,7 +159,6 @@ class MockLLMProvider:
     
     def _mock_response(self, user_content: str) -> str:
         """Generate deterministic response based on query (whole-word matching)."""
-        import re
         
         # Normalize content for matching
         normalized = user_content.lower()
@@ -181,7 +180,6 @@ class MockLLMProvider:
             narrative = self.RESPONSES["default"]
         
         # Return structured JSON response
-        import json
         return json.dumps({
             "narrative": narrative,
             "actions": []
