@@ -69,16 +69,6 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
         enable_structured_outputs=game_state.llm_config.enable_structured_outputs,
     )
     
-    # Convert messages to a single prompt string for compatibility
-    # Format: system message + context + history + query
-    prompt_parts = []
-    for msg in messages:
-        if msg["role"] == "system":
-            prompt_parts.append(msg["content"])
-        else:
-            prompt_parts.append(msg["content"])
-    prompt = "\n\n".join(prompt_parts)
-    
     # Return action to start enhanced streaming (without API key in details)
     return [{
         "action_type": "start_enhanced_oracle_streaming",
