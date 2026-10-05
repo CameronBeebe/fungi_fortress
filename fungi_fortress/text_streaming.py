@@ -98,8 +98,6 @@ class TextStreamingEngine:
         This handles both structured JSON responses and legacy text format with ACTION:: markers.
         Returns the narrative text (for streaming) and a list of actions (for immediate processing).
         """
-        import json
-        
         # First, try to parse as structured JSON (XAI structured outputs)
         try:
             parsed_json = json.loads(llm_response.strip())

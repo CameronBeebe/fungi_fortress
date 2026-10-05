@@ -5,6 +5,7 @@ infrastructure, maintaining compatibility with existing game_logic expectations.
 """
 
 import datetime
+import json as json_lib
 import logging
 from datetime import timezone
 from typing import Any, Dict, Iterator, List, Optional
@@ -363,8 +364,6 @@ def _parse_llm_response(response_text: str) -> tuple[str, List[Dict[str, Any]]]:
     Returns:
         Tuple[str, List[Dict[str, Any]]]: (narrative, actions)
     """
-    import json as json_lib
-    
     # First, try to parse as structured JSON
     try:
         parsed_json = json_lib.loads(response_text.strip())

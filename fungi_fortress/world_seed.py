@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from .characters import NPC, Oracle
 from .constants import STARTING_RESOURCES
