@@ -2,7 +2,7 @@ import configparser
 from typing import Optional, Dict, List
 import os
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, MISSING
 
 from . import llm_client
 
@@ -14,6 +14,15 @@ logger = logging.getLogger(__name__)
 PACKAGE_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CONFIG_FILENAME = "llm_config.ini"
 # --- End Path configuration ---
+
+# Validation ranges for numeric config fields (single source of truth)
+FIELD_VALIDATION_RANGES = {
+    "max_tokens": (1, 4000),
+    "timeout_seconds": (1, 120),
+    "max_retries": (0, 5),
+    "retry_delay_seconds": (0.0, 10.0),
+    "daily_request_limit": (0, 1000),
+}
 
 @dataclass
 class LLMConfig:
@@ -67,6 +76,26 @@ class LLMConfig:
             Configured LLMClient instance (may be mock if no valid API key)
         """
         return llm_client.LLMClient(self)
+
+def _validate_numeric_fields(config: LLMConfig) -> None:
+    """Validate numeric fields against safe ranges, falling back to dataclass defaults.
+    
+    Args:
+        config: LLMConfig instance to validate (modified in place)
+    """
+    # Get dataclass field defaults for fallback
+    field_defaults = {f.name: f.default for f in fields(LLMConfig) if f.default is not dataclass.MISSING}
+    
+    for field_name, (min_val, max_val) in FIELD_VALIDATION_RANGES.items():
+        current_value = getattr(config, field_name)
+        if not (min_val <= current_value <= max_val):
+            default_value = field_defaults.get(field_name)
+            logger.warning(
+                f"{field_name} value {current_value} outside safe range ({min_val}-{max_val}). "
+                f"Falling back to {default_value}."
+            )
+            setattr(config, field_name, default_value)
+
 
 def get_xai_api_key_from_env() -> Optional[str]:
     """Get XAI API key from environment variables.
@@ -136,30 +165,18 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
         elif context_level:
             logger.warning(f"Invalid 'context_level' in '{config_file_path}'. Using default.")
         
-        # Load safety settings with validation
-        for field, safe_range in [
-            ("max_tokens", (1, 4000)),
-            ("timeout_seconds", (1, 120)),
-            ("max_retries", (0, 5)),
-            ("daily_request_limit", (0, 1000)),
-        ]:
-            try:
-                value = parser["LLM"].getint(field, fallback=getattr(config, field))
-                if not (safe_range[0] <= value <= safe_range[1]):
-                    logger.warning(f"{field} value {value} outside safe range {safe_range}. Using default.")
-                else:
-                    setattr(config, field, value)
-            except ValueError:
-                logger.warning(f"Invalid {field} value in config. Using default.")
-        
-        try:
-            value = parser["LLM"].getfloat("retry_delay_seconds", fallback=config.retry_delay_seconds)
-            if not (0 <= value <= 10):
-                logger.warning(f"retry_delay_seconds value {value} outside safe range. Using default.")
-            else:
-                config.retry_delay_seconds = value
-        except ValueError:
-            logger.warning(f"Invalid retry_delay_seconds value in config. Using default.")
+        # Load numeric safety settings from config file
+        for field_name in FIELD_VALIDATION_RANGES.keys():
+            if field_name in parser["LLM"]:
+                try:
+                    # Use getfloat for float fields, getint for others
+                    if field_name == "retry_delay_seconds":
+                        value = parser["LLM"].getfloat(field_name)
+                    else:
+                        value = parser["LLM"].getint(field_name)
+                    setattr(config, field_name, value)
+                except ValueError:
+                    logger.warning(f"Invalid {field_name} value in config. Using default.")
             
         for bool_field in ["enable_request_logging", "enable_structured_outputs", "enable_streaming"]:
             if bool_field in parser["LLM"]:
@@ -169,6 +186,9 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
                     logger.warning(f"Invalid {bool_field} value in config. Using default.")
     else:
         logger.warning(f"[LLM] section not found in '{config_file_path}'. Using defaults.")
+    
+    # Validate all numeric fields before returning
+    _validate_numeric_fields(config)
     
     return config
 

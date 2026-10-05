@@ -8,53 +8,39 @@
 # If no XAI_API_KEY is set, the game will use a deterministic mock provider
 # for offline play (Oracle will give pre-scripted responses based on keywords)
 
-# Model to use (default defined in LLMConfig dataclass in config_manager.py)
-# XAI Grok models: grok-4.3 (default), grok-2-1212, grok-beta, grok-vision-beta
-# Uncomment to override:
+# === CONFIGURATION OPTIONS ===
+# All defaults are defined in LLMConfig dataclass in fungi_fortress/config_manager.py
+# Uncomment any line below to override the default
+
+# Model to use - XAI Grok models: grok-4.3, grok-2-1212, grok-beta, grok-vision-beta
 # model_name = grok-4.3
 
-# Context detail level for game state information (low, medium, high)
-# Controls how much game context is sent to the Oracle and history size:
-#   low    = tick + depth, 1 history turn
-#   medium = + mission, 3 history turns (default)
-#   high   = + resources, 5 history turns
-context_level = medium
+# Context detail level for game state information
+# context_level = medium
 
 # === COST CONTROL & SAFETY SETTINGS ===
-# These settings help prevent runaway API costs and ensure reliable operation
+# All these have safe defaults in LLMConfig - uncomment to customize
 
-# Maximum tokens per response (1-4000, default: 500)
-# Lower values reduce cost but may truncate responses
-max_tokens = 1000
+# Maximum tokens per response
+# max_tokens = 500
 
-# API request timeout in seconds (1-120, default: 30)
-# Prevents hanging requests that could block the game
-timeout_seconds = 60
+# API request timeout in seconds
+# timeout_seconds = 30
 
-# Maximum retry attempts on failure (0-5, default: 2)
-# Higher values improve reliability but may increase costs on persistent failures
-max_retries = 2
+# Maximum retry attempts on failure
+# max_retries = 2
 
-# Delay between retry attempts in seconds (0.1-10.0, default: 1.0)
-# Uses exponential backoff (delay * 2^attempt)
-retry_delay_seconds = 1.0
+# Delay between retry attempts in seconds
+# retry_delay_seconds = 1.0
 
-# Daily request limit (1-1000, default: 100)
-# Set to 0 to disable daily limiting entirely 
-# Prevents excessive API usage and associated costs
-# Set higher if you play frequently, lower for strict cost control
-daily_request_limit = 0
+# Daily request limit (0 = unlimited)
+# daily_request_limit = 100
 
-# Enable detailed request logging (true/false, default: true)
-# Logs all API requests for monitoring usage and debugging
-enable_request_logging = true
+# Enable detailed request logging
+# enable_request_logging = true
 
-# Enable XAI structured outputs (true/false, default: true)
-# Uses JSON Schema to guarantee valid structured responses from XAI models
-# This provides more reliable game action parsing compared to text parsing
-enable_structured_outputs = false
+# Enable XAI structured outputs
+# enable_structured_outputs = true
 
-# Enable streaming responses (true/false, default: true)
-# When true, Oracle responses appear word-by-word in real-time
-# When false, Oracle waits until the full response is ready
-enable_streaming = true
+# Enable streaming responses
+# enable_streaming = true
