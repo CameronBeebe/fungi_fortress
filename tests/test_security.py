@@ -214,13 +214,13 @@ model_name = test-model
             api_key="test-key",
             max_tokens=5000,  # Too high
             timeout_seconds=200,  # Too high
-            daily_request_limit=-1  # Invalid
+            temperature=5.0  # Invalid
         )
         
         # Validation should fix these values
         assert config.max_tokens == 500  # Should be clamped
         assert config.timeout_seconds == 30  # Should be clamped
-        assert config.daily_request_limit == 100  # Should be fixed
+        assert config.temperature == 0.7  # Should be fixed
 
 
 if __name__ == "__main__":
