@@ -92,7 +92,6 @@ class FakeOpenAIClient:
 @pytest.fixture
 def fake_openai(monkeypatch):
     """Monkeypatch openai.OpenAI to use fake client."""
-    import openai
     fake_instance = None
     
     def create_fake(*args, **kwargs):
@@ -100,7 +99,8 @@ def fake_openai(monkeypatch):
         fake_instance = FakeOpenAIClient(*args, **kwargs)
         return fake_instance
     
-    monkeypatch.setattr('openai.OpenAI', create_fake)
+    # Patch where llm_client imports it
+    monkeypatch.setattr('fungi_fortress.llm_client.openai.OpenAI', create_fake)
     
     class FakeHolder:
         @property

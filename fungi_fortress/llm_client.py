@@ -376,7 +376,8 @@ class LLMClient:
         """
         try:
             if self._use_mock:
-                return self._provider.chat(messages, max_tokens or self.config.max_tokens, response_format=response_format)
+                resolved_max_tokens = max_tokens if max_tokens is not None else self.config.max_tokens
+                return self._provider.chat(messages, resolved_max_tokens, response_format=response_format)
             else:
                 return self._provider.chat(messages, max_tokens, reasoning_effort, use_json_schema, response_format)
         except LLMError:
@@ -401,7 +402,8 @@ class LLMClient:
         """
         try:
             if self._use_mock:
-                yield from self._provider.chat_stream(messages, max_tokens or self.config.max_tokens)
+                resolved_max_tokens = max_tokens if max_tokens is not None else self.config.max_tokens
+                yield from self._provider.chat_stream(messages, resolved_max_tokens)
             else:
                 yield from self._provider.chat_stream(messages, max_tokens, reasoning_effort)
         except LLMError:

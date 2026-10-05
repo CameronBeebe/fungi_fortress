@@ -10,6 +10,7 @@ data/actions (which should be processed immediately) to provide a smooth
 user experience while maintaining game mechanics integration.
 """
 
+import json
 import time
 import random
 from typing import Iterator, Dict, Any, List, Optional, Tuple
