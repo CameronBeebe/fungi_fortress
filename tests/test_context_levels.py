@@ -17,6 +17,7 @@ from fungi_fortress import llm_interface
 def test_streaming_context_levels(context_level, expected_history_len, expect_mission, expect_resources):
     """Test that handle_oracle_query_streaming includes correct context based on level.
     
+    Context gating contract:
     - low: 1 history turn, no mission, no resources
     - medium: 3 history turns, mission included, no resources
     - high: 5 history turns, mission included, resources included
@@ -62,12 +63,34 @@ def test_streaming_context_levels(context_level, expected_history_len, expect_mi
     assert actions is not None and len(actions) > 0, "Should return actions"
     assert actions[0]["action_type"] == "start_enhanced_oracle_streaming"
     
-    # Extract history from the action details  
-    history_in_action = actions[0]["details"]["history"]
+    # Extract context from action details
+    details = actions[0]["details"]
+    history_in_action = details["history"]
+    game_context = details["game_context"]
     
-    # Check history length passed in action
+    # Check history length (context gating)
     assert len(history_in_action) == expected_history_len, \
         f"Expected {expected_history_len} history entries, got {len(history_in_action)}"
+    
+    # Check mission presence in game_context (context gating)
+    if expect_mission:
+        assert "mission" in game_context, \
+            f"Context level {context_level} should include mission"
+        assert game_context["mission"]["description"] == "Test mission description"
+    else:
+        # Low context shouldn't have mission
+        assert "mission" not in game_context or game_context.get("mission") is None, \
+            f"Context level {context_level} should not include mission"
+    
+    # Check resources presence in game_context (context gating)  
+    if expect_resources:
+        assert "resources" in game_context, \
+            f"Context level {context_level} should include resources"
+        assert "wood" in str(game_context["resources"]).lower()
+    else:
+        # Low/medium context shouldn't have resources
+        assert "resources" not in game_context or game_context.get("resources") is None, \
+            f"Context level {context_level} should not include resources"
     
     # Check mission presence
     
