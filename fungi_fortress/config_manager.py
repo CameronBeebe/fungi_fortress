@@ -1,4 +1,5 @@
 import configparser
+import typing
 import os
 from typing import Optional
 import logging
@@ -160,6 +161,9 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
         return config
     
     # Generic field loading: iterate over dataclass fields
+        # Get type hints (handles from __future__ import annotations)
+        type_hints = typing.get_type_hints(LLMConfig)
+        
     for field_info in fields(LLMConfig):
         field_name = field_info.name
         
@@ -171,7 +175,7 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
             continue
         
         try:
-            field_type = field_info.type
+            field_type = type_hints.get(field_info.name, field_info.type)
             # Handle Optional types
             if hasattr(field_type, '__origin__'):
                 field_type = field_type.__args__[0] if field_type.__args__ else str
