@@ -393,29 +393,6 @@ class GameLogic:
                 else:
                     self.game_state.add_debug_message(f"Oracle state change ignored (dialogue closed): {new_state}")
 
-        elif action_type == "start_oracle_streaming":
-            if (self.game_state.show_oracle_dialog and 
-                self.game_state.oracle_interaction_state != "IDLE"):
-                streaming_details = details
-                oracle_name = streaming_details.get("oracle_name", "The Oracle")
-                
-                if not hasattr(self.game_state, 'oracle_streaming_generator'):
-                    self.game_state.oracle_streaming_generator = None
-                if not hasattr(self.game_state, 'oracle_streaming_active'):
-                    self.game_state.oracle_streaming_active = False
-                if not hasattr(self.game_state, 'oracle_streaming_buffer'):
-                    self.game_state.oracle_streaming_buffer = ""
-                
-                self.game_state.oracle_streaming_generator = llm_interface.process_oracle_streaming(
-                    streaming_details["prompt"],
-                    streaming_details["api_key"],
-                    streaming_details["model_name"],
-                    streaming_details["provider_hint"],
-                    streaming_details["llm_config"],
-                    streaming_details["player_query"],
-                    oracle_name
-                )
-                self.game_state.oracle_streaming_active = True
                 self.game_state.oracle_streaming_buffer = ""
                 self.game_state.oracle_interaction_state = "STREAMING_RESPONSE"
                 self.game_state.add_debug_message(f"Started Oracle streaming response from {oracle_name}")
