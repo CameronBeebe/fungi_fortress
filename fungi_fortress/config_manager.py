@@ -49,17 +49,20 @@ class LLMConfig:
     enable_structured_outputs: bool = True  # Whether to use structured outputs feature
     enable_streaming: bool = True  # Whether to enable streaming responses for more lifelike Oracle interactions
 
+
+    @property
+    def is_real_api_key_present(self) -> bool:
+        """Check if a real (non-placeholder) API key is configured."""
+        return bool(self.api_key and self.api_key.strip() and self.api_key not in PLACEHOLDER_API_KEYS)
+    
     def __post_init__(self):
         """Validate and finalize configuration after initialization."""
-        if self.api_key and self.api_key.strip() and self.api_key not in ["YOUR_API_KEY_HERE", "testkey123", "None", ""]:
-            self.is_real_api_key_present = True
-        else:
-            self.is_real_api_key_present = False
-            if self.api_key in ["YOUR_API_KEY_HERE", "testkey123", "None", ""]: # Log if it's a known placeholder or empty
-                 logger.info(f"API key is a placeholder or empty: \'{self.api_key}\'")
+        if not self.is_real_api_key_present and self.api_key in PLACEHOLDER_API_KEYS:
+            logger.info(f"API key is a placeholder or empty: '{self.api_key}'")
         
         # Validate numeric fields using centralized validation
         _validate_numeric_fields(self)
+    
     def create_llm_client(self) -> llm_client.LLMClient:
         """Create an LLM client from this configuration.
         
