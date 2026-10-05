@@ -282,6 +282,7 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
         {"role": "user", "content": _seed_prompt()},
     ]
     
+    from . import config_manager
     seed = llm_client.structured_call(
         client,
         messages,
@@ -440,6 +441,7 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
         {"role": "user", "content": _depth_prompt()},
     ]
     
+    from . import config_manager
     seed = llm_client.structured_call(
         client,
         messages,
