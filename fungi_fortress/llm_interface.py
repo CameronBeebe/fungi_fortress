@@ -29,9 +29,7 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
     
     if event_type == "ORACLE_QUERY" and game_state.llm_config:
         # Check if streaming is enabled
-        enable_streaming = getattr(game_state.llm_config, 'enable_streaming', True)
-        
-        if enable_streaming:
+        if game_state.llm_config.enable_streaming:
             return handle_oracle_query_streaming(event_data, game_state)
         else:
             return handle_oracle_query_non_streaming(event_data, game_state)
@@ -55,13 +53,9 @@ def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -
     # Build game context and prompt
     game_context = _build_game_context(game_state)
     
-    # Trim history based on context level (low: 1, medium: 3, high: 5)
-    context_level = getattr(game_state.llm_config, 'context_level', 'medium')
-    history_limits = {'low': 1, 'medium': 3, 'high': 5}
-    history_limit = history_limits.get(context_level, 3)
+    # Trim history based on context level
+    history_limit = HISTORY_LIMITS.get(game_state.llm_config.context_level, 3)
     trimmed_history = game_state.oracle_llm_interaction_history[-history_limit:] if game_state.oracle_llm_interaction_history else []
-    
-    enable_structured_outputs = getattr(game_state.llm_config, 'enable_structured_outputs', False)
     
     messages = llm_oracle.build_oracle_messages(
         oracle_name=oracle_name,
@@ -119,9 +113,7 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
     game_context = _build_game_context(game_state)
     
     # Trim history based on context level
-    context_level = getattr(game_state.llm_config, 'context_level', 'medium')
-    history_limits = {'low': 1, 'medium': 3, 'high': 5}
-    history_limit = history_limits.get(context_level, 3)
+    history_limit = HISTORY_LIMITS.get(game_state.llm_config.context_level, 3)
     trimmed_history = game_state.oracle_llm_interaction_history[-history_limit:] if game_state.oracle_llm_interaction_history else []
     
     # Log interaction timestamp
@@ -139,7 +131,7 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
             game_context=game_context,
             history=trimmed_history,
             max_tokens=game_state.llm_config.max_tokens,
-            enable_structured_outputs=getattr(game_state.llm_config, 'enable_structured_outputs', False),
+            enable_structured_outputs=game_state.llm_config.enable_structured_outputs,
         )
         
         # Parse response for narrative and actions
@@ -264,8 +256,6 @@ def process_enhanced_oracle_streaming(
         def llm_iterator():
             nonlocal complete_response, error_for_log
             
-            enable_structured_outputs = getattr(llm_config, 'enable_structured_outputs', False)
-            
             try:
                 for chunk in llm_oracle.query_oracle_streaming(
                     client=client,
@@ -351,9 +341,7 @@ def _build_game_context(game_state: Any) -> Dict[str, Any]:
     }
     
     # Get context level from config
-    context_level = "medium"  # default
-    if game_state.llm_config:
-        context_level = getattr(game_state.llm_config, 'context_level', 'medium')
+    context_level = game_state.llm_config.context_level if game_state.llm_config else "medium"
     
     # Add mission for medium and high
     if context_level in ('medium', 'high'):
