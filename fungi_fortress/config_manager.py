@@ -56,19 +56,8 @@ class LLMConfig:
             if self.api_key in ["YOUR_API_KEY_HERE", "testkey123", "None", ""]: # Log if it's a known placeholder or empty
                  logger.info(f"API key is a placeholder or empty: \'{self.api_key}\'")
         
-        # Validate safety limits
-        if self.max_tokens <= 0 or self.max_tokens > 4000:
-            logger.warning(f"max_tokens value {self.max_tokens} is outside safe range (1-4000). Using 500.")
-            self.max_tokens = 500
-            
-        if self.timeout_seconds <= 0 or self.timeout_seconds > 120:
-            logger.warning(f"timeout_seconds value {self.timeout_seconds} is outside safe range (1-120). Using 30.")
-            self.timeout_seconds = 30
-            
-        if self.daily_request_limit < 0 or self.daily_request_limit > 1000:
-            logger.warning(f"daily_request_limit value {self.daily_request_limit} is outside safe range (0-1000, 0=unlimited). Using 100.")
-            self.daily_request_limit = 100
-    
+        # Validate numeric fields using centralized validation
+        _validate_numeric_fields(self)
     def create_llm_client(self) -> llm_client.LLMClient:
         """Create an LLM client from this configuration.
         
