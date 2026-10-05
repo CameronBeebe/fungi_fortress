@@ -8,7 +8,7 @@ Fungi Fortress uses a unified LLM client supporting XAI (Grok) and a determinist
 
 1. **`llm_client.py`**: Main client with `XAIProvider`, `MockLLMProvider`, and typed exceptions
 2. **`llm_oracle.py`**: Oracle-specific adapter (dialogue queries)
-3. **`llm_world.py`**: World seed generation adapter
+3. **`world_seed.py`**: World seed generation adapter
 4. **`config_manager.py`**: Configuration loading and client factory
 
 ### Key Features
@@ -188,20 +188,20 @@ The Oracle supports two output formats:
 
 ## World Seed Generation
 
-World generation uses `llm_world.py` with low reasoning effort:
+World generation uses `world_seed.py` with low reasoning effort:
 
 ```python
-from fungi_fortress import llm_world
+from fungi_fortress import world_seed
 
 # Generate world seed (uses reasoning_effort="low")
-seed_dict = llm_world.generate_world_seed(
+seed_dict = world_seed.grow_world(
     client=client,
     prompt=world_seed_prompt,
     max_tokens=4000,
 )
 ```
 
-The `llm_world.generate_world_seed` function automatically extracts JSON from markdown code fences when parsing world seed responses.
+The `world_seed.grow_world` function automatically extracts JSON from markdown code fences when parsing world seed responses.
 
 ## Testing
 
@@ -230,7 +230,7 @@ def test_client_uses_mock_without_key():
     assert client.is_mock()
 
 def test_client_with_xai_key():
-    config = LLMClientConfig(model="test-model", api_key="xai-test-key")
+    config = LLMConfig(model="test-model", api_key="xai-test-key")
     client = LLMClient(config)
     assert not client.is_mock()
 ```
@@ -244,7 +244,7 @@ def test_rate_limit_error(mock_openai):
     mock_openai.return_value = mock_client
     mock_client.chat.completions.create.side_effect = openai.RateLimitError(...)
     
-    config = LLMClientConfig(model="test-model", api_key="test-key")
+    config = LLMConfig(model="test-model", api_key="test-key")
     client = LLMClient(config)
     
     with pytest.raises(llm_client.RateLimitError):
