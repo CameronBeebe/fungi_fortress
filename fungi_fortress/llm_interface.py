@@ -199,10 +199,6 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
 
 
 def process_enhanced_oracle_streaming(
-    prompt: str,
-    api_key: str,  # Ignored - get from llm_config instead
-    model_name: str,
-    provider_hint: str,
     llm_config,
     player_query: str,
     oracle_name: str,
@@ -212,10 +208,6 @@ def process_enhanced_oracle_streaming(
     """Process enhanced Oracle streaming with the unified client.
     
     Args:
-        prompt: Complete prompt string (for compatibility with old callers)
-        api_key: Ignored - API key comes from llm_config
-        model_name: Model name
-        provider_hint: Provider hint
         llm_config: LLM configuration object
         player_query: The player's question
         oracle_name: Name of the Oracle
@@ -264,7 +256,7 @@ def process_enhanced_oracle_streaming(
                     game_context=game_context,
                     history=history,
                     max_tokens=llm_config.max_tokens,
-                    enable_structured_outputs=enable_structured_outputs,
+                    enable_structured_outputs=llm_config.enable_structured_outputs,
                 ):
                     complete_response += chunk
                     yield chunk

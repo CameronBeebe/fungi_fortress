@@ -570,10 +570,6 @@ class GameLogic:
                 
                 # Start the enhanced streaming generator
                 self.game_state.oracle_streaming_generator = llm_interface.process_enhanced_oracle_streaming(
-                    streaming_details["prompt"],
-                    None,  # api_key - ignored, comes from llm_config
-                    streaming_details["model_name"],
-                    streaming_details["provider_hint"],
                     self.game_state.llm_config,
                     streaming_details["player_query"],
                     oracle_name,
