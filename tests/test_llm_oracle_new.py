@@ -5,6 +5,7 @@ from unittest.mock import Mock
 
 from fungi_fortress import llm_client, llm_oracle
 from fungi_fortress.llm_client import LLMClient
+from fungi_fortress.config_manager import LLMConfig
 
 
 class TestOracleMessageBuilding:
@@ -95,7 +96,7 @@ class TestOracleQueryNonStreaming:
     
     def test_query_oracle_mock(self):
         """Test querying Oracle with mock provider."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         
         response = llm_oracle.query_oracle(
             client=client,
@@ -112,7 +113,7 @@ class TestOracleQueryNonStreaming:
     
     def test_query_oracle_different_queries(self):
         """Test Oracle gives appropriate responses to different queries."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         game_context = {"tick": 100, "depth": 1}
         
         # Test quest query
@@ -137,7 +138,7 @@ class TestOracleQueryNonStreaming:
     
     def test_query_oracle_with_max_tokens(self):
         """Test querying Oracle with max_tokens parameter."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         
         response = llm_oracle.query_oracle(
             client=client,
@@ -158,7 +159,7 @@ class TestOracleQueryStreaming:
     
     def test_query_oracle_streaming_mock(self):
         """Test streaming query with mock provider."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         
         chunks = list(llm_oracle.query_oracle_streaming(
             client=client,
@@ -178,7 +179,7 @@ class TestOracleQueryStreaming:
     
     def test_streaming_multiple_chunks(self):
         """Test streaming yields multiple chunks."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         
         chunks = list(llm_oracle.query_oracle_streaming(
             client=client,
@@ -213,7 +214,7 @@ class TestOracleIntegration:
     
     def test_oracle_conversation_flow(self):
         """Test a full Oracle conversation with history."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         game_context = {"tick": 100, "depth": 1}
         history = []
         
@@ -255,7 +256,7 @@ class TestOracleIntegration:
     
     def test_oracle_mock_indicator(self):
         """Test that code can detect when using mock provider."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         
         # Client should indicate it's using mock
         assert client.is_mock()

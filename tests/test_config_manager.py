@@ -230,7 +230,7 @@ def test_load_llm_config_logs_no_section(mock_open_func, mock_os_path_join, mock
     mock_os_path_join.return_value = f"mocked/path/to/{file_basename}"
 
     load_llm_config(file_basename)
-    mock_logger.warning.assert_any_call(f"[LLM] section not found in 'mocked/path/to/{file_basename}'. LLM features may be unavailable.")
+    mock_logger.warning.assert_any_call(f"[LLM] section not found in 'mocked/path/to/{file_basename}'. Using defaults.")
     mock_open_func.assert_called_once_with(f"mocked/path/to/{file_basename}", 'r')
 
 @patch('fungi_fortress.config_manager.logger')
@@ -257,4 +257,4 @@ def test_load_llm_config_logs_invalid_context_level(mock_open_func, mock_os_path
 
     load_llm_config(file_basename)
     # The warning message in load_llm_config uses the full path.
-    mock_logger.warning.assert_any_call(f"Invalid 'context_level' in '{mock_config_path}'. Using default 'medium'.") 
+    mock_logger.warning.assert_any_call(f"Invalid 'context_level' in '{mock_config_path}'. Using default.")

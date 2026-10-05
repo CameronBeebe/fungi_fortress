@@ -117,6 +117,9 @@ def load_llm_config(config_file_name: str = DEFAULT_CONFIG_FILENAME) -> LLMConfi
     
     # Override api_key from environment
     config.api_key = get_xai_api_key_from_env()
+    config.is_real_api_key_present = bool(
+        config.api_key and config.api_key not in ("", "YOUR_API_KEY_HERE", "testkey123")
+    )
     
     # Override fields from [LLM] section if present
     if "LLM" in parser:

@@ -166,10 +166,10 @@ def test_client_no_key_uses_mock():
 
 def test_llm_config_defaults():
     """Test that LLMConfig defaults are set correctly."""
-    from fungi_fortress.config_manager import DEFAULT_MODEL
     config = LLMConfig()
     assert config.api_key is None
-    assert config.model_name == DEFAULT_MODEL
+    assert config.model_name == "grok-4.3"
+    assert config.reasoning_effort == "low"
     assert config.context_level == "medium"
     assert not config.is_real_api_key_present
 

@@ -93,7 +93,7 @@ class TestLLMClient:
     def test_client_with_invalid_key_uses_mock(self):
         """Test client with invalid API key uses mock provider."""
         config = LLMConfig(
-            model="test-model",
+            model_name="test-model",
             api_key="YOUR_API_KEY_HERE",
         )
         client = LLMClient(config)
@@ -103,7 +103,7 @@ class TestLLMClient:
     def test_client_force_mock(self):
         """Test forcing mock provider even with valid config."""
         config = LLMConfig(
-            model="test-model",
+            model_name="test-model",
             api_key="real-looking-key",
         )
         client = LLMClient(config, use_mock=True)
@@ -112,7 +112,7 @@ class TestLLMClient:
     
     def test_mock_client_chat(self):
         """Test mock client chat method."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         messages = [{"role": "user", "content": "Hello"}]
         
         response = client.chat(messages)
@@ -122,7 +122,7 @@ class TestLLMClient:
     
     def test_mock_client_chat_stream(self):
         """Test mock client streaming."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         messages = [{"role": "user", "content": "Hello"}]
         
         chunks = list(client.chat_stream(messages))
@@ -133,7 +133,7 @@ class TestLLMClient:
     def test_client_with_valid_config_not_mock(self):
         """Test client with valid config is not mock."""
         config = LLMConfig(
-            model="test-model",
+            model_name="test-model",
             api_key="xai-real-key",
         )
         client = LLMClient(config)
@@ -147,7 +147,7 @@ class TestLLMClient:
         mock_check.return_value = False
         
         config = LLMConfig(
-            model="test-model",
+            model_name="test-model",
             api_key="xai-test-key",
         )
         client = LLMClient(config)
@@ -173,7 +173,7 @@ class TestErrorMapping:
         )
         
         config = LLMConfig(
-            model="test-model",
+            model_name="test-model",
             api_key="invalid-key",
         )
         client = LLMClient(config)
@@ -195,7 +195,7 @@ class TestErrorMapping:
         )
         
         config = LLMConfig(
-            model="test-model",
+            model_name="test-model",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -215,7 +215,7 @@ class TestErrorMapping:
         )
         
         config = LLMConfig(
-            model="test-model",
+            model_name="test-model",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -235,7 +235,7 @@ class TestErrorMapping:
         )
         
         config = LLMConfig(
-            model="test-model",
+            model_name="test-model",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -245,33 +245,24 @@ class TestErrorMapping:
 
 
 class TestClientFactory:
-    """Tests for client factory function (XAI + mock only)."""
+    """Tests for creating clients from config."""
     
     def test_create_client_with_no_key(self):
-        """Test factory creates mock client with no API key."""
-        client = llm_client.create_client_from_config(
-            model="test-model",
-            api_key=None,
-        )
-        
+        """Test creates mock client with no API key."""
+        config = LLMConfig(model_name="test-model")
+        client = LLMClient(config)
         assert client.is_mock()
     
     def test_create_client_with_placeholder_key(self):
-        """Test factory creates mock client with placeholder key."""
-        client = llm_client.create_client_from_config(
-            model="test-model",
-            api_key="YOUR_API_KEY_HERE",
-        )
-        
+        """Test creates mock client with placeholder key."""
+        config = LLMConfig(model_name="test-model", api_key="YOUR_API_KEY_HERE")
+        client = LLMClient(config)
         assert client.is_mock()
     
     def test_create_client_with_xai_key(self):
-        """Test factory creates XAI client with valid key."""
-        client = llm_client.create_client_from_config(
-            model="test-model",
-            api_key="xai-test-key",
-        )
-        
+        """Test creates XAI client with valid key."""
+        config = LLMConfig(model_name="test-model", api_key="xai-test-key")
+        client = LLMClient(config)
         assert not client.is_mock()
 
 
