@@ -56,14 +56,7 @@ If not set, the game automatically uses the mock provider.
 
 ### `llm_config.ini`
 
-```ini
-[LLM]
-# model_name = grok-4.3       # XAI model (default: see LLMConfig in config_manager.py)
-context_level = medium         # low, medium, high
-max_tokens = 1000              # Response length limit
-enable_streaming = true        # Word-by-word streaming
-enable_structured_outputs = false  # JSON Schema for actions
-```
+For available configuration keys and their descriptions, see `llm_config.ini.example` in the repository root. For default values, see the `LLMConfig` dataclass in `fungi_fortress/config_manager.py`.
 
 **Security**: No API key in the file! Keys come from environment variables.
 

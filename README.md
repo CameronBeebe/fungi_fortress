@@ -260,33 +260,7 @@ The Oracle uses **XAI (Grok)** via `https://api.x.ai/v1`:
 
 ### Configuration
 
-Copy `llm_config.ini.example` to `llm_config.ini` and configure your settings:
-
-```ini
-[LLM]
-# === API KEY CONFIGURATION ===
-# API key is loaded from environment variable for security
-# Set this in your shell or .env file:
-#
-# For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
-#
-# If not set, the game uses the built-in mock provider (offline mode)
-
-# Model to use (default: see LLMConfig in config_manager.py)
-# model_name = grok-4.3
-
-# Context level for game information (low, medium, high)
-# low = tick + depth, 1 history turn
-# medium = + mission, 3 history turns
-# high = + resources, 5 history turns
-context_level = medium
-
-# === COST CONTROL SETTINGS ===
-max_tokens = 1000             # Max response length (prevents runaway costs)
-timeout_seconds = 60          # Request timeout (prevents hanging)
-enable_streaming = true       # Word-by-word streaming responses
-enable_structured_outputs = false  # JSON Schema for action parsing
-```
+Copy `llm_config.ini.example` to `llm_config.ini` to customize settings. For available configuration keys and their descriptions, see `llm_config.ini.example`. For default values, see the `LLMConfig` dataclass in `fungi_fortress/config_manager.py`.
 
 ### Using Your XAI API Key
 

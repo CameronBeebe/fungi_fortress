@@ -34,13 +34,7 @@ uv run fungi
 
 ## 🔧 Configuration Options
 
-Edit `llm_config.ini` to customize:
-
-- **model_name**: Choose your preferred XAI model (see `llm_config.ini.example` for default)
-- **context_level**: `low`, `medium` (default), `high` - controls game context sent to Oracle
-- **max_tokens**: Response length limit (cost control, default: 1000)
-- **enable_structured_outputs**: Use JSON Schema for reliable action parsing (default: false)
-- **enable_streaming**: Stream responses word-by-word (default: true)
+For available configuration keys and their descriptions, see `llm_config.ini.example` in the repository root. For default values, see the `LLMConfig` dataclass in `fungi_fortress/config_manager.py`.
 
 ## 🛡️ Security Benefits
 
