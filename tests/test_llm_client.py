@@ -23,7 +23,7 @@ class TestMockProvider:
         """Test mock provider responds to greetings."""
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "Hello Oracle!"}]
-        response = provider.chat(messages)
+        response = provider.chat(messages, max_tokens=100)
         
         assert "Greetings, seeker" in response
         assert "mycelial network" in response
@@ -32,7 +32,7 @@ class TestMockProvider:
         """Test mock provider responds to quest queries."""
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "Tell me about my quest"}]
-        response = provider.chat(messages)
+        response = provider.chat(messages, max_tokens=100)
         
         assert "path" in response.lower()
         assert "forest" in response.lower() or "groves" in response.lower()
@@ -41,7 +41,7 @@ class TestMockProvider:
         """Test mock provider responds to fungi queries."""
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "Where can I find magic fungi?"}]
-        response = provider.chat(messages)
+        response = provider.chat(messages, max_tokens=100)
         
         assert "fungi" in response.lower()
         assert "magic" in response.lower() or "memories" in response.lower()
@@ -50,7 +50,7 @@ class TestMockProvider:
         """Test mock provider streaming."""
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "Help me"}]
-        chunks = list(provider.chat_stream(messages))
+        chunks = list(provider.chat_stream(messages, max_tokens=100))
         
         # Should yield multiple chunks
         assert len(chunks) > 1
@@ -67,8 +67,8 @@ class TestMockProvider:
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "Hello"}]
         
-        response1 = provider.chat(messages)
-        response2 = provider.chat(messages)
+        response1 = provider.chat(messages, max_tokens=100)
+        response2 = provider.chat(messages, max_tokens=100)
         
         assert response1 == response2
     
@@ -76,7 +76,7 @@ class TestMockProvider:
         """Test mock provider default response for unknown queries."""
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "xyzabc random nonsense"}]
-        response = provider.chat(messages)
+        response = provider.chat(messages, max_tokens=100)
         
         assert "spores whisper" in response.lower() or "obscured" in response.lower()
 
