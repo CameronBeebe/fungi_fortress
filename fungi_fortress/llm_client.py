@@ -466,7 +466,11 @@ def structured_call(
     """
     # Resolve max_tokens: explicit > client config default
     if max_tokens is None:
-        max_tokens = client.config.max_tokens
+        max_tokens = getattr(client, 'config', None)
+        if max_tokens is not None and hasattr(max_tokens, 'max_tokens'):
+            max_tokens = max_tokens.max_tokens
+        else:
+            max_tokens = 4000  # Fallback for test mocks without config
     
     # Generate schema from Pydantic model
     response_format = _schema_from_model(model_cls, schema_name)
