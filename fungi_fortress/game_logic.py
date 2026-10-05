@@ -302,7 +302,7 @@ class GameLogic:
             self.game_state.add_debug_message(f"LLM: {message_text}")
         elif action_type == "spawn_character":
             # Basic implementation: Add to characters list.
-            char_type = details.get("type", "NPC")
+            kind = details.get("kind", "kin")  # Use kind field from CharacterKind enum
             name = details.get("name", "Mysterious Figure")
             x = details.get("x", self.game_state.cursor_x)
             y = details.get("y", self.game_state.cursor_y)
@@ -311,13 +311,13 @@ class GameLogic:
             content_entry = {
                 "type": "character",
                 "name": name,
-                "char_type": char_type,
+                "kind": kind,
                 "location": (x, y),
                 "tick": self.game_state.tick,
                 "details": details.copy()
             }
             self.game_state.oracle_generated_content.append(content_entry)
-            self.game_state.add_debug_message(f"[Oracle] Generated character: {name} ({char_type})")
+            self.game_state.add_debug_message(f"[Oracle] Generated character: {name} (kind={kind})")
             
             # Ensure x, y are within map bounds
             x = max(0, min(MAP_WIDTH - 1, x))
@@ -352,19 +352,17 @@ class GameLogic:
                         self.game_state.add_debug_message(f"Could not find walkable spot for LLM spawn near ({original_x}, {original_y}). Spawning at cursor ({x},{y}).")
                     else:
                         self.game_state.add_debug_message(f"Critical spawn fail: Could not find any walkable spot for LLM spawn near ({original_x},{original_y}) or at cursor. Action aborted.")
-                        self.game_state.oracle_current_dialogue.append(f"(The Oracle's vision for a {char_type} at ({original_x},{original_y}) was obscured, and it could not manifest.)")
+                        self.game_state.oracle_current_dialogue.append(f"(The Oracle's vision for a character (kind={kind}) at ({original_x},{original_y}) was obscured, and it could not manifest.)")
                         return
 
-            if char_type == "Oracle":
+            # Create character based on kind, same as _spawn_characters in world_seed.py
+            if kind == "revealed":
                 new_char = Oracle(name=name, x=x, y=y)
-            elif char_type == "Dwarf":
-                new_char = NPC(name=name, x=x, y=y)
-                self.game_state.add_debug_message(f"LLM tried to spawn Dwarf, created NPC {name} instead.")
             else:
                 new_char = NPC(name=name, x=x, y=y)
             
             self.game_state.characters.append(new_char)
-            self.game_state.add_debug_message(f"LLM spawned {char_type} '{name}' at ({x},{y}).")
+            self.game_state.add_debug_message(f"LLM spawned character '{name}' (kind={kind}) at ({x},{y}).")
 
         elif action_type == "add_oracle_dialogue":
             dialogue_text = details.get("text", "The Oracle says nothing.")

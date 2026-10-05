@@ -16,7 +16,7 @@ class TestTypedLLMContract:
         # Actions must have explicit typed properties
         spawn_action = SpawnCharacterAction(
             action_type="spawn_character",
-            type="Oracle",
+            kind="revealed",  # Uses CharacterKind enum (kin or revealed)
             name="Mystic",
             x=10,
             y=20
@@ -28,7 +28,7 @@ class TestTypedLLMContract:
         )
         
         # Verify action has actual typed fields, not a free-form 'details' dict
-        assert reply.actions[0].type == "Oracle"
+        assert reply.actions[0].kind == "revealed"
         assert reply.actions[0].name == "Mystic"
         assert reply.actions[0].x == 10
         assert reply.actions[0].y == 20

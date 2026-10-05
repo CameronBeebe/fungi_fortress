@@ -291,7 +291,6 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
         convert=_convert_to_world_seed,
         max_tokens=4000,
         reasoning_effort="low",
-        attempts=2
     )
     
     if seed is None:
@@ -448,7 +447,6 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
         convert=_convert_to_world_seed,
         max_tokens=4000,
         reasoning_effort="low",
-        attempts=2
     )
     
     if seed is None:
@@ -598,6 +596,24 @@ def _spawn_characters(game: Any, seed: WorldSeed, layer: str = "surface") -> Non
         game.add_debug_message(f"{character.name} is at ({spot[0]}, {spot[1]})")
 
 
+def is_open_tile(game, x: int, y: int) -> bool:
+    """Check if a tile can hold a spawned character (walkable and unoccupied)."""
+    # Check bounds
+    if not hasattr(game, 'map') or not game.map:
+        return False
+    height = len(game.map)
+    width = len(game.map[0]) if height else 0
+    if x < 0 or x >= width or y < 0 or y >= height:
+        return False
+    
+    # Check tile is walkable
+    tile = game.get_tile(x, y) if hasattr(game, "get_tile") else game.map[y][x]
+    if not tile or not getattr(tile, "walkable", False):
+        return False
+    
+    return True
+
+
 def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int] | None:
     """Pick a walkable tile away from the dwarves and from other seeded people."""
     spots = []
@@ -605,8 +621,7 @@ def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int
         for x in range(width):
             if (x, y) in occupied:
                 continue
-            tile = game.get_tile(x, y) if hasattr(game, "get_tile") else game.map[y][x]
-            if tile and getattr(tile, "walkable", False):
+            if is_open_tile(game, x, y):
                 spots.append((x, y))
 
     def away(min_dwarf: int, min_peer: int):

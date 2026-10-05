@@ -14,6 +14,9 @@ from .text_streaming import text_streaming_engine
 
 logger = logging.getLogger(__name__)
 
+# Oracle interaction history limit
+MAX_ORACLE_HISTORY = 10
+
 
 def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[List[Dict[str, Any]]]:
     """Process a game event, potentially triggering LLM interaction.
@@ -76,40 +79,10 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
         history=trimmed_history,
     )
     
-    # Validator for NpcReply
-    def validate_reply(reply):
-        """Validate NpcReply semantics and raise ValueError with specific errors."""
-        from .npc_reply import NpcReply, SpawnCharacterAction
-        from .constants import MAP_WIDTH, MAP_HEIGHT
-        
-        if not isinstance(reply, NpcReply):
-            return reply
-        
-        errors = []
-        
-        for action in reply.actions:
-            if isinstance(action, SpawnCharacterAction):
-                # Check bounds
-                if action.x < 0 or action.x >= MAP_WIDTH:
-                    errors.append(f"spawn x={action.x} is out of bounds (must be 0-{MAP_WIDTH-1})")
-                if action.y < 0 or action.y >= MAP_HEIGHT:
-                    errors.append(f"spawn y={action.y} is out of bounds (must be 0-{MAP_HEIGHT-1})")
-                
-                # Check tile is walkable if in bounds
-                if 0 <= action.x < MAP_WIDTH and 0 <= action.y < MAP_HEIGHT:
-                    tile = game_state.get_tile(action.x, action.y) if hasattr(game_state, "get_tile") else game_state.map[action.y][action.x]
-                    if not tile or not getattr(tile, "walkable", False):
-                        errors.append(f"spawn location ({action.x}, {action.y}) is not walkable")
-                
-                # Check character type
-                valid_types = {"Oracle", "NPC"}
-                if action.type not in valid_types:
-                    errors.append(f"spawn type '{action.type}' is invalid (must be one of {valid_types})")
-        
-        if errors:
-            raise ValueError("; ".join(errors))
-        
-        return reply
+    # Validator wrapper for structured_call
+    def validator(reply):
+        from .npc_reply import validate_npc_reply
+        return validate_npc_reply(reply, game_state)
     
     try:
         reply = llm_client.structured_call(
@@ -118,8 +91,7 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
             llm_oracle.NpcReply,
             schema_name="npc_reply",
             label="Oracle reply",
-            convert=validate_reply,
-            attempts=2,
+            convert=validator,
         )
         
         if reply is None:
@@ -165,7 +137,7 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
                 "player": player_query,
                 "oracle": reply.narrative
             })
-            if len(game_state.oracle_llm_interaction_history) > 10:
+            if len(game_state.oracle_llm_interaction_history) > MAX_ORACLE_HISTORY:
                 game_state.oracle_llm_interaction_history.pop(0)
             
             # Log interaction
