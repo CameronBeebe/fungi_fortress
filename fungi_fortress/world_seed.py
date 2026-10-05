@@ -289,7 +289,7 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
         schema_name="world_seed",
         label="World seed",
         convert=_convert_to_world_seed,
-        max_tokens=4000,
+        max_tokens=WORLD_GEN_MAX_TOKENS,
         attempts=2
     )
     
@@ -441,7 +441,7 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
         schema_name="depth_seed",
         label="Depth seed",
         convert=_convert_to_world_seed,
-        max_tokens=4000,
+        max_tokens=WORLD_GEN_MAX_TOKENS,
         attempts=2
     )
     
