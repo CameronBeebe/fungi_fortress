@@ -63,7 +63,8 @@ def test_streaming_context_levels(context_level, expected_history_len, expect_mi
     assert actions[0]["action_type"] == "start_enhanced_oracle_streaming"
     
     # Extract the prompt from the action details
-        history_in_action = actions[0]["details"]["history"]
+    prompt = actions[0]["details"]["prompt"]
+    history_in_action = actions[0]["details"]["history"]
     
     # Check history length passed in action
     assert len(history_in_action) == expected_history_len, \
@@ -81,16 +82,20 @@ def test_streaming_context_levels(context_level, expected_history_len, expect_mi
     
     # Check mission presence
     if expect_mission:
-                assert "Test mission description" in prompt
+        assert "Mission:" in prompt, f"Mission should be in prompt for {context_level}"
+        assert "Test mission description" in prompt
     else:
-            
+        assert "Mission:" not in prompt, f"Mission should not be in prompt for {context_level}"
+    
     # Check resources presence
     if expect_resources:
-                    f"Resources should be in prompt for {context_level}"
+        assert "wood" in prompt.lower() or "resources" in prompt.lower(), \
+            f"Resources should be in prompt for {context_level}"
     else:
         # For low/medium, resources shouldn't be mentioned
         if context_level in ["low", "medium"]:
-            
+            assert "wood: 10" not in prompt, f"Resources should not be in prompt for {context_level}"
+
 
 @pytest.mark.parametrize("context_level,expected_history_len,expect_mission,expect_resources", [
     ("low", 1, False, False),
@@ -180,16 +185,20 @@ def test_non_streaming_context_levels(context_level, expected_history_len, expec
         
         # Check mission presence
         if expect_mission:
-                        assert "Test mission description" in prompt
+            assert "Mission:" in prompt, f"Mission should be in prompt for {context_level}"
+            assert "Test mission description" in prompt
         else:
-                    
+            assert "Mission:" not in prompt, f"Mission should not be in prompt for {context_level}"
+        
         # Check resources presence
         if expect_resources:
-                            f"Resources should be in prompt for {context_level}"
+            assert "wood" in prompt.lower() or "resources" in prompt.lower(), \
+                f"Resources should be in prompt for {context_level}"
         else:
             # For low/medium, resources shouldn't be mentioned
             if context_level in ["low", "medium"]:
-                    
+                assert "wood: 10" not in prompt, f"Resources should not be in prompt for {context_level}"
+    
     finally:
         llm_config.create_llm_client = original_create
 
