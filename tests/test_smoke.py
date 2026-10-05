@@ -27,11 +27,15 @@ class FakeOpenAIClient:
         self.chat = Mock()
         self.chat.completions = Mock()
         self.chat.completions.create = self._create_completion
+        self.call_log = []  # Track all calls for assertions
     
     def _create_completion(self, **kwargs):
         """Return streamed chunks or JSON body based on stream param."""
+        # Log this call
+        self.call_log.append(kwargs)
+        
         if kwargs.get('stream'):
-            # Streaming response: yield chunks
+            # Streaming response: yield chunks with unique phrase
             narrative = "The ancient mycelium speaks of hidden paths and forgotten spores."
             chunks = [FakeStreamChunk(word + " ") for word in narrative.split()]
             return iter(chunks)
@@ -89,8 +93,21 @@ class FakeOpenAIClient:
 def fake_openai(monkeypatch):
     """Monkeypatch openai.OpenAI to use fake client."""
     import openai
-    monkeypatch.setattr('openai.OpenAI', FakeOpenAIClient)
-    return FakeOpenAIClient
+    fake_instance = None
+    
+    def create_fake(*args, **kwargs):
+        nonlocal fake_instance
+        fake_instance = FakeOpenAIClient(*args, **kwargs)
+        return fake_instance
+    
+    monkeypatch.setattr('openai.OpenAI', create_fake)
+    
+    class FakeHolder:
+        @property
+        def instance(self):
+            return fake_instance
+    
+    return FakeHolder()
 
 
 def test_end_to_end_oracle_and_world_with_faked_network(fake_openai):
@@ -145,23 +162,32 @@ def test_end_to_end_oracle_and_world_with_faked_network(fake_openai):
     else:
         pytest.fail(f"Oracle dialogue did not complete within {max_ticks} ticks")
     
-    # Assert real Oracle dialogue appeared (not error message)
+    # Assert real Oracle dialogue appeared with unique phrase from fake
     dialogue_text = "\n".join(
         line[0] if isinstance(line, tuple) else str(line)
         for line in game_state.oracle_current_dialogue
     )
     
     assert dialogue_text, "Oracle dialogue should not be empty"
-    assert "mycelium" in dialogue_text.lower() or "spore" in dialogue_text.lower(), \
-        "Should contain actual Oracle narrative (not error/disruption)"
-    assert "disruption" not in dialogue_text.lower(), \
-        "Should not show connection error with fake network"
+    # Check for unique phrase from fake response (not random flavor text)
+    assert "hidden paths and forgotten" in dialogue_text, \
+        f"Should contain exact fake narrative phrase, got: {dialogue_text[:200]}"
+    # Verify not error messages
+    assert "connection is disrupted" not in dialogue_text.lower(), \
+        "Should not show real connection error"
     assert "unclear" not in dialogue_text.lower(), \
-        "Should not show mock 'words are unclear' response"
+        "Should not show mock fallback response"
     
     # Verify history was updated
     assert len(game_state.oracle_llm_interaction_history) > 0, \
         "Oracle interaction should be recorded in history"
+    
+    # Assert exactly one streaming request reached the fake client
+    fake_client = fake_openai.instance
+    assert fake_client is not None, "Fake client should have been created"
+    streaming_calls = [call for call in fake_client.call_log if call.get('stream')]
+    assert len(streaming_calls) == 1, \
+        f"Expected exactly 1 streaming call, got {len(streaming_calls)}"
     
     # === Part 2: World generation (if cheap enough) ===
     
