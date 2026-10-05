@@ -34,65 +34,6 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
     return None
 
 
-def handle_oracle_query_streaming(event_data: Dict[str, Any], game_state: Any) -> Optional[List[Dict[str, Any]]]:
-    """Handle Oracle queries with streaming responses."""
-    details = event_data.get("details", {})
-    player_query = details.get("query_text")
-    oracle_name = details.get("oracle_name", "The Oracle")
-    
-    if not player_query:
-        logger.info("No query text in ORACLE_QUERY event")
-        return [{
-            "action_type": "add_oracle_dialogue",
-            "details": {"text": "(You offer your thoughts, but no words escape.)"}
-        }]
-    
-    # Build game context and prompt
-    game_context = _build_game_context(game_state)
-    
-    # Trim history based on context level (low: 1, medium: 3, high: 5)
-    context_level = getattr(game_state.llm_config, 'context_level', 'medium')
-    history_limits = {'low': 1, 'medium': 3, 'high': 5}
-    history_limit = history_limits.get(context_level, 3)
-    trimmed_history = game_state.oracle_llm_interaction_history[-history_limit:] if game_state.oracle_llm_interaction_history else []
-    
-    # Get reasoning effort from config
-    reasoning_effort = getattr(game_state.llm_config, 'reasoning_effort', 'high')
-    
-    messages = llm_oracle.build_oracle_messages(
-        oracle_name=oracle_name,
-        player_query=player_query,
-        game_context=game_context,
-        history=trimmed_history,
-    )
-    
-    # Convert messages to a single prompt string for compatibility
-    # Format: system message + context + history + query
-    prompt_parts = []
-    for msg in messages:
-        if msg["role"] == "system":
-            prompt_parts.append(msg["content"])
-        else:
-            prompt_parts.append(msg["content"])
-    prompt = "\n\n".join(prompt_parts)
-    
-    # Return action to start enhanced streaming (without API key in details)
-    return [{
-        "action_type": "start_enhanced_oracle_streaming",
-        "details": {
-            "prompt": prompt,
-            "model_name": game_state.llm_config.model_name,
-            "provider_hint": "xai",  # Fixed to XAI provider
-            # NOTE: llm_config NOT included here to prevent API key leaks in logs
-            "player_query": player_query,
-            "oracle_name": oracle_name,
-            "game_context": game_context,
-            "history": trimmed_history,  # Use trimmed history based on context_level
-            "reasoning_effort": reasoning_effort,
-        }
-    }]
-
-
 def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: Any) -> Optional[List[Dict[str, Any]]]:
     """Handle Oracle queries with non-streaming responses."""
     details = event_data.get("details", {})
