@@ -326,9 +326,6 @@ def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
     Returns:
         LLMClient or None if no valid config/key available
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    
     config = getattr(game, "llm_config", None)
     if config is not None:
         try:
@@ -336,7 +333,7 @@ def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
             # Only return if it's not using mock (i.e., has a real key)
             if not client.is_mock():
                 return client
-        except Exception as e:
+        except (ValueError, OSError, RuntimeError) as e:
             logger.warning(f"Failed to create LLM client for world generation: {e}")
     
     return None
