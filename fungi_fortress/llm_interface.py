@@ -14,6 +14,9 @@ from .text_streaming import text_streaming_engine
 
 logger = logging.getLogger(__name__)
 
+# Context level history limits (single source of truth)
+HISTORY_LIMITS = {'low': 1, 'medium': 3, 'high': 5}
+
 
 def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[List[Dict[str, Any]]]:
     """Process a game event, potentially triggering LLM interaction.
