@@ -130,13 +130,8 @@ def game_loop(stdscr: curses.window):
     # Load LLM configuration from environment
     logging.info("Loading LLM configuration from environment...")
     llm_config = LLMConfig.from_env()
-    
-    # Log the loaded config, masking the API key
-    if llm_config:
-        masked_api_key = "'****'" if llm_config.api_key and llm_config.is_real_api_key_present else f"'{llm_config.api_key}'"
-        logging.info(f"Loaded llm_config. API Key: {masked_api_key}, Model: {llm_config.model_name}, Real Key Present: {llm_config.is_real_api_key_present}, Type: {type(llm_config)}")
-    else:
-        logging.error("LLM configuration loading returned None. LLM features will be impaired.")
+    masked_api_key = "'****'" if llm_config.api_key and llm_config.is_real_api_key_present else f"'{llm_config.api_key}'"
+    logging.info(f"Loaded llm_config. API Key: {masked_api_key}, Model: {llm_config.model_name}, Real Key Present: {llm_config.is_real_api_key_present}")
 
     logging.info("Fungi Fortress initialization starting...")
     

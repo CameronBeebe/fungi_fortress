@@ -86,8 +86,6 @@ cython_debug/
 .DS_Store
 
 # === LLM INTEGRATION FILES ===
-# API keys (environment variables only, no config files)
-# No user config files in this project
 
 # LLM request tracking and logs (generated files)
 oracle_request_tracking.json

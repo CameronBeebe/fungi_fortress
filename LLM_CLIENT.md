@@ -86,13 +86,10 @@ See the `LLMConfig` dataclass in `fungi_fortress/config_manager.py` for the curr
 
 #### `reasoning_effort`
 
-Controls the depth of reasoning (none/low/medium/high/xhigh):
-- `"high"` - Oracle dialogue (better quality, slower)
-- `"low"` - World seed generation (faster, cheaper)
-- `"medium"` - balanced
+Controls the depth of reasoning. Default is set in `LLMConfig` and can be overridden per call:
 
 ```python
-response = client.chat(messages, reasoning_effort="high")
+response = client.chat(messages, reasoning_effort="medium")
 ```
 
 #### `response_format`
@@ -145,7 +142,7 @@ messages = llm_oracle.build_oracle_messages(
     enable_structured_outputs=False,
 )
 
-# Non-streaming query (high reasoning effort)
+# Non-streaming query
 response = llm_oracle.query_oracle(
     client=client,
     oracle_name="Ancient Seer",
@@ -155,7 +152,7 @@ response = llm_oracle.query_oracle(
     enable_structured_outputs=False,
 )
 
-# Streaming query (high reasoning effort)
+# Streaming query
 for chunk in llm_oracle.query_oracle_streaming(...):
     print(chunk, end="", flush=True)
 ```
@@ -188,12 +185,12 @@ The Oracle supports two output formats:
 
 ## World Seed Generation
 
-World generation uses `world_seed.py` with low reasoning effort:
+World generation uses `world_seed.py`:
 
 ```python
 from fungi_fortress import world_seed
 
-# Generate world seed (uses reasoning_effort="low")
+# Generate world seed
 seed_message = world_seed.grow_world(game, complete=None)
 ```
 
