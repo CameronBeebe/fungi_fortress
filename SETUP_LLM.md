@@ -14,18 +14,9 @@ This guide shows you how to set up XAI (Grok) integration for Fungi Fortress.
 export XAI_API_KEY="your-xai-api-key-here"
 ```
 
-### 2. (Optional) Configure model preferences
+All other settings use programmer-controlled defaults in `LLMConfig` (`fungi_fortress/config_manager.py`).
 
-To change the default model or tweak parameters:
-
-```bash
-cp llm_config.ini.example llm_config.ini
-# Edit llm_config.ini to set your preferred model
-```
-
-Available XAI models: See `llm_config.ini.example` for current default and options.
-
-### 3. Run the game
+### 2. Run the game
 
 ```bash
 uv run fungi
@@ -34,7 +25,7 @@ uv run fungi
 
 ## 🔧 Configuration Options
 
-For available configuration keys and their descriptions, see `llm_config.ini.example` in the repository root. For default values, see the `LLMConfig` dataclass in `fungi_fortress/config_manager.py`.
+All configuration defaults are defined in the `LLMConfig` dataclass in `fungi_fortress/config_manager.py`. Only `XAI_API_KEY` is read from the environment. No user config file.
 
 ## 🛡️ Security Benefits
 

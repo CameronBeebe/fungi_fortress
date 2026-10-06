@@ -3,55 +3,34 @@
 Security tests for Fungi Fortress LLM integration.
 
 These tests ensure that:
-1. No API keys are exposed in configuration files
+1. No API keys are exposed in source files
 2. Environment variable loading works correctly
 3. No API keys leak into logs or debug output
-4. Configuration files don't contain sensitive data
+4. API keys are never shown in repr
 """
 
 import pytest
 import os
-import tempfile
-import configparser
-from unittest.mock import patch, mock_open
+from unittest.mock import patch
 import sys
 import re
 
 # Add the parent directory to the path to import our modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fungi_fortress.config_manager import load_llm_config, get_xai_api_key_from_env, LLMConfig
+from fungi_fortress.config_manager import LLMConfig
 
 
 class TestAPIKeySecurity:
     """Test that API keys are never exposed in files or logs."""
     
-    def test_no_api_keys_in_example_config(self):
-        """Ensure the example config file contains no real API keys."""
-        example_path = "llm_config.ini.example"
-        if os.path.exists(example_path):
-            with open(example_path, 'r') as f:
-                content = f.read()
-            
-            # Check for common API key patterns
-            api_key_patterns = [
-                r'xai-[a-zA-Z0-9]{40,}',  # XAI API keys
-                r'sk-[a-zA-Z0-9]{40,}',   # OpenAI API keys
-                r'claude-[a-zA-Z0-9]{40,}',  # Anthropic API keys
-                r'gsk_[a-zA-Z0-9]{40,}',  # Groq API keys
-            ]
-            
-            for pattern in api_key_patterns:
-                matches = re.findall(pattern, content)
-                assert len(matches) == 0, f"Found potential API key in example config: {matches}"
-    
     def test_no_api_keys_in_source_files(self):
         """Scan source files for accidentally committed API keys."""
         source_files = [
-            "config_manager.py",
-            "main.py", 
-            "game_state.py",
-            "llm_interface.py"
+            "fungi_fortress/config_manager.py",
+            "fungi_fortress/app.py",
+            "fungi_fortress/game_state.py",
+            "fungi_fortress/llm_interface.py"
         ]
         
         api_key_patterns = [
@@ -69,159 +48,36 @@ class TestAPIKeySecurity:
                 for pattern in api_key_patterns:
                     matches = re.findall(pattern, content)
                     assert len(matches) == 0, f"Found potential API key in {file_path}: {matches}"
-    
-    def test_config_file_contains_no_api_keys(self):
-        """Test that any existing config files don't contain API keys."""
-        config_files = ["llm_config.ini"]
-        
-        for config_file in config_files:
-            if os.path.exists(config_file):
-                parser = configparser.ConfigParser()
-                parser.read(config_file)
-                
-                # Check all sections and keys
-                for section_name in parser.sections():
-                    section = parser[section_name]
-                    for key, value in section.items():
-                        if 'api_key' in key.lower():
-                            # API key should be empty, placeholder, or instruction
-                            safe_values = [
-                                "", 
-                                "YOUR_API_KEY_HERE", 
-                                "your-api-key-here",
-                                "testkey123",
-                                "None"
-                            ]
-                            assert value in safe_values, f"Found potential real API key in {config_file}: {key}={value}"
 
 
 class TestEnvironmentVariableLoading:
     """Test that environment variable loading works correctly and securely."""
     
-    def test_get_xai_api_key_from_env_present(self):
+    def test_from_env_with_xai_api_key_present(self):
         """Test XAI API key loading from environment when present."""
         test_key = "xai-test-key-12345"
-        with patch.dict(os.environ, {'XAI_API_KEY': test_key}):
-            result = get_xai_api_key_from_env()
-            assert result == test_key
+        with patch.dict(os.environ, {'XAI_API_KEY': test_key}, clear=True):
+            config = LLMConfig.from_env()
+            assert config.api_key == test_key
+            assert config.is_real_api_key_present
     
-    def test_get_xai_api_key_from_env_missing(self):
+    def test_from_env_with_xai_api_key_missing(self):
         """Test behavior when XAI_API_KEY environment variable is missing."""
         with patch.dict(os.environ, {}, clear=True):
-            result = get_xai_api_key_from_env()
-            assert result is None
-
-
-class TestConfigurationSecurity:
-    """Test that configuration loading is secure and robust."""
+            config = LLMConfig.from_env()
+            assert config.api_key is None
+            assert not config.is_real_api_key_present
     
-    def test_load_llm_config_with_env_var(self):
-        """Test loading config with API key from environment variable."""
-        # Create a temporary config file
-        config_content = """[LLM]
-provider = xai
-model_name = test-model
-context_level = medium
-max_tokens = 500
-"""
+    def test_api_key_not_in_repr(self):
+        """Test that API keys are never shown in repr to prevent log leaks."""
+        test_api_key = "xai-secret-key-should-not-appear-in-repr"
+        config = LLMConfig(api_key=test_api_key)
         
-        test_api_key = "xai-test-secure-key-12345"
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
-            f.write(config_content)
-            temp_config_path = f.name
-        
-        try:
-            with patch.dict(os.environ, {'XAI_API_KEY': test_api_key}, clear=True):
-                # Mock the config loading to use our temporary file
-                with patch('fungi_fortress.config_manager.os.path.join') as mock_join:
-                    mock_join.return_value = temp_config_path
-                    config = load_llm_config()
-                    
-                    assert config.api_key == test_api_key
-                    assert config.is_real_api_key_present == True
-                    assert config.model_name == "test-model"
-        finally:
-            os.unlink(temp_config_path)
-    
-    def test_load_llm_config_no_env_var(self):
-        """Test loading config without API key in environment."""
-        config_content = """[LLM]
-model_name = test-model
-"""
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
-            f.write(config_content)
-            temp_config_path = f.name
-        
-        try:
-            # Clear environment variables
-            with patch.dict(os.environ, {}, clear=True):
-                # Mock the config loading to use our temporary file
-                with patch('fungi_fortress.config_manager.os.path.join') as mock_join:
-                    mock_join.return_value = temp_config_path
-                    config = load_llm_config()
-                    
-                    assert config.api_key is None
-                    assert config.is_real_api_key_present == False
-        finally:
-            os.unlink(temp_config_path)
-    
-    def test_config_never_logs_api_keys(self):
-        """Test that API keys are never logged in debug output."""
-        test_api_key = "xai-secret-key-should-not-appear-in-logs"
-        
-        with patch.dict(os.environ, {'XAI_API_KEY': test_api_key}):
-            with patch('fungi_fortress.config_manager.logger') as mock_logger:
-                get_xai_api_key_from_env()
-                
-                # Check all logging calls
-                for call in mock_logger.info.call_args_list:
-                    args = call[0]
-                    for arg in args:
-                        assert test_api_key not in str(arg), f"API key found in log message: {arg}"
-
-
-class TestConfigurationRobustness:
-    """Test that the configuration system is robust and user-friendly."""
-    
-    def test_xai_config_with_api_key(self):
-        """Test XAI configuration loading with API key."""
-        config_content = """[LLM]
-model_name = test-model
-"""
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
-            f.write(config_content)
-            temp_config_path = f.name
-        
-        try:
-            with patch.dict(os.environ, {'XAI_API_KEY': "test-key"}, clear=True):
-                # Mock the config loading to use our temporary file
-                with patch('fungi_fortress.config_manager.os.path.join') as mock_join:
-                    mock_join.return_value = temp_config_path
-                    config = load_llm_config()
-                    
-                    assert config.model_name == "test-model"
-                    assert config.api_key == "test-key"
-                    assert config.is_real_api_key_present == True
-        finally:
-            os.unlink(temp_config_path)
-    
-    def test_config_validation(self):
-        """Test that configuration validation works correctly."""
-        config = LLMConfig(
-            api_key="test-key",
-            max_tokens=5000,  # Too high
-            timeout_seconds=200,  # Too high
-            temperature=5.0  # Invalid
-        )
-        
-        # Validation should fix these values
-        assert config.max_tokens == 500  # Should be clamped
-        assert config.timeout_seconds == 30  # Should be clamped
-        assert config.temperature == 0.7  # Should be fixed
+        repr_str = repr(config)
+        assert test_api_key not in repr_str, f"API key found in repr: {repr_str}"
+        # Verify repr doesn't include api_key field (it's redacted with repr=False)
+        assert "api_key" not in repr_str or "***" in repr_str
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"]) 
+    pytest.main([__file__, "-v"])

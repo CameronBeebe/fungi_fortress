@@ -54,19 +54,19 @@ export XAI_API_KEY="your-xai-api-key-here"
 
 If not set, the game automatically uses the mock provider.
 
-### `llm_config.ini`
+### Configuration
 
-For available configuration keys and their descriptions, see `llm_config.ini.example` in the repository root. For default values, see the `LLMConfig` dataclass in `fungi_fortress/config_manager.py`.
+All configuration defaults are defined in the `LLMConfig` dataclass in `fungi_fortress/config_manager.py`. Only `XAI_API_KEY` is read from the environment. No user config file.
 
-**Security**: No API key in the file! Keys come from environment variables.
+**Security**: API keys never in files - environment variables only.
 
 ### Creating a Client
 
 ```python
-from fungi_fortress.config_manager import load_llm_config
+from fungi_fortress.config_manager import LLMConfig
 
-# Load config and create client
-config = load_llm_config()
+# Load config from environment and create client
+config = LLMConfig.from_env()
 client = config.create_llm_client()
 
 # Client automatically uses mock if no valid XAI_API_KEY
@@ -80,7 +80,7 @@ The XAI provider connects to `https://api.x.ai/v1` using the OpenAI SDK:
 
 ### Available Models
 
-See `llm_config.ini.example` for the current default and available models.
+See the `LLMConfig` dataclass in `fungi_fortress/config_manager.py` for the current default model.
 
 ### XAI-Specific Parameters
 

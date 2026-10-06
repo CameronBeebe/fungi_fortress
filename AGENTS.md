@@ -16,11 +16,13 @@ Every LLM call that feeds the game must declare its output type as a Pydantic mo
 
 ## Providers
 
-- **Online:** xAI only. Model is set by `model_name` in `llm_config.ini` (default in `DEFAULT_MODEL` constant)
+- **Online:** xAI only. Defaults defined in `LLMConfig` dataclass (`fungi_fortress/config_manager.py`)
 - **Offline:** Built-in mock provider for game calls (no API key required)
 - **Judge:** Jev/TypeSafe is separate as a judge, not a game content provider
 
 **Do not add other providers.** xAI + mock is the decided architecture.
+
+**Product principle:** Well-chosen defaults in code, no hidden user config files. Only `XAI_API_KEY` comes from the environment.
 
 ## No Special Cases
 

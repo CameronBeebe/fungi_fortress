@@ -22,7 +22,7 @@ from .game_logic import GameLogic
 from .map_generation import generate_map, generate_mycelial_network
 from .characters import Dwarf
 from .tiles import ENTITY_REGISTRY
-from .config_manager import load_llm_config
+from .config_manager import LLMConfig
 
 PLAY_LOG_PATH = start_play_log()
 logging.info("--- Fungi Fortress Game Starting ---")
@@ -127,9 +127,9 @@ def game_loop(stdscr: curses.window):
     # Set a very low timeout for input polling (1ms)
     stdscr.timeout(1)
 
-    # Load LLM configuration first
-    logging.info("Loading LLM configuration...")
-    llm_config = load_llm_config()
+    # Load LLM configuration from environment
+    logging.info("Loading LLM configuration from environment...")
+    llm_config = LLMConfig.from_env()
     
     # Log the loaded config, masking the API key
     if llm_config:

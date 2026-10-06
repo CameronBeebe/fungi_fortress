@@ -110,8 +110,8 @@ To use live LLM providers:
     ```bash
     export XAI_API_KEY="your-xai-api-key-here"
     ```
-*   Optionally, copy `llm_config.ini.example` to `llm_config.ini` to configure model and parameters
 *   **No API key?** The game automatically uses the mock provider (offline mode) with `[Offline Mode]` indicator
+*   **Configuration**: All settings use well-chosen defaults in `LLMConfig` dataclass (`fungi_fortress/config_manager.py`). No user config file.
 
 ## Basic Controls
 
@@ -252,15 +252,14 @@ The unified LLM client supports both online (xAI/Grok) and offline (mock) modes.
 
 The Oracle uses **XAI (Grok)** via `https://api.x.ai/v1`:
 
-- **Model**: Set by `model_name` in `llm_config.ini` (see `llm_config.ini.example` for default and options)
-
+- **Model**: Defaults defined in `LLMConfig` dataclass (`fungi_fortress/config_manager.py`)
 - **XAI Features**:
   - `reasoning_effort`: "high" for Oracle (quality), "low" for world gen (speed)
   - `response_format`: JSON Schema for structured action parsing
 
 ### Configuration
 
-Copy `llm_config.ini.example` to `llm_config.ini` to customize settings. For available configuration keys and their descriptions, see `llm_config.ini.example`. For default values, see the `LLMConfig` dataclass in `fungi_fortress/config_manager.py`.
+All settings use programmer-controlled defaults in the `LLMConfig` dataclass (`fungi_fortress/config_manager.py`). Only `XAI_API_KEY` is read from the environment. No user config file.
 
 ### Using Your XAI API Key
 
