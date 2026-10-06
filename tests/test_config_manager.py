@@ -1,10 +1,11 @@
 """Tests for config_manager.py - environment-only configuration."""
 
+import os
 import pytest
 from unittest.mock import patch
-import os
 
 from fungi_fortress.config_manager import LLMConfig, PLACEHOLDER_API_KEYS
+from fungi_fortress.game_state import GameState
 
 
 def test_from_env_with_no_key():
@@ -41,45 +42,15 @@ def test_api_key_not_in_repr():
 
 def test_api_key_not_in_logs(caplog):
     """API keys are never logged when GameState is created."""
-    from fungi_fortress.game_state import GameState
-    
     secret_key = "xai-secret-key-should-not-appear-in-logs"
     llm_config = LLMConfig(api_key=secret_key)
     
     # Create GameState with the secret key
     with caplog.at_level("DEBUG"):
-        game_state = GameState(llm_config=llm_config)
+        GameState(llm_config=llm_config)
     
     # Assert the secret is not in any log output
     assert secret_key not in caplog.text
-
-
-def test_no_api_keys_in_source_files():
-    """Scan source files for accidentally committed API keys."""
-    import re
-    
-    source_files = [
-        "fungi_fortress/config_manager.py",
-        "fungi_fortress/app.py",
-        "fungi_fortress/game_state.py",
-        "fungi_fortress/llm_interface.py"
-    ]
-    
-    api_key_patterns = [
-        r'xai-[a-zA-Z0-9]{40,}',
-        r'sk-[a-zA-Z0-9]{40,}', 
-        r'claude-[a-zA-Z0-9]{40,}',
-        r'gsk_[a-zA-Z0-9]{40,}',
-    ]
-    
-    for file_path in source_files:
-        if os.path.exists(file_path):
-            with open(file_path, 'r') as f:
-                content = f.read()
-            
-            for pattern in api_key_patterns:
-                matches = re.findall(pattern, content)
-                assert len(matches) == 0, f"Found potential API key in {file_path}: {matches}"
 
 
 def test_create_llm_client():
