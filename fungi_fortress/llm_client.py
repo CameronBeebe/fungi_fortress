@@ -1,6 +1,6 @@
 """Unified LLM client for Fungi Fortress.
 
-Provides a single, typed interface for LLM API calls with streaming support,
+Provides a single, typed interface for LLM API calls with structured outputs,
 error handling, and a mock provider for offline play and testing.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Callable, Iterator, Optional, Type, TypeVar, Union
+from typing import Any, Callable, Optional, Type, TypeVar, Union
 
 import openai
 from pydantic import BaseModel
@@ -133,17 +133,6 @@ class MockLLMProvider:
         user_content = self._extract_user_content(messages)
         return self._mock_response(user_content)
     
-    def chat_stream(self, messages: list[dict], max_tokens: int) -> Iterator[str]:
-        """Streaming mock response."""
-        self._call_count += 1
-        user_content = self._extract_user_content(messages)
-        response = self._mock_response(user_content)
-        
-        # Yield in chunks to simulate streaming
-        chunk_size = 8
-        for i in range(0, len(response), chunk_size):
-            yield response[i:i + chunk_size]
-    
     def _extract_user_content(self, messages: list[dict]) -> str:
         """Extract user query from messages."""
         # Find the last user message and extract the actual query
@@ -208,7 +197,6 @@ class XAIProvider:
         messages: list[dict],
         max_tokens: Optional[int] = None,
         reasoning_effort: Optional[str] = None,
-        use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
         """Non-streaming chat completion with XAI.
@@ -217,8 +205,7 @@ class XAIProvider:
             messages: List of message dicts
             max_tokens: Override default max tokens from config
             reasoning_effort: Override default reasoning effort from config
-            use_json_schema: Legacy flag to use hardcoded Oracle schema
-            response_format: Per-call response format schema (overrides use_json_schema)
+            response_format: Per-call response format schema
         """
         try:
             
@@ -231,43 +218,9 @@ class XAIProvider:
                 "reasoning_effort": reasoning_effort if reasoning_effort is not None else self.config.reasoning_effort,
             }
             
-            # Add response format if provided (per-call schema takes precedence)
+            # Add response format if provided
             if response_format:
                 completion_params["response_format"] = response_format
-            elif use_json_schema:
-                # Legacy hardcoded Oracle schema
-                oracle_schema = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "oracle_response",
-                        "strict": True,
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "narrative": {
-                                    "type": "string",
-                                    "description": "The Oracle's narrative response"
-                                },
-                                "actions": {
-                                    "type": "array",
-                                    "description": "Game actions to execute",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "action_type": {"type": "string"},
-                                            "details": {"type": "object"}
-                                        },
-                                        "required": ["action_type", "details"],
-                                        "additionalProperties": False
-                                    }
-                                }
-                            },
-                            "required": ["narrative", "actions"],
-                            "additionalProperties": False
-                        }
-                    }
-                }
-                completion_params["response_format"] = oracle_schema
             
             completion = self.client.chat.completions.create(**completion_params)
             
@@ -277,38 +230,6 @@ class XAIProvider:
             
             return content
             
-        except openai.AuthenticationError as e:
-            raise AuthenticationError(f"Invalid XAI API key: {e}") from e
-        except openai.RateLimitError as e:
-            raise RateLimitError(f"XAI rate limit exceeded: {e}") from e
-        except openai.APITimeoutError as e:
-            raise TimeoutError(f"XAI request timed out: {e}") from e
-        except openai.APIConnectionError as e:
-            raise ConnectionError(f"XAI connection failed: {e}") from e
-        except Exception as e:
-            raise BadResponseError(f"Unexpected XAI error: {e}") from e
-    
-    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: Optional[str] = None) -> Iterator[str]:
-        """Streaming chat completion with XAI."""
-        try:
-            # Build completion parameters
-            completion_params = {
-                "model": self.config.model_name,
-                "messages": messages,
-                "max_tokens": max_tokens if max_tokens is not None else self.config.max_tokens,
-                "temperature": self.config.temperature,
-                "stream": True,
-                "reasoning_effort": reasoning_effort if reasoning_effort is not None else self.config.reasoning_effort,
-            }
-            
-            stream = self.client.chat.completions.create(**completion_params)
-            
-            for chunk in stream:
-                if chunk.choices and len(chunk.choices) > 0:
-                    delta = chunk.choices[0].delta
-                    if hasattr(delta, 'content') and delta.content:
-                        yield delta.content
-                        
         except openai.AuthenticationError as e:
             raise AuthenticationError(f"Invalid XAI API key: {e}") from e
         except openai.RateLimitError as e:
@@ -356,7 +277,6 @@ class LLMClient:
         messages: list[dict],
         max_tokens: Optional[int] = None,
         reasoning_effort: Optional[str] = None,
-        use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
         """Send a chat completion request (non-streaming).
@@ -365,8 +285,7 @@ class LLMClient:
             messages: List of message dicts with 'role' and 'content'.
             max_tokens: Override config max_tokens if provided.
             reasoning_effort: Override config reasoning_effort if provided.
-            use_json_schema: Whether to use JSON schema for structured output (XAI only, legacy).
-            response_format: Per-call response format schema (overrides use_json_schema).
+            response_format: Per-call response format schema.
             
         Returns:
             Complete response text.
@@ -379,37 +298,11 @@ class LLMClient:
                 resolved_max_tokens = max_tokens if max_tokens is not None else self.config.max_tokens
                 return self._provider.chat(messages, resolved_max_tokens, response_format=response_format)
             else:
-                return self._provider.chat(messages, max_tokens, reasoning_effort, use_json_schema, response_format)
+                return self._provider.chat(messages, max_tokens, reasoning_effort, response_format=response_format)
         except LLMError:
             raise
         except Exception as e:
             logger.error(f"Unexpected error in chat: {e}")
-            raise BadResponseError(f"Unexpected error: {e}") from e
-    
-    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: Optional[str] = None) -> Iterator[str]:
-        """Send a streaming chat completion request.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content'.
-            max_tokens: Override config max_tokens if provided.
-            reasoning_effort: Override config reasoning_effort if provided.
-            
-        Yields:
-            Response text chunks as they arrive.
-            
-        Raises:
-            LLMError subclasses for various failure modes.
-        """
-        try:
-            if self._use_mock:
-                resolved_max_tokens = max_tokens if max_tokens is not None else self.config.max_tokens
-                yield from self._provider.chat_stream(messages, resolved_max_tokens)
-            else:
-                yield from self._provider.chat_stream(messages, max_tokens, reasoning_effort)
-        except LLMError:
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error in chat_stream: {e}")
             raise BadResponseError(f"Unexpected error: {e}") from e
 
 
@@ -447,7 +340,6 @@ def structured_call(
     convert: Optional[Callable[[BaseModel], T]] = None,
     max_tokens: Optional[int] = None,
     reasoning_effort: Optional[str] = None,
-    attempts: int = 2,
 ) -> Optional[Union[BaseModel, T]]:
     """Make a structured LLM call with validation and retry.
     
@@ -461,12 +353,12 @@ def structured_call(
                  a converted object. Should raise ValueError with error details on failure.
         max_tokens: Maximum tokens to generate (None = use client config default)
         reasoning_effort: Override config reasoning_effort if provided
-        attempts: Maximum number of attempts (including retries)
         
     Returns:
         Converted object (if converter provided), validated Pydantic model instance, or None if all attempts failed
     """
-    # max_tokens resolution happens in client.chat()
+    # Validation retries from config: max_validation_retries means retries, so +1 for total attempts
+    attempts = client.config.max_validation_retries + 1
     
     # Generate schema from Pydantic model
     response_format = _schema_from_model(model_cls, schema_name)

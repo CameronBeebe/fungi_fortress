@@ -1,7 +1,7 @@
 """End-to-end smoke test with real code paths and faked network.
 
 Verifies core gameplay works with XAI provider (not mock) by monkeypatching
-openai.OpenAI to return canned responses. Tests both streaming Oracle dialogue
+openai.OpenAI to return canned responses. Tests typed non-streaming Oracle dialogue
 and world generation paths.
 """
 import pytest
@@ -10,14 +10,6 @@ from fungi_fortress.config_manager import LLMConfig
 from fungi_fortress.game_state import GameState
 from fungi_fortress.game_logic import GameLogic
 from fungi_fortress import world_seed
-
-
-class FakeStreamChunk:
-    """Mock streaming response chunk."""
-    def __init__(self, content):
-        self.choices = [Mock()]
-        self.choices[0].delta = Mock()
-        self.choices[0].delta.content = content
 
 
 class FakeOpenAIClient:
@@ -30,23 +22,19 @@ class FakeOpenAIClient:
         self.call_log = []  # Track all calls for assertions
     
     def _create_completion(self, **kwargs):
-        """Return streamed chunks or JSON body based on stream param."""
+        """Return JSON response based on request."""
         # Log this call
         self.call_log.append(kwargs)
         
-        if kwargs.get('stream'):
-            # Streaming response: yield chunks with unique phrase
-            narrative = "The ancient mycelium speaks of hidden paths and forgotten spores."
-            chunks = [FakeStreamChunk(word + " ") for word in narrative.split()]
-            return iter(chunks)
-        else:
-            # Non-streaming JSON response
-            response = Mock()
-            response.choices = [Mock()]
-            response.choices[0].message = Mock()
+        response = Mock()
+        response.choices = [Mock()]
+        response.choices[0].message = Mock()
+        
+        # Check if response_format indicates structured output
+        if 'response_format' in kwargs:
+            schema_name = kwargs['response_format'].get('json_schema', {}).get('name', '')
             
-            # Check if response_format indicates structured output (world gen)
-            if 'response_format' in kwargs:
+            if schema_name == 'world_seed':
                 # World generation structured response matching WorldSeedSchema
                 response.choices[0].message.content = '''{
                     "title": "The Shadowed Grove",
@@ -58,7 +46,9 @@ class FakeOpenAIClient:
                             "description": "An ancient oracle who speaks in riddles",
                             "kind": "revealed",
                             "motive": "Guide seekers to truth",
-                            "secret": "Knows the source of corruption"
+                            "secret": "Knows the source of corruption",
+                            "voice": "Cryptic and ancient",
+                            "faction": "Neutral"
                         }
                     ],
                     "places": [
@@ -82,11 +72,20 @@ class FakeOpenAIClient:
                         }
                     ]
                 }'''
+            elif schema_name == 'npc_reply':
+                # Oracle NpcReply with unique phrase
+                response.choices[0].message.content = '''{
+                    "narrative": "The ancient mycelium speaks of hidden paths and forgotten spores beneath the grove.",
+                    "actions": []
+                }'''
             else:
-                # Regular Oracle response
-                response.choices[0].message.content = '{"narrative": "The spores whisper ancient wisdom.", "actions": []}'
-            
-            return response
+                # Generic structured response
+                response.choices[0].message.content = '{"narrative": "The spores whisper.", "actions": []}'
+        else:
+            # Fallback for non-structured
+            response.choices[0].message.content = "The Oracle gazes into the void."
+        
+        return response
 
 
 @pytest.fixture
@@ -115,7 +114,7 @@ def test_end_to_end_oracle_and_world_with_faked_network(fake_openai):
     
     Uses a fake API key to trigger XAI provider (not mock), monkeypatches
     openai.OpenAI to return canned responses. Verifies:
-    1. Oracle streaming dialogue appears in game
+    1. Oracle typed non-streaming dialogue appears in game
     2. World generation produces a seed
     
     No assertions about exact prompts or params - just that the paths work.
@@ -149,27 +148,17 @@ def test_end_to_end_oracle_and_world_with_faked_network(fake_openai):
         "oracle_name": "The Oracle"
     })
     
-    # Process first update to start streaming
+    # Process update to handle the query (non-streaming typed path)
     game_logic.update()
     
-    # Process game updates to complete streaming (normal game loop)
-    max_ticks = 2000
-    for tick in range(max_ticks):
-        game_logic.update()
-        # Check if streaming completed
-        if game_state.oracle_interaction_state == "AWAITING_PROMPT":
-            break
-    else:
-        pytest.fail(f"Oracle dialogue did not complete within {max_ticks} ticks")
-    
-    # Assert real Oracle dialogue appeared with unique phrase from fake
+    # Assert Oracle dialogue appeared with unique phrase from fake
     dialogue_text = "\n".join(
         line[0] if isinstance(line, tuple) else str(line)
         for line in game_state.oracle_current_dialogue
     )
     
     assert dialogue_text, "Oracle dialogue should not be empty"
-    # Check for unique phrase from fake response (not random flavor text)
+    # Check for unique phrase from fake NpcReply response
     assert "hidden paths and forgotten" in dialogue_text, \
         f"Should contain exact fake narrative phrase, got: {dialogue_text[:200]}"
     # Verify not error messages
@@ -182,14 +171,17 @@ def test_end_to_end_oracle_and_world_with_faked_network(fake_openai):
     assert len(game_state.oracle_llm_interaction_history) > 0, \
         "Oracle interaction should be recorded in history"
     
-    # Assert exactly one streaming request reached the fake client
+    # Assert exactly one structured NPC reply request reached the fake client
     fake_client = fake_openai.instance
     assert fake_client is not None, "Fake client should have been created"
-    streaming_calls = [call for call in fake_client.call_log if call.get('stream')]
-    assert len(streaming_calls) == 1, \
-        f"Expected exactly 1 streaming call, got {len(streaming_calls)}"
+    npc_reply_calls = [
+        call for call in fake_client.call_log
+        if call.get('response_format', {}).get('json_schema', {}).get('name') == 'npc_reply'
+    ]
+    assert len(npc_reply_calls) == 1, \
+        f"Expected exactly 1 npc_reply call, got {len(npc_reply_calls)}"
     
-    # === Part 2: World generation (if cheap enough) ===
+    # === Part 2: World generation ===
     
     # Create a new game state for world gen
     world_game = GameState(llm_config=llm_config)

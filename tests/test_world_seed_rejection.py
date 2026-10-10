@@ -46,7 +46,7 @@ def test_grow_world_logs_rejection_warnings(caplog):
     
     assert "prepared grove" in result.lower()
     warning_logs = [r for r in caplog.records if r.levelname == "WARNING"]
-    assert len(warning_logs) == 2
+    assert len(warning_logs) == 3  # max_validation_retries=2 means 3 total attempts
     
     for i, log in enumerate(warning_logs, 1):
         assert "World seed rejected" in log.message
@@ -72,7 +72,7 @@ def test_grow_depth_logs_rejection_warnings(caplog):
     
     assert "prepared depth" in result.lower()
     warning_logs = [r for r in caplog.records if r.levelname == "WARNING"]
-    assert len(warning_logs) == 2
+    assert len(warning_logs) == 3  # max_validation_retries=2 means 3 total attempts
     
     for log in warning_logs:
         assert "Depth seed rejected" in log.message
@@ -92,7 +92,7 @@ def test_grow_world_logs_json_parse_errors(caplog):
     
     assert "prepared grove" in result.lower()
     warning_logs = [r for r in caplog.records if r.levelname == "WARNING"]
-    assert len(warning_logs) == 2
+    assert len(warning_logs) == 3  # max_validation_retries=2 means 3 total attempts
     
     for log in warning_logs:
         # Pydantic wraps JSON errors as ValidationError

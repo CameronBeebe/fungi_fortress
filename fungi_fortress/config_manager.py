@@ -23,9 +23,8 @@ class LLMConfig:
     # Cost control and safety settings
     max_tokens: int = 500  # Maximum tokens per response to prevent runaway costs
     timeout_seconds: int = 30  # API call timeout in seconds
-    max_retries: int = 2  # Maximum number of retries on failure
-    enable_structured_outputs: bool = True  # Whether to use structured outputs feature
-    enable_streaming: bool = True  # Whether to enable streaming responses for more lifelike Oracle interactions
+    max_retries: int = 2  # Transport-level retries (network, 5xx errors)
+    max_validation_retries: int = 2  # Semantic validation retries in structured_call
 
     @property
     def is_real_api_key_present(self) -> bool:

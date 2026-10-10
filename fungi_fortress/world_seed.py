@@ -18,19 +18,19 @@ from typing import Any, Callable, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 from .characters import NPC, Oracle
+from .config_manager import LLMConfig
 from .constants import STARTING_RESOURCES
 from . import llm_client
+from .world_rules import CharacterKind, is_open_tile
 
 logger = logging.getLogger(__name__)
-
-# World generation token budget (higher than interactive Oracle for richer world content)
-WORLD_GEN_MAX_TOKENS = 4000
 
 COLLECTABLE = frozenset(STARTING_RESOURCES)
 MAX_CHARACTERS = 12
 MAX_PLACES = 12
 MAX_QUESTS = 8
 MAX_TEXT = 400
+WORLD_GEN_MAX_TOKENS = 4000  # Max tokens for world/depth generation
 _PREPARED_SEED = os.path.join(os.path.dirname(__file__), "seeds", "example_world.json")
 _PREPARED_DEPTH = os.path.join(os.path.dirname(__file__), "seeds", "example_depth.json")
 
@@ -47,12 +47,6 @@ class ResourceEnum(str, Enum):
     crystals = "crystals"
     fungi = "fungi"
     magic_fungi = "magic_fungi"
-
-
-class CharacterKind(str, Enum):
-    """Character kinds: ordinary kin or mystical revealed."""
-    kin = "kin"
-    revealed = "revealed"
 
 
 class CollectRequirement(BaseModel):
@@ -267,7 +261,7 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
     """Grow a world from the player's LLM key and install it.
 
     Returns one line for the game log. A prepared grove is used when the
-    model is missing or both attempts come back invalid.
+    model is missing or all attempts (initial + max_validation_retries) come back invalid.
     """
     # Get or create an LLM client
     if complete is None:
@@ -293,7 +287,6 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
         label="World seed",
         convert=_convert_to_world_seed,
         max_tokens=WORLD_GEN_MAX_TOKENS,
-        attempts=2
     )
     
     if seed is None:
@@ -344,6 +337,7 @@ class _CompleteAdapter:
     
     def __init__(self, complete_fn: Callable[[str], str]):
         self._complete = complete_fn
+        self.config = LLMConfig()  # Use default config
     
     def chat(self, messages: list[dict], **kwargs) -> str:
         """Extract the last user prompt and call the complete function."""
@@ -439,7 +433,6 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
         label="Depth seed",
         convert=_convert_to_world_seed,
         max_tokens=WORLD_GEN_MAX_TOKENS,
-        attempts=2
     )
     
     if seed is None:
@@ -596,8 +589,8 @@ def _open_tile(game, width, height, occupied, dwarves, chosen) -> tuple[int, int
         for x in range(width):
             if (x, y) in occupied:
                 continue
-            tile = game.get_tile(x, y) if hasattr(game, "get_tile") else game.map[y][x]
-            if tile and getattr(tile, "walkable", False):
+            is_valid, _ = is_open_tile(game, x, y)
+            if is_valid:
                 spots.append((x, y))
 
     def away(min_dwarf: int, min_peer: int):

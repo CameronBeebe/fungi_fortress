@@ -843,41 +843,12 @@ class Renderer:
                     pass 
                 current_draw_y += 1
         
-        # After rendering historical/committed dialogue, render the live streaming buffer if active
-        if self.game_state.oracle_streaming_active and hasattr(self.game_state, 'oracle_streaming_line_buffer'):
-            live_text, live_style = self.game_state.oracle_streaming_line_buffer
-            if live_text: # Only render if there's text in the live buffer
-                live_attributes = curses.A_NORMAL
-                if live_style == "ITALIC":
-                    live_attributes = curses.A_DIM
-                elif live_style == "BOLD":
-                    live_attributes = curses.A_BOLD
-                
-                # Wrap the live text using the renderer's own wrapper
-                wrapped_live_sub_lines = self._wrap_text_for_dialog(live_text, content_w)
-                
-                for sub_line in wrapped_live_sub_lines:
-                    if current_draw_y >= content_y_start + max_content_h:
-                        break # Stop if we run out of dialogue box space
-                    try:
-                        dialog_win.addstr(current_draw_y, content_x, sub_line, live_attributes)
-                    except curses.error: 
-                        pass 
-                    current_draw_y += 1
-
-        if total_lines > max_content_h or (self.game_state.oracle_streaming_active and live_text): # Adjust scrollbar logic if live text is also present
+        if total_lines > max_content_h:
             # Determine if scroll up indicator is needed
             if self.game_state.oracle_dialogue_page_start_index > 0:
                 dialog_win.addstr(content_y_start, dialog_w - 3, "^", curses.A_REVERSE) 
             # Determine if scroll down indicator is needed
-            # Consider live text not yet in total_lines for scroll down indicator
-            effective_total_lines = total_lines
-            if self.game_state.oracle_streaming_active and self.game_state.oracle_streaming_line_buffer[0]:
-                # Estimate lines the live buffer will take, could be 1 or more after wrapping
-                # For simplicity, assume it adds at least one more potential line if not empty.
-                effective_total_lines += 1 
-
-            if self.game_state.oracle_dialogue_page_start_index < effective_total_lines - max_content_h:
+            if self.game_state.oracle_dialogue_page_start_index < total_lines - max_content_h:
                 dialog_win.addstr(content_y_start + max_content_h - 1, dialog_w - 3, "v", curses.A_REVERSE)
 
         prompt_y = dialog_h - 3

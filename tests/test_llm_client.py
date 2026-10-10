@@ -46,22 +46,6 @@ class TestMockProvider:
         assert "fungi" in response.lower()
         assert "magic" in response.lower() or "memories" in response.lower()
     
-    def test_mock_streaming(self):
-        """Test mock provider streaming."""
-        provider = MockLLMProvider()
-        messages = [{"role": "user", "content": "Help me"}]
-        chunks = list(provider.chat_stream(messages, max_tokens=100))
-        
-        # Should yield multiple chunks
-        assert len(chunks) > 1
-        
-        # Chunks should be strings
-        assert all(isinstance(chunk, str) for chunk in chunks)
-        
-        # Reassembled response should be complete
-        full_response = "".join(chunks)
-        assert "network" in full_response.lower()
-    
     def test_mock_deterministic(self):
         """Test mock provider is deterministic."""
         provider = MockLLMProvider()
@@ -119,16 +103,6 @@ class TestLLMClient:
         
         assert isinstance(response, str)
         assert len(response) > 0
-    
-    def test_mock_client_chat_stream(self):
-        """Test mock client streaming."""
-        client = LLMClient(LLMConfig(), use_mock=True)
-        messages = [{"role": "user", "content": "Hello"}]
-        
-        chunks = list(client.chat_stream(messages))
-        
-        assert len(chunks) > 0
-        assert all(isinstance(chunk, str) for chunk in chunks)
     
     def test_client_with_valid_config_not_mock(self):
         """Test client with valid config is not mock."""
