@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterator, List, Optional
 
 from . import llm_client, llm_oracle
 from .text_streaming import text_streaming_engine
-from .npc_reply import validate_npc_reply
+from .npc_reply import NpcReply, validate_npc_reply
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
         reply = llm_client.structured_call(
             client,
             messages,
-            llm_oracle.NpcReply,
+            NpcReply,
             schema_name="npc_reply",
             label="Oracle reply",
             convert=validator,

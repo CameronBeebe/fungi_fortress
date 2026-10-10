@@ -244,8 +244,7 @@ The unified LLM client supports both online (xAI/Grok) and offline (mock) modes.
 - **✅ Mock Provider**: Fully playable offline with deterministic Oracle responses and `[Offline Mode]` indicator
 - **✅ Typed Error Handling**: Clear exceptions with player-friendly messages
 - **✅ Comprehensive Test Suite**: 227 tests passing
-- **✅ Streaming Support**: Real-time Oracle responses for engaging gameplay
-- **✅ XAI-Specific Features**: `reasoning_effort` and `response_format` (JSON Schema)
+- **✅ Typed LLM Outputs**: Oracle dialogue via non-streaming `NpcReply` Pydantic model with semantic validation
 - **✅ Security**: API keys never logged (field(repr=False), removed from action details)
 
 ### Supported LLM Provider
@@ -253,9 +252,7 @@ The unified LLM client supports both online (xAI/Grok) and offline (mock) modes.
 The Oracle uses **XAI (Grok)** via `https://api.x.ai/v1`:
 
 - **Model**: Defaults defined in `LLMConfig` dataclass (`fungi_fortress/config_manager.py`)
-- **XAI Features**:
-  - `reasoning_effort`: Default set in `LLMConfig`, can be overridden per call
-  - `response_format`: JSON Schema for structured action parsing
+- **Typed outputs**: Oracle responses use `structured_call` with `NpcReply` Pydantic model, JSON Schema enforcement, semantic validation, and retries
 
 ### Configuration
 

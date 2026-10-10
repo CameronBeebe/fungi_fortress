@@ -27,7 +27,6 @@ def test_non_streaming_context_levels(context_level, expected_history_len, expec
     llm_config = LLMConfig(
         api_key=None,  # Use mock
         model_name="mock-model",
-        enable_streaming=False,
         context_level=context_level
     )
     game_state = GameState(llm_config=llm_config)
@@ -70,6 +69,7 @@ def test_non_streaming_context_levels(context_level, expected_history_len, expec
     
     def mock_create_client():
         mock_client = Mock()
+        mock_client.config = llm_config
         mock_client.chat = mock_chat
         mock_client.is_mock.return_value = True
         return mock_client

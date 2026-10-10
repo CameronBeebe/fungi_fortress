@@ -24,7 +24,10 @@ def test_schema_contains_required_keys():
 
 def test_semantic_failure_triggers_retry_with_error():
     """Verify semantic validation failure triggers retry with error text in messages."""
+    from fungi_fortress.config_manager import LLMConfig
+    
     mock_client = Mock(spec=llm_client.LLMClient)
+    mock_client.config = LLMConfig()
     
     call_count = [0]
     
@@ -90,8 +93,10 @@ def test_semantic_failure_triggers_retry_with_error():
 def test_final_failure_returns_none_and_logs_warning(caplog):
     """Verify final failure returns None and logs WARNING with preview."""
     import logging
+    from fungi_fortress.config_manager import LLMConfig
     
     mock_client = Mock(spec=llm_client.LLMClient)
+    mock_client.config = LLMConfig()
     mock_client.chat.return_value = json.dumps({"title": "Bad"})  # Missing fields
     
     with caplog.at_level(logging.WARNING):
@@ -102,7 +107,7 @@ def test_final_failure_returns_none_and_logs_warning(caplog):
         )
     
     assert result is None
-    assert mock_client.chat.call_count == 2
+    assert mock_client.chat.call_count == 3  # max_validation_retries=2 means 3 total attempts
     
     # Check warning was logged
     warnings = [r for r in caplog.records if r.levelname == "WARNING"]

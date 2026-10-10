@@ -16,8 +16,7 @@ Fungi Fortress uses a unified LLM client supporting XAI (Grok) and a determinist
 - **XAI (Grok) provider** for live LLM integration (`https://api.x.ai/v1`)
 - **Mock provider**: Deterministic, in-character responses for offline play
 - **Typed exceptions**: `AuthenticationError`, `RateLimitError`, `TimeoutError`, etc.
-- **Streaming support**: Both streaming and non-streaming responses
-- **XAI-specific features**: `reasoning_effort` and `response_format` (JSON Schema)
+- **Structured outputs**: Typed Pydantic models via `structured_call` with JSON Schema, semantic validation, and retries
 
 ## Using the Mock Provider
 
@@ -82,27 +81,6 @@ The XAI provider connects to `https://api.x.ai/v1` using the OpenAI SDK:
 
 See the `LLMConfig` dataclass in `fungi_fortress/config_manager.py` for the current default model.
 
-### XAI-Specific Parameters
-
-#### `reasoning_effort`
-
-Controls the depth of reasoning. Default is set in `LLMConfig` and can be overridden per call:
-
-```python
-response = client.chat(messages, reasoning_effort="medium")
-```
-
-#### `response_format`
-
-Enables structured output with JSON Schema:
-
-```python
-response = client.chat(
-    messages,
-    use_json_schema=True  # Guarantees valid JSON with Oracle actions
-)
-```
-
 ## Error Handling
 
 All errors inherit from `LLMError` with typed subclasses:
@@ -128,10 +106,12 @@ Each exception has:
 
 ## Oracle Integration
 
-The Oracle uses `llm_oracle.py` for prompt building and queries:
+The Oracle uses typed, non-streaming responses via `llm_client.structured_call` and the `NpcReply` Pydantic model from `fungi_fortress/npc_reply.py`. Every Oracle LLM call declares its output type, generates JSON Schema, enforces shape via XAI structured outputs, runs semantic validation with tile habitability checks (shared with world seed generation via `world_rules.is_open_tile`), retries with specific error feedback (up to `LLMConfig.max_validation_retries`), and falls back on final failure.
 
 ```python
 from fungi_fortress import llm_oracle
+from fungi_fortress.npc_reply import NpcReply, validate_npc_reply
+from fungi_fortress.llm_client import structured_call
 
 # Build Oracle messages with system prompt, context, and history
 messages = llm_oracle.build_oracle_messages(
@@ -139,49 +119,28 @@ messages = llm_oracle.build_oracle_messages(
     player_query="What is my destiny?",
     game_context={"tick": 100, "depth": 2, "mission": {...}},
     history=[{"player": "Hello", "oracle": "Greetings"}],
-    enable_structured_outputs=False,
 )
 
-# Non-streaming query
-response = llm_oracle.query_oracle(
+# Typed non-streaming query
+reply = structured_call(
     client=client,
-    oracle_name="Ancient Seer",
-    player_query="What is my destiny?",
-    game_context=game_context,
-    history=history,
-    enable_structured_outputs=False,
+    messages=messages,
+    response_model=NpcReply,
+    validator=lambda r: validate_npc_reply(r, game),
 )
 
-# Streaming query
-for chunk in llm_oracle.query_oracle_streaming(...):
-    print(chunk, end="", flush=True)
+# reply.narrative is the Oracle's dialogue text
+# reply.actions is a list of typed actions (AddMessageAction, SpawnCharacterAction, etc.)
 ```
 
 ### Context Levels
 
-Controlled by `llm_config.context_level`:
+Controlled by `LLMConfig.context_level` (not currently used, but reserved for future use):
 - **low**: tick + depth, 1 history turn
-- **medium**: + mission, 3 history turns (default)
+- **medium**: + mission, 3 history turns
 - **high**: + resources, 5 history turns
 
-### Action Formats
-
-The Oracle supports two output formats:
-
-1. **Text with ACTION markers** (default):
-   ```
-   The fungi whisper secrets. ACTION::add_message::{"text": "A vision appears..."}
-   ```
-
-2. **JSON Schema** (when `enable_structured_outputs=true`):
-   ```json
-   {
-     "narrative": "The fungi whisper secrets.",
-     "actions": [
-       {"action_type": "add_message", "details": {"text": "A vision appears..."}}
-     ]
-   }
-   ```
+Oracle history is capped at 10 turns as a module-level constant in `llm_interface.py`.
 
 ## World Seed Generation
 
