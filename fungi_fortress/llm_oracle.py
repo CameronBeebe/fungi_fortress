@@ -135,8 +135,7 @@ def query_oracle_streaming(
         logger.info("Using mock provider for Oracle response")
     
     try:
-        # Use high reasoning effort for Oracle interactions (XAI grok-3-mini)
-        yield from client.chat_stream(messages, max_tokens, reasoning_effort="high")
+        yield from client.chat_stream(messages, max_tokens)
     except llm_client.LLMError:
         # Re-raise typed errors
         raise
@@ -176,8 +175,7 @@ def query_oracle(
         logger.info("Using mock provider for Oracle response")
     
     try:
-        # Use high reasoning effort and JSON schema if requested (XAI grok-3-mini)
-        return client.chat(messages, max_tokens, reasoning_effort="high", use_json_schema=enable_structured_outputs)
+        return client.chat(messages, max_tokens, use_json_schema=enable_structured_outputs)
     except llm_client.LLMError:
         # Re-raise typed errors
         raise

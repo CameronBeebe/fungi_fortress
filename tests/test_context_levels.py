@@ -2,7 +2,7 @@
 """Test that LLM prompt context adapts to context_level setting."""
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from fungi_fortress.game_state import GameState
 from fungi_fortress.config_manager import LLMConfig
@@ -17,6 +17,7 @@ from fungi_fortress import llm_interface
 def test_streaming_context_levels(context_level, expected_history_len, expect_mission, expect_resources):
     """Test that handle_oracle_query_streaming includes correct context based on level.
     
+    Context gating contract:
     - low: 1 history turn, no mission, no resources
     - medium: 3 history turns, mission included, no resources
     - high: 5 history turns, mission included, resources included
@@ -62,39 +63,34 @@ def test_streaming_context_levels(context_level, expected_history_len, expect_mi
     assert actions is not None and len(actions) > 0, "Should return actions"
     assert actions[0]["action_type"] == "start_enhanced_oracle_streaming"
     
-    # Extract the prompt from the action details
-    prompt = actions[0]["details"]["prompt"]
-    history_in_action = actions[0]["details"]["history"]
+    # Extract context from action details
+    details = actions[0]["details"]
+    history_in_action = details["history"]
+    game_context = details["game_context"]
     
-    # Check history length passed in action
+    # Check history length (context gating)
     assert len(history_in_action) == expected_history_len, \
         f"Expected {expected_history_len} history entries, got {len(history_in_action)}"
     
-    # Check history in prompt (just count history, not current query)
-    player_lines = prompt.count("Player: ")
-    oracle_lines = prompt.count("Oracle: ")
-    
-    # History should have expected number of Player/Oracle pairs
-    assert player_lines == expected_history_len, \
-        f"Expected {expected_history_len} Player lines in history, got {player_lines}"
-    assert oracle_lines == expected_history_len, \
-        f"Expected {expected_history_len} Oracle lines in history, got {oracle_lines}"
-    
-    # Check mission presence
+    # Check mission presence in game_context (context gating)
     if expect_mission:
-        assert "Mission:" in prompt, f"Mission should be in prompt for {context_level}"
-        assert "Test mission description" in prompt
+        assert "mission" in game_context, \
+            f"Context level {context_level} should include mission"
+        assert game_context["mission"]["description"] == "Test mission description"
     else:
-        assert "Mission:" not in prompt, f"Mission should not be in prompt for {context_level}"
+        # Low context shouldn't have mission
+        assert "mission" not in game_context or game_context.get("mission") is None, \
+            f"Context level {context_level} should not include mission"
     
-    # Check resources presence
+    # Check resources presence in game_context (context gating)  
     if expect_resources:
-        assert "wood" in prompt.lower() or "resources" in prompt.lower(), \
-            f"Resources should be in prompt for {context_level}"
+        assert "resources" in game_context, \
+            f"Context level {context_level} should include resources"
+        assert "wood" in str(game_context["resources"]).lower()
     else:
-        # For low/medium, resources shouldn't be mentioned
-        if context_level in ["low", "medium"]:
-            assert "wood: 10" not in prompt, f"Resources should not be in prompt for {context_level}"
+        # Low/medium context shouldn't have resources
+        assert "resources" not in game_context or game_context.get("resources") is None, \
+            f"Context level {context_level} should not include resources"
 
 
 @pytest.mark.parametrize("context_level,expected_history_len,expect_mission,expect_resources", [
@@ -183,21 +179,23 @@ def test_non_streaming_context_levels(context_level, expected_history_len, expec
         assert oracle_lines == expected_history_len, \
             f"Expected {expected_history_len} Oracle lines in history, got {oracle_lines}"
         
-        # Check mission presence
+        # Check mission presence in prompt (context gating)
         if expect_mission:
-            assert "Mission:" in prompt, f"Mission should be in prompt for {context_level}"
-            assert "Test mission description" in prompt
+            assert "Test mission description" in prompt, \
+                f"Context level {context_level} should include mission in prompt"
         else:
-            assert "Mission:" not in prompt, f"Mission should not be in prompt for {context_level}"
+            assert "Test mission description" not in prompt, \
+                f"Context level {context_level} should not include mission in prompt"
         
-        # Check resources presence
+        # Check resources presence in prompt (context gating)
         if expect_resources:
-            assert "wood" in prompt.lower() or "resources" in prompt.lower(), \
-                f"Resources should be in prompt for {context_level}"
+            assert "wood" in prompt.lower(), \
+                f"Context level {context_level} should include resources in prompt"
         else:
             # For low/medium, resources shouldn't be mentioned
             if context_level in ["low", "medium"]:
-                assert "wood: 10" not in prompt, f"Resources should not be in prompt for {context_level}"
+                assert "wood: 10" not in prompt, \
+                    f"Context level {context_level} should not include detailed resources"
     
     finally:
         llm_config.create_llm_client = original_create

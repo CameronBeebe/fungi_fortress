@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Optional, Type, TypeVar, Union
 
+import openai
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -64,20 +63,6 @@ class BadResponseError(LLMError):
     
     def user_message(self) -> str:
         return "The Oracle's words are unclear."
-
-
-# === Configuration ===
-
-
-@dataclass
-class LLMClientConfig:
-    """Configuration for XAI LLM client."""
-    
-    model: str
-    api_key: Optional[str] = None
-    max_tokens: int = 1000
-    timeout_seconds: int = 60
-    temperature: float = 0.7
 
 
 # === Schema Helpers ===
@@ -142,13 +127,13 @@ class MockLLMProvider:
     def __init__(self):
         self._call_count = 0
     
-    def chat(self, messages: list[dict], max_tokens: int = 1000, response_format: Optional[dict[str, Any]] = None) -> str:
+    def chat(self, messages: list[dict], max_tokens: int, response_format: Optional[dict[str, Any]] = None) -> str:
         """Non-streaming mock response."""
         self._call_count += 1
         user_content = self._extract_user_content(messages)
         return self._mock_response(user_content)
     
-    def chat_stream(self, messages: list[dict], max_tokens: int = 1000) -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: int) -> Iterator[str]:
         """Streaming mock response."""
         self._call_count += 1
         user_content = self._extract_user_content(messages)
@@ -174,7 +159,6 @@ class MockLLMProvider:
     
     def _mock_response(self, user_content: str) -> str:
         """Generate deterministic response based on query (whole-word matching)."""
-        import re
         
         # Normalize content for matching
         normalized = user_content.lower()
@@ -196,7 +180,6 @@ class MockLLMProvider:
             narrative = self.RESPONSES["default"]
         
         # Return structured JSON response
-        import json
         return json.dumps({
             "narrative": narrative,
             "actions": []
@@ -209,24 +192,22 @@ class MockLLMProvider:
 class XAIProvider:
     """Provider for XAI (Grok) API."""
     
-    def __init__(self, config: LLMClientConfig):
+    def __init__(self, config):
+        """Initialize with config_manager.LLMConfig."""
         self.config = config
-        self._openai_available = self._check_openai()
-    
-    def _check_openai(self) -> bool:
-        """Check if OpenAI library is available (used for XAI API calls)."""
-        try:
-            import openai
-            return True
-        except ImportError:
-            logger.warning("openai library not available (required for XAI)")
-            return False
+        # Build OpenAI client once in __init__
+        self.client = openai.OpenAI(
+            api_key=config.api_key,
+            base_url="https://api.x.ai/v1",
+            timeout=config.timeout_seconds,
+            max_retries=config.max_retries
+        )
     
     def chat(
         self,
         messages: list[dict],
-        max_tokens: int = 1000,
-        reasoning_effort: str = "high",
+        max_tokens: Optional[int] = None,
+        reasoning_effort: Optional[str] = None,
         use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
@@ -234,34 +215,21 @@ class XAIProvider:
         
         Args:
             messages: List of message dicts
-            max_tokens: Maximum tokens to generate
-            reasoning_effort: XAI reasoning effort for grok-3-mini models
+            max_tokens: Override default max tokens from config
+            reasoning_effort: Override default reasoning effort from config
             use_json_schema: Legacy flag to use hardcoded Oracle schema
             response_format: Per-call response format schema (overrides use_json_schema)
         """
-        if not self._openai_available:
-            raise ConnectionError("OpenAI library not installed (required for XAI API)")
-        
-        import openai
-        
         try:
-            client = openai.OpenAI(
-                api_key=self.config.api_key,
-                base_url="https://api.x.ai/v1",
-                timeout=self.config.timeout_seconds
-            )
             
             # Build completion parameters
             completion_params = {
-                "model": self.config.model,
+                "model": self.config.model_name,
                 "messages": messages,
-                "max_tokens": max_tokens,
+                "max_tokens": max_tokens if max_tokens is not None else self.config.max_tokens,
                 "temperature": self.config.temperature,
+                "reasoning_effort": reasoning_effort if reasoning_effort is not None else self.config.reasoning_effort,
             }
-            
-            # Add reasoning_effort for grok-3-mini models
-            if "grok-3-mini" in self.config.model.lower():
-                completion_params["reasoning_effort"] = reasoning_effort
             
             # Add response format if provided (per-call schema takes precedence)
             if response_format:
@@ -301,7 +269,7 @@ class XAIProvider:
                 }
                 completion_params["response_format"] = oracle_schema
             
-            completion = client.chat.completions.create(**completion_params)
+            completion = self.client.chat.completions.create(**completion_params)
             
             content = completion.choices[0].message.content
             if not content:
@@ -320,34 +288,20 @@ class XAIProvider:
         except Exception as e:
             raise BadResponseError(f"Unexpected XAI error: {e}") from e
     
-    def chat_stream(self, messages: list[dict], max_tokens: int = 1000, reasoning_effort: str = "high") -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: Optional[str] = None) -> Iterator[str]:
         """Streaming chat completion with XAI."""
-        if not self._openai_available:
-            raise ConnectionError("OpenAI library not installed (required for XAI API)")
-        
-        import openai
-        
         try:
-            client = openai.OpenAI(
-                api_key=self.config.api_key,
-                base_url="https://api.x.ai/v1",
-                timeout=self.config.timeout_seconds
-            )
-            
             # Build completion parameters
             completion_params = {
-                "model": self.config.model,
+                "model": self.config.model_name,
                 "messages": messages,
-                "max_tokens": max_tokens,
+                "max_tokens": max_tokens if max_tokens is not None else self.config.max_tokens,
                 "temperature": self.config.temperature,
-                "stream": True
+                "stream": True,
+                "reasoning_effort": reasoning_effort if reasoning_effort is not None else self.config.reasoning_effort,
             }
             
-            # Add reasoning_effort for grok-3-mini models
-            if "grok-3-mini" in self.config.model.lower():
-                completion_params["reasoning_effort"] = reasoning_effort
-            
-            stream = client.chat.completions.create(**completion_params)
+            stream = self.client.chat.completions.create(**completion_params)
             
             for chunk in stream:
                 if chunk.choices and len(chunk.choices) > 0:
@@ -373,20 +327,17 @@ class XAIProvider:
 class LLMClient:
     """LLM client supporting XAI (Grok) and mock provider."""
     
-    def __init__(self, config: Optional[LLMClientConfig] = None, use_mock: bool = False):
-        """Initialize client.
+    def __init__(self, config, use_mock: bool = False):
+        """Initialize client with config_manager.LLMConfig.
         
         Args:
-            config: Client configuration. If None, uses mock provider.
-            use_mock: Force use of mock provider even if config is provided.
+            config: LLMConfig instance from config_manager
+            use_mock: Force use of mock provider even if config has valid API key
         """
-        # Check if we should use mock
-        should_mock = (
-            use_mock 
-            or config is None 
-            or not config.api_key 
-            or config.api_key in ("YOUR_API_KEY_HERE", "testkey123")
-        )
+        self.config = config
+        
+        # Check if we should use mock (use config's property for real key check)
+        should_mock = use_mock or not config.is_real_api_key_present
         self._use_mock = should_mock
         
         if self._use_mock:
@@ -394,7 +345,7 @@ class LLMClient:
             logger.info("Using mock LLM provider (offline mode)")
         else:
             self._provider = XAIProvider(config)
-            logger.info(f"Using XAI API (https://api.x.ai/v1) with model {config.model}")
+            logger.info(f"Using XAI API (https://api.x.ai/v1) with model {config.model_name}")
     
     def is_mock(self) -> bool:
         """Check if using mock provider."""
@@ -404,7 +355,7 @@ class LLMClient:
         self,
         messages: list[dict],
         max_tokens: Optional[int] = None,
-        reasoning_effort: str = "high",
+        reasoning_effort: Optional[str] = None,
         use_json_schema: bool = False,
         response_format: Optional[dict[str, Any]] = None
     ) -> str:
@@ -412,8 +363,8 @@ class LLMClient:
         
         Args:
             messages: List of message dicts with 'role' and 'content'.
-            max_tokens: Override default max tokens.
-            reasoning_effort: XAI reasoning effort ("low", "medium", "high") for grok-3-mini models.
+            max_tokens: Override config max_tokens if provided.
+            reasoning_effort: Override config reasoning_effort if provided.
             use_json_schema: Whether to use JSON schema for structured output (XAI only, legacy).
             response_format: Per-call response format schema (overrides use_json_schema).
             
@@ -423,12 +374,10 @@ class LLMClient:
         Raises:
             LLMError subclasses for various failure modes.
         """
-        if max_tokens is None:
-            max_tokens = 1000
-        
         try:
             if self._use_mock:
-                return self._provider.chat(messages, max_tokens, response_format=response_format)
+                resolved_max_tokens = max_tokens if max_tokens is not None else self.config.max_tokens
+                return self._provider.chat(messages, resolved_max_tokens, response_format=response_format)
             else:
                 return self._provider.chat(messages, max_tokens, reasoning_effort, use_json_schema, response_format)
         except LLMError:
@@ -437,13 +386,13 @@ class LLMClient:
             logger.error(f"Unexpected error in chat: {e}")
             raise BadResponseError(f"Unexpected error: {e}") from e
     
-    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: str = "high") -> Iterator[str]:
+    def chat_stream(self, messages: list[dict], max_tokens: Optional[int] = None, reasoning_effort: Optional[str] = None) -> Iterator[str]:
         """Send a streaming chat completion request.
         
         Args:
             messages: List of message dicts with 'role' and 'content'.
-            max_tokens: Override default max tokens.
-            reasoning_effort: XAI reasoning effort ("low", "medium", "high") for grok-3-mini models.
+            max_tokens: Override config max_tokens if provided.
+            reasoning_effort: Override config reasoning_effort if provided.
             
         Yields:
             Response text chunks as they arrive.
@@ -451,12 +400,10 @@ class LLMClient:
         Raises:
             LLMError subclasses for various failure modes.
         """
-        if max_tokens is None:
-            max_tokens = 1000
-        
         try:
             if self._use_mock:
-                yield from self._provider.chat_stream(messages, max_tokens)
+                resolved_max_tokens = max_tokens if max_tokens is not None else self.config.max_tokens
+                yield from self._provider.chat_stream(messages, resolved_max_tokens)
             else:
                 yield from self._provider.chat_stream(messages, max_tokens, reasoning_effort)
         except LLMError:
@@ -464,44 +411,6 @@ class LLMClient:
         except Exception as e:
             logger.error(f"Unexpected error in chat_stream: {e}")
             raise BadResponseError(f"Unexpected error: {e}") from e
-
-
-# === Client Factory ===
-
-
-def create_client_from_config(
-    model: str,
-    api_key: Optional[str] = None,
-    max_tokens: int = 1000,
-    timeout_seconds: int = 60,
-    temperature: float = 0.7,
-) -> LLMClient:
-    """Create an XAI LLM client from configuration parameters.
-    
-    Args:
-        model: XAI model name (e.g., 'grok-3-mini')
-        api_key: XAI API key (XAI_API_KEY), or None to use mock provider
-        max_tokens: Maximum tokens per response
-        timeout_seconds: Request timeout
-        temperature: Sampling temperature
-        
-    Returns:
-        Configured LLMClient instance (XAI or mock)
-    """
-    # If no API key, use mock
-    if not api_key or api_key in ("YOUR_API_KEY_HERE", "testkey123"):
-        logger.info("No valid API key configured, using mock provider")
-        return LLMClient(use_mock=True)
-    
-    config = LLMClientConfig(
-        model=model,
-        api_key=api_key,
-        max_tokens=max_tokens,
-        timeout_seconds=timeout_seconds,
-        temperature=temperature,
-    )
-    
-    return LLMClient(config)
 
 
 # === Structured Call Helper ===
@@ -536,8 +445,8 @@ def structured_call(
     schema_name: str = "response",
     label: str = "Structured call",
     convert: Optional[Callable[[BaseModel], T]] = None,
-    max_tokens: int = 4000,
-    reasoning_effort: str = "high",
+    max_tokens: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
     attempts: int = 2,
 ) -> Optional[Union[BaseModel, T]]:
     """Make a structured LLM call with validation and retry.
@@ -550,13 +459,15 @@ def structured_call(
         label: Label for log messages (e.g., "World seed", "Depth seed")
         convert: Optional converter function that takes the parsed model and returns
                  a converted object. Should raise ValueError with error details on failure.
-        max_tokens: Maximum tokens to generate
-        reasoning_effort: XAI reasoning effort ("low", "medium", "high")
+        max_tokens: Maximum tokens to generate (None = use client config default)
+        reasoning_effort: Override config reasoning_effort if provided
         attempts: Maximum number of attempts (including retries)
         
     Returns:
         Converted object (if converter provided), validated Pydantic model instance, or None if all attempts failed
     """
+    # max_tokens resolution happens in client.chat()
+    
     # Generate schema from Pydantic model
     response_format = _schema_from_model(model_cls, schema_name)
     

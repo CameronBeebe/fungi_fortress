@@ -86,13 +86,6 @@ cython_debug/
 .DS_Store
 
 # === LLM INTEGRATION FILES ===
-# Configuration files with API keys (NEVER commit)
-# LLM Configuration files (contain API keys)
-llm_config.ini
-llm_config.ini~
-
-# Legacy Oracle configuration files (deprecated)
-# These files have been replaced by llm_config.ini
 
 # LLM request tracking and logs (generated files)
 oracle_request_tracking.json

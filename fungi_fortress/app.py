@@ -22,7 +22,7 @@ from .game_logic import GameLogic
 from .map_generation import generate_map, generate_mycelial_network
 from .characters import Dwarf
 from .tiles import ENTITY_REGISTRY
-from .config_manager import load_llm_config, LLMConfig
+from .config_manager import LLMConfig
 
 PLAY_LOG_PATH = start_play_log()
 logging.info("--- Fungi Fortress Game Starting ---")
@@ -127,16 +127,11 @@ def game_loop(stdscr: curses.window):
     # Set a very low timeout for input polling (1ms)
     stdscr.timeout(1)
 
-    # Load LLM configuration first
-    logging.info("Loading LLM configuration...")
-    llm_config = load_llm_config()
-    
-    # Log the loaded LLMConfig, masking the API key
-    if llm_config:
-        masked_api_key = "'****'" if llm_config.api_key and llm_config.is_real_api_key_present else f"'{llm_config.api_key}'"
-        logging.info(f"Loaded llm_config. API Key: {masked_api_key}, Model: {llm_config.model_name}, Real Key Present: {llm_config.is_real_api_key_present}, Type: {type(llm_config)}")
-    else:
-        logging.error("LLM configuration loading returned None. LLM features will be impaired.")
+    # Load LLM configuration from environment
+    logging.info("Loading LLM configuration from environment...")
+    llm_config = LLMConfig.from_env()
+    masked_api_key = "'****'" if llm_config.api_key and llm_config.is_real_api_key_present else f"'{llm_config.api_key}'"
+    logging.info(f"Loaded llm_config. API Key: {masked_api_key}, Model: {llm_config.model_name}, Real Key Present: {llm_config.is_real_api_key_present}")
 
     logging.info("Fungi Fortress initialization starting...")
     
