@@ -18,6 +18,8 @@ Living backlog. One small PR per item unless noted. Order is the proposed build 
 - **Debug/"show stats" toggle (F1).** Hide backend readouts (exposure numbers, bands, stances, debug messages) in normal play; F1 toggles them for development.
 - **Perception overlay prototype.** As exposure rises, draw an overlay with true and false elements over the map (see PLANNING.md "Reality model: one core, many views" and "Spore exposure and perception" sections for the architectural model; still under discussion).
 - **Fail-open mission judge.** With no key or on error the mission counts as accomplished. Show that in the UI.
+- **Typewriter dialogue UX.** NPC replies are validated in the background via structured_call; once a reply passes, the renderer reveals its narrative character-by-character instead of all at once. General for all NPC dialogue, presentation layer only, retries stay invisible to the player.
+- **Prevent engine-data leaks in NPC replies.** Build NPC context from an in-world view of game state (time of day, time underground, mission in fiction terms) instead of raw engine values like tick, fitting the one-core-world/many-filtered-views design. Jev judge flags meta/engine-term leaks as a semantic-quality check, retried through the normal validator path.
 
 ## Engineering
 
