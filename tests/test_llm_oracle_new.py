@@ -39,7 +39,7 @@ class TestTypedLLMContract:
     
     def test_invalid_spawn_triggers_retry_with_error(self):
         """Test that invalid spawn coordinates/type trigger retry carrying the specific error."""
-        from fungi_fortress.llm_interface import handle_oracle_query_non_streaming
+        from fungi_fortress.llm_interface import handle_oracle_query
         from fungi_fortress.game_state import GameState
         from fungi_fortress.config_manager import LLMConfig
         
@@ -51,7 +51,7 @@ class TestTypedLLMContract:
         # The structured_call will retry and the validator will reject it
         # For this test, we just verify the validator logic exists and is called
         
-        # The validator is inline in handle_oracle_query_non_streaming
+        # The validator is inline in handle_oracle_query
         # We can test it by checking the logs for rejection messages when running
         # This test verifies the structure exists; integration test would verify behavior
         
@@ -64,7 +64,7 @@ class TestTypedLLMContract:
         }
         
         # With mock provider, this should succeed (mock returns valid reply)
-        result = handle_oracle_query_non_streaming(event_data, game_state)
+        result = handle_oracle_query(event_data, game_state)
         assert result is not None
         # The mock provider returns a valid reply with no spawn actions
         # If it had an invalid spawn, the validator would reject it and trigger retry

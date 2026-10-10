@@ -11,7 +11,6 @@ from datetime import timezone
 from typing import Any, Dict, Iterator, List, Optional
 
 from . import llm_client, llm_oracle
-from .text_streaming import text_streaming_engine
 from .npc_reply import NpcReply, validate_npc_reply
 
 logger = logging.getLogger(__name__)
@@ -35,15 +34,15 @@ def handle_game_event(event_data: Dict[str, Any], game_state: Any) -> Optional[L
     """
     event_type = event_data.get("type")
     
-    # Oracle queries always use non-streaming to get typed actions
+    # Oracle queries use typed path to get structured actions
     if event_type == "ORACLE_QUERY" and game_state.llm_config:
-        return handle_oracle_query_non_streaming(event_data, game_state)
+        return handle_oracle_query(event_data, game_state)
     
     return None
 
 
-def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: Any) -> Optional[List[Dict[str, Any]]]:
-    """Handle Oracle queries with non-streaming responses."""
+def handle_oracle_query(event_data: Dict[str, Any], game_state: Any) -> Optional[List[Dict[str, Any]]]:
+    """Handle Oracle queries with typed responses."""
     details = event_data.get("details", {})
     player_query = details.get("query_text")
     oracle_name = details.get("oracle_name", "The Oracle")

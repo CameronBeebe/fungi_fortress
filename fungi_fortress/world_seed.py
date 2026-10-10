@@ -18,6 +18,7 @@ from typing import Any, Callable, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 from .characters import NPC, Oracle
+from .config_manager import LLMConfig
 from .constants import STARTING_RESOURCES
 from . import llm_client
 from .world_rules import CharacterKind, is_open_tile
@@ -260,7 +261,7 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
     """Grow a world from the player's LLM key and install it.
 
     Returns one line for the game log. A prepared grove is used when the
-    model is missing or both attempts come back invalid.
+    model is missing or all attempts (initial + max_validation_retries) come back invalid.
     """
     # Get or create an LLM client
     if complete is None:
@@ -335,7 +336,6 @@ class _CompleteAdapter:
     """Minimal adapter that wraps a complete function to look like an LLM client for tests."""
     
     def __init__(self, complete_fn: Callable[[str], str]):
-        from .config_manager import LLMConfig
         self._complete = complete_fn
         self.config = LLMConfig()  # Use default config
     

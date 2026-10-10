@@ -15,9 +15,9 @@ from fungi_fortress import llm_interface
     ("high", 5, True, True),
 ])
 def test_non_streaming_context_levels(context_level, expected_history_len, expect_mission, expect_resources):
-    """Test that handle_oracle_query_non_streaming includes correct context based on level.
+    """Test that handle_oracle_query includes correct context based on level.
     
-    Oracle always uses non-streaming (no streaming test needed).
+    Oracle uses typed path to get structured actions.
     
     - low: 1 history turn, no mission, no resources
     - medium: 3 history turns, mission included, no resources
@@ -77,8 +77,8 @@ def test_non_streaming_context_levels(context_level, expected_history_len, expec
     llm_config.create_llm_client = mock_create_client
     
     try:
-        # Call handle_oracle_query_non_streaming - it actually calls the LLM
-        actions = llm_interface.handle_oracle_query_non_streaming(event_data, game_state)
+        # Call handle_oracle_query - it actually calls the LLM
+        actions = llm_interface.handle_oracle_query(event_data, game_state)
         
         assert len(captured_messages) > 0, "LLM should have been called"
         

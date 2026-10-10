@@ -286,8 +286,7 @@ class GameLogic:
     def _handle_action(self, action: Dict[str, Any]) -> None:
         """Handle a single action from LLM or game events.
         
-        Extracted from update() to be reused by both regular event processing
-        and streaming Oracle processing.
+        Extracted from update() to be reused by event processing.
         
         Args:
             action: Action dict with 'action_type' and 'details'
