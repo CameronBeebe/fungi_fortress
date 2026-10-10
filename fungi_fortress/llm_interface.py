@@ -129,7 +129,7 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
                 is_mock=client.is_mock(),
                 error=None,
                 parsed_narrative=reply.narrative,
-                parsed_actions=[{"action_type": a.action_type, **a.model_dump()} for a in reply.actions] if reply.actions else [],
+                parsed_actions=[a.model_dump() for a in reply.actions] if reply.actions else [],
             )
         else:
             # Fallback response
@@ -179,127 +179,6 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
     return actions_to_execute
 
 
-def process_enhanced_oracle_streaming(
-    llm_config,
-    player_query: str,
-    oracle_name: str,
-    game_context: Optional[Dict[str, Any]] = None,
-    history: Optional[List[Dict[str, str]]] = None,
-) -> Iterator[Dict[str, Any]]:
-    """Process enhanced Oracle streaming with the unified client.
-    
-    Args:
-        llm_config: LLM configuration object
-        player_query: The player's question
-        oracle_name: Name of the Oracle
-        game_context: Game state context dict
-        history: Conversation history
-        
-    Yields:
-        Action dictionaries for the game logic to process
-    """
-    # Get or create LLM client from config (API key comes from here)
-    client = llm_config.create_llm_client()
-    
-    # Use provided context or minimal defaults
-    if game_context is None:
-        game_context = {
-            'tick': 0,
-            'depth': 1,
-            'mission': None,
-            'resources': {},
-        }
-    
-    if history is None:
-        history = []
-    
-    timestamp_utc = datetime.datetime.now(timezone.utc).isoformat()
-    if "+00:00" in timestamp_utc:
-        timestamp_utc = timestamp_utc.replace("+00:00", "Z")
-    elif not timestamp_utc.endswith("Z"):
-        timestamp_utc += "Z"
-    
-    complete_response = ""
-    error_for_log = None
-    parsed_narrative = None
-    parsed_actions = None
-    
-    try:
-        # Create streaming iterator
-        def llm_iterator():
-            nonlocal complete_response, error_for_log
-            
-            try:
-                for chunk in llm_oracle.query_oracle_streaming(
-                    client=client,
-                    oracle_name=oracle_name,
-                    player_query=player_query,
-                    game_context=game_context,
-                    history=history,
-                    max_tokens=llm_config.max_tokens,
-                    enable_structured_outputs=llm_config.enable_structured_outputs,
-                ):
-                    complete_response += chunk
-                    yield chunk
-            except llm_client.LLMError as e:
-                error_for_log = str(e)
-                yield e.user_message()
-        
-        # Use text streaming engine for display
-        # Note: The streaming engine already parses and yields actions during streaming,
-        # so we don't need to parse the complete_response again (that would execute actions twice)
-        for action in text_streaming_engine.start_oracle_streaming_sequence(
-            oracle_name,
-            player_query,
-            llm_iterator()
-        ):
-            yield action
-        
-        # Parse the complete response for LOGGING only (not for execution)
-        if complete_response and not error_for_log:
-            parsed_narrative, parsed_actions = _parse_llm_response(complete_response)
-        
-        # Log the complete interaction
-        _log_oracle_interaction(
-            timestamp=timestamp_utc,
-            player_query=player_query,
-            response=complete_response if complete_response else None,
-            is_mock=client.is_mock(),
-            error=error_for_log,
-            parsed_narrative=parsed_narrative,
-            parsed_actions=parsed_actions,
-        )
-        
-    except Exception as e:
-        error_message = "The Oracle's connection is severely disrupted."
-        logger.error(f"Critical error in enhanced streaming: {e}")
-        
-        yield {
-            "action_type": "stream_text_chunk",
-            "details": {
-                "text": error_message,
-                "text_type": "oracle_dialogue",
-                "target": "oracle_dialogue",
-                "delay_ms": 3,
-                "add_newline": True,
-                "is_error": True
-            }
-        }
-        
-        yield {
-            "action_type": "set_oracle_state",
-            "details": {"state": "AWAITING_PROMPT"}
-        }
-        
-        _log_oracle_interaction(
-            timestamp=timestamp_utc,
-            player_query=player_query,
-            response=None,
-            is_mock=False,
-            error=str(e),
-        )
-
-
 def _build_game_context(game_state: Any) -> Dict[str, Any]:
     """Build game context dict from game state.
     
@@ -329,82 +208,6 @@ def _build_game_context(game_state: Any) -> Dict[str, Any]:
             context['resources'] = getattr(game_state.inventory, 'resources', {})
     
     return context
-
-
-def _parse_llm_response(response_text: str) -> tuple[str, List[Dict[str, Any]]]:
-    """Parse the LLM's raw response text to separate narrative from structured actions.
-    
-    Supports both:
-    - JSON format: {"narrative": "...", "actions": [...]}
-    - Text format with ACTION::action_type::{"json": "data"}
-    
-    Args:
-        response_text: The raw string response from the LLM
-        
-    Returns:
-        Tuple[str, List[Dict[str, Any]]]: (narrative, actions)
-    """
-    # First, try to parse as structured JSON
-    try:
-        parsed_json = json_lib.loads(response_text.strip())
-        if isinstance(parsed_json, dict) and "narrative" in parsed_json and "actions" in parsed_json:
-            narrative = parsed_json["narrative"]
-            actions = parsed_json["actions"]
-            
-            # Validate actions structure
-            validated_actions = []
-            for action in actions:
-                if isinstance(action, dict) and "action_type" in action and "details" in action:
-                    validated_actions.append(action)
-                else:
-                    logger.debug(f"Skipping malformed action in structured response: {action}")
-            
-            logger.debug(f"Successfully parsed structured JSON response with {len(validated_actions)} actions")
-            return narrative, validated_actions
-    except json_lib.JSONDecodeError:
-        pass
-    except Exception as e:
-        logger.debug(f"Error parsing structured JSON response: {e}, falling back to text parsing")
-    
-    # Legacy text parsing with ACTION:: markers
-    narrative_parts = []
-    actions = []
-    parts = response_text.split("ACTION::")
-    
-    if parts:
-        narrative_parts.append(parts[0].strip())
-        
-        for part in parts[1:]:
-            try:
-                action_def = part.strip()
-                # Expecting format: action_type::{"json": "details"}
-                action_type, json_details_str = action_def.split("::", 1)
-                
-                # Try to parse the JSON
-                details = None
-                try:
-                    details = json_lib.loads(json_details_str)
-                except json_lib.JSONDecodeError:
-                    # Try fixing single quotes to double quotes
-                    try:
-                        fixed_json = json_details_str.replace("'", '"')
-                        details = json_lib.loads(fixed_json)
-                        logger.debug(f"Fixed JSON quotes for action: {action_type}")
-                    except json_lib.JSONDecodeError as e2:
-                        logger.debug(f"Error decoding JSON from LLM action: {json_details_str}. Error: {e2}")
-                        # Add error message to narrative
-                        narrative_parts.append(f"(The Oracle's words concerning an action were muddled: {action_type}::{json_details_str})")
-                        continue
-                
-                if details is not None:
-                    actions.append({"action_type": action_type.strip(), "details": details})
-                    
-            except ValueError:
-                logger.debug(f"Malformed action string from LLM: {part.strip()}")
-                narrative_parts.append(f"(The Oracle made an unclear gesture: {part.strip()})")
-                continue
-    
-    return " ".join(narrative_parts).strip(), actions
 
 
 def _log_oracle_interaction(

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from .characters import NPC, Oracle
 from .constants import STARTING_RESOURCES
@@ -29,6 +29,7 @@ MAX_CHARACTERS = 12
 MAX_PLACES = 12
 MAX_QUESTS = 8
 MAX_TEXT = 400
+WORLD_GEN_MAX_TOKENS = 4000  # Max tokens for world/depth generation
 _PREPARED_SEED = os.path.join(os.path.dirname(__file__), "seeds", "example_world.json")
 _PREPARED_DEPTH = os.path.join(os.path.dirname(__file__), "seeds", "example_depth.json")
 
@@ -284,8 +285,7 @@ def grow_world(game: Any, complete: Callable[[str], str] | None = None) -> str:
         schema_name="world_seed",
         label="World seed",
         convert=_convert_to_world_seed,
-        max_tokens=4000,
-        reasoning_effort="low",
+        max_tokens=WORLD_GEN_MAX_TOKENS,
     )
     
     if seed is None:
@@ -313,30 +313,20 @@ def _seed_prompt(rejection: str = "") -> str:
 
 
 def _get_llm_client(game: Any) -> Optional[llm_client.LLMClient]:
-    """Get an LLM client from game configuration or environment.
+    """Get the LLM client from game's loaded config.
     
-    Returns None if no valid API key is available.
+    Args:
+        game: Game object with llm_config
+        
+    Returns:
+        LLMClient or None if no valid config/key available
     """
     config = getattr(game, "llm_config", None)
     if config is not None:
-        try:
-            client = config.create_llm_client()
-            # Only return if it's not using mock (i.e., has a real key)
-            if not client.is_mock():
-                return client
-        except Exception:
-            pass
-    
-    # Try XAI_API_KEY environment variable as fallback
-    xai_key = os.environ.get("XAI_API_KEY", "").strip()
-    if xai_key:
-        return llm_client.create_client_from_config(
-            model="grok-3-mini",
-            api_key=xai_key,
-            max_tokens=4000,
-            timeout_seconds=45,
-            temperature=0.8,
-        )
+        client = config.create_llm_client()
+        # Only return if it's not using mock (i.e., has a real key)
+        if not client.is_mock():
+            return client
     
     return None
 
@@ -345,7 +335,9 @@ class _CompleteAdapter:
     """Minimal adapter that wraps a complete function to look like an LLM client for tests."""
     
     def __init__(self, complete_fn: Callable[[str], str]):
+        from .config_manager import LLMConfig
         self._complete = complete_fn
+        self.config = LLMConfig()  # Use default config
     
     def chat(self, messages: list[dict], **kwargs) -> str:
         """Extract the last user prompt and call the complete function."""
@@ -440,8 +432,7 @@ def grow_depth(game: Any, complete: Callable[[str], str] | None = None) -> str:
         schema_name="depth_seed",
         label="Depth seed",
         convert=_convert_to_world_seed,
-        max_tokens=4000,
-        reasoning_effort="low",
+        max_tokens=WORLD_GEN_MAX_TOKENS,
     )
     
     if seed is None:

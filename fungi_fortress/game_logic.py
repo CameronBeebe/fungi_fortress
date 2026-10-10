@@ -522,42 +522,7 @@ class GameLogic:
                 self.game_state.oracle_interaction_state != "IDLE"):
                 self.game_state.oracle_current_dialogue.append(f"✦ Event Created: '{event_name}' ✦")
 
-        elif action_type == "start_enhanced_oracle_streaming":
-            # Initialize enhanced streaming Oracle response with flavor text
-            if (self.game_state.show_oracle_dialog and 
-                self.game_state.oracle_interaction_state != "IDLE"):
-                streaming_details = details
-                oracle_name = streaming_details.get("oracle_name", "The Oracle")
-                
-                # Initialize streaming state
-                if not hasattr(self.game_state, 'oracle_streaming_generator'):
-                    self.game_state.oracle_streaming_generator = None
-                if not hasattr(self.game_state, 'oracle_streaming_active'):
-                    self.game_state.oracle_streaming_active = False
-                if not hasattr(self.game_state, 'oracle_streaming_buffer'):
-                    self.game_state.oracle_streaming_buffer = ""
-                if not hasattr(self.game_state, 'oracle_streaming_delay_counter'):
-                    self.game_state.oracle_streaming_delay_counter = 0
-                
-                # Start the enhanced streaming generator
-                self.game_state.oracle_streaming_generator = llm_interface.process_enhanced_oracle_streaming(
-                    self.game_state.llm_config,
-                    streaming_details["player_query"],
-                    oracle_name,
-                    streaming_details.get("game_context"),
-                    streaming_details.get("history"),
-                )
-                self.game_state.oracle_streaming_active = True
-                self.game_state.oracle_streaming_buffer = ""
-                self.game_state.oracle_streaming_delay_counter = 0
-                self.game_state.oracle_interaction_state = "STREAMING_RESPONSE"
-                
-                # Scroll to the end of dialogue so new flavor text starts in view
-                self.game_state.oracle_dialogue_page_start_index = len(self.game_state.oracle_current_dialogue)
-                
-                self.game_state.add_debug_message(f"Started enhanced Oracle streaming response from {oracle_name}")
-
-        elif action_type not in ["add_message", "set_oracle_state", "start_enhanced_oracle_streaming"]:
+        elif action_type not in ["add_message", "set_oracle_state"]:
             content_entry = {
                 "type": "other",
                 "action_type": action_type,

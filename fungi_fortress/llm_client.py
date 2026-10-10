@@ -426,12 +426,8 @@ def structured_call(
     Returns:
         Converted object (if converter provided), validated Pydantic model instance, or None if all attempts failed
     """
-    # Validation retries from config (fallback to 2 for tests/mocks)
-    attempts = 2
-    if hasattr(client, 'config') and client.config is not None:
-        max_val_retries = getattr(client.config, 'max_validation_retries', None)
-        if isinstance(max_val_retries, int):
-            attempts = max_val_retries
+    # Validation retries from config: max_validation_retries means retries, so +1 for total attempts
+    attempts = client.config.max_validation_retries + 1
     
     # Generate schema from Pydantic model
     response_format = _schema_from_model(model_cls, schema_name)
