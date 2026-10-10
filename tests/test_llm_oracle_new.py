@@ -71,7 +71,9 @@ class TestTypedLLMContract:
     
     def test_mock_provider_returns_valid_npc_reply(self):
         """Test mock provider returns valid NpcReply that parses correctly."""
-        client = LLMClient(use_mock=True)
+        from fungi_fortress.config_manager import LLMConfig
+        
+        client = LLMClient(LLMConfig(), use_mock=True)
         
         # Build minimal messages
         messages = llm_oracle.build_oracle_messages(

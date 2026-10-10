@@ -110,8 +110,8 @@ To use live LLM providers:
     ```bash
     export XAI_API_KEY="your-xai-api-key-here"
     ```
-*   Optionally, copy `llm_config.ini.example` to `llm_config.ini` to configure model and parameters
 *   **No API key?** The game automatically uses the mock provider (offline mode) with `[Offline Mode]` indicator
+*   **Configuration**: All settings use well-chosen defaults in `LLMConfig` dataclass (`fungi_fortress/config_manager.py`). No user config file.
 
 ## Basic Controls
 
@@ -245,56 +245,21 @@ The unified LLM client supports both online (xAI/Grok) and offline (mock) modes.
 - **✅ Typed Error Handling**: Clear exceptions with player-friendly messages
 - **✅ Comprehensive Test Suite**: 227 tests passing
 - **✅ Streaming Support**: Real-time Oracle responses for engaging gameplay
-- **✅ XAI-Specific Features**: `reasoning_effort` (high/low) and `response_format` (JSON Schema)
+- **✅ XAI-Specific Features**: `reasoning_effort` and `response_format` (JSON Schema)
 - **✅ Security**: API keys never logged (field(repr=False), removed from action details)
 
 ### Supported LLM Provider
 
 The Oracle uses **XAI (Grok)** via `https://api.x.ai/v1`:
 
-- **Available Models**:
-  - `grok-3-mini` (default, recommended)
-  - `grok-3-mini-fast`
-  - `grok-3`, `grok-3-beta`
-  - `grok-2-1212`
-  - `grok-beta`, `grok-vision-beta`
-
+- **Model**: Defaults defined in `LLMConfig` dataclass (`fungi_fortress/config_manager.py`)
 - **XAI Features**:
-  - `reasoning_effort`: "high" for Oracle (quality), "low" for world gen (speed)
+  - `reasoning_effort`: Default set in `LLMConfig`, can be overridden per call
   - `response_format`: JSON Schema for structured action parsing
 
 ### Configuration
 
-Copy `llm_config.ini.example` to `llm_config.ini` and configure your settings:
-
-```ini
-[LLM]
-# === API KEY CONFIGURATION ===
-# API key is loaded from environment variable for security
-# Set this in your shell or .env file:
-#
-# For XAI (Grok):     export XAI_API_KEY="your-xai-api-key-here"
-#
-# If not set, the game uses the built-in mock provider (offline mode)
-
-# Model to use (XAI Grok models only):
-#   grok-3-mini (default, recommended)
-#   grok-3-mini-fast, grok-3, grok-3-beta
-#   grok-2-1212, grok-beta, grok-vision-beta
-model_name = grok-3-mini
-
-# Context level for game information (low, medium, high)
-# low = tick + depth, 1 history turn
-# medium = + mission, 3 history turns
-# high = + resources, 5 history turns
-context_level = medium
-
-# === COST CONTROL SETTINGS ===
-max_tokens = 1000             # Max response length (prevents runaway costs)
-timeout_seconds = 60          # Request timeout (prevents hanging)
-enable_streaming = true       # Word-by-word streaming responses
-enable_structured_outputs = false  # JSON Schema for action parsing
-```
+All settings use programmer-controlled defaults in the `LLMConfig` dataclass (`fungi_fortress/config_manager.py`). Only `XAI_API_KEY` is read from the environment. No user config file.
 
 ### Using Your XAI API Key
 

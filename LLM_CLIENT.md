@@ -8,7 +8,7 @@ Fungi Fortress uses a unified LLM client supporting XAI (Grok) and a determinist
 
 1. **`llm_client.py`**: Main client with `XAIProvider`, `MockLLMProvider`, and typed exceptions
 2. **`llm_oracle.py`**: Oracle-specific adapter (dialogue queries)
-3. **`llm_world.py`**: World seed generation adapter
+3. **`world_seed.py`**: World seed generation adapter
 4. **`config_manager.py`**: Configuration loading and client factory
 
 ### Key Features
@@ -54,26 +54,19 @@ export XAI_API_KEY="your-xai-api-key-here"
 
 If not set, the game automatically uses the mock provider.
 
-### `llm_config.ini`
+### Configuration
 
-```ini
-[LLM]
-model_name = grok-3-mini       # XAI model (default)
-context_level = medium         # low, medium, high
-max_tokens = 1000              # Response length limit
-enable_streaming = true        # Word-by-word streaming
-enable_structured_outputs = false  # JSON Schema for actions
-```
+All configuration defaults are defined in the `LLMConfig` dataclass in `fungi_fortress/config_manager.py`. Only `XAI_API_KEY` is read from the environment. No user config file.
 
-**Security**: No API key in the file! Keys come from environment variables.
+**Security**: API keys never in files - environment variables only.
 
 ### Creating a Client
 
 ```python
-from fungi_fortress.config_manager import load_llm_config
+from fungi_fortress.config_manager import LLMConfig
 
-# Load config and create client
-config = load_llm_config()
+# Load config from environment and create client
+config = LLMConfig.from_env()
 client = config.create_llm_client()
 
 # Client automatically uses mock if no valid XAI_API_KEY
@@ -87,25 +80,16 @@ The XAI provider connects to `https://api.x.ai/v1` using the OpenAI SDK:
 
 ### Available Models
 
-- `grok-3-mini` (default, recommended)
-- `grok-3-mini-fast`
-- `grok-3`
-- `grok-3-beta`
-- `grok-2-1212`
-- `grok-beta`
-- `grok-vision-beta`
+See the `LLMConfig` dataclass in `fungi_fortress/config_manager.py` for the current default model.
 
 ### XAI-Specific Parameters
 
 #### `reasoning_effort`
 
-Controls the depth of reasoning for `grok-3-mini` models:
-- `"high"` - Oracle dialogue (better quality, slower)
-- `"low"` - World seed generation (faster, cheaper)
-- `"medium"` - balanced
+Controls the depth of reasoning. Default is set in `LLMConfig` and can be overridden per call:
 
 ```python
-response = client.chat(messages, reasoning_effort="high")
+response = client.chat(messages, reasoning_effort="medium")
 ```
 
 #### `response_format`
@@ -158,7 +142,7 @@ messages = llm_oracle.build_oracle_messages(
     enable_structured_outputs=False,
 )
 
-# Non-streaming query (high reasoning effort)
+# Non-streaming query
 response = llm_oracle.query_oracle(
     client=client,
     oracle_name="Ancient Seer",
@@ -168,7 +152,7 @@ response = llm_oracle.query_oracle(
     enable_structured_outputs=False,
 )
 
-# Streaming query (high reasoning effort)
+# Streaming query
 for chunk in llm_oracle.query_oracle_streaming(...):
     print(chunk, end="", flush=True)
 ```
@@ -201,20 +185,14 @@ The Oracle supports two output formats:
 
 ## World Seed Generation
 
-World generation uses `llm_world.py` with low reasoning effort:
+World generation uses `world_seed.py`:
 
 ```python
-from fungi_fortress import llm_world
+from fungi_fortress import world_seed
 
-# Generate world seed (uses reasoning_effort="low")
-seed_dict = llm_world.generate_world_seed(
-    client=client,
-    prompt=world_seed_prompt,
-    max_tokens=4000,
-)
+# Generate world seed
+seed_message = world_seed.grow_world(game, complete=None)
 ```
-
-The `llm_world.generate_world_seed` function automatically extracts JSON from markdown code fences when parsing world seed responses.
 
 ## Testing
 
@@ -243,7 +221,7 @@ def test_client_uses_mock_without_key():
     assert client.is_mock()
 
 def test_client_with_xai_key():
-    config = LLMClientConfig(model="grok-3-mini", api_key="xai-test-key")
+    config = LLMConfig(model_name="test-model", api_key="xai-test-key")
     client = LLMClient(config)
     assert not client.is_mock()
 ```
@@ -257,7 +235,7 @@ def test_rate_limit_error(mock_openai):
     mock_openai.return_value = mock_client
     mock_client.chat.completions.create.side_effect = openai.RateLimitError(...)
     
-    config = LLMClientConfig(model="grok-3-mini", api_key="test-key")
+    config = LLMConfig(model_name="test-model", api_key="test-key")
     client = LLMClient(config)
     
     with pytest.raises(llm_client.RateLimitError):

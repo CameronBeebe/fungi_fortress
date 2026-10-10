@@ -142,11 +142,11 @@ def test_handle_game_event_streaming():
 def test_llm_config_api_key_validation():
     """Test API key validation in LLMConfig."""
     assert not LLMConfig(api_key="YOUR_API_KEY_HERE").is_real_api_key_present
-    assert not LLMConfig(api_key="testkey123").is_real_api_key_present
     assert not LLMConfig(api_key="None").is_real_api_key_present
     assert not LLMConfig(api_key="").is_real_api_key_present
     assert not LLMConfig(api_key=None).is_real_api_key_present
     assert LLMConfig(api_key="real_api_key_value").is_real_api_key_present
+    assert LLMConfig(api_key="testkey123").is_real_api_key_present  # Not a placeholder
 
 
 def test_client_invalid_key_uses_mock():
@@ -167,7 +167,7 @@ def test_llm_config_defaults():
     """Test that LLMConfig defaults are set correctly."""
     config = LLMConfig()
     assert config.api_key is None
-    assert config.model_name == "grok-3-mini"
+    assert config.model_name == "grok-4.3"
     assert config.context_level == "medium"
     assert not config.is_real_api_key_present
 

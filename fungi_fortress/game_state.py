@@ -448,16 +448,4 @@ class GameState:
     
     # --- End Bridge Wood Reservation Management ---
 
-    # --- Helper to spawn initial Oracle ---
-    def set_llm_config(self, llm_config: Optional['LLMConfig']):
-        """Sets the LLM configuration, performing some basic logging."""
-        if llm_config:
-            self.llm_config = llm_config
-            # Log the received LLMConfig, masking the API key
-            masked_api_key = "'****'" if self.llm_config.api_key and self.llm_config.is_real_api_key_present else f"'{self.llm_config.api_key}'"
-            logger.info(f"Received llm_config. API Key: {masked_api_key}, Model: {self.llm_config.model_name}, Real Key Present: {self.llm_config.is_real_api_key_present}, Type: {type(self.llm_config)}")
-        else:
-            self.llm_config = LLMConfig() # Ensure it's always an LLMConfig instance
-            logger.warning("Received None for llm_config. Initializing with default LLMConfig.")
-
     # --- Inventory Management ---

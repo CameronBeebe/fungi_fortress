@@ -5,6 +5,7 @@ infrastructure, maintaining compatibility with existing game_logic expectations.
 """
 
 import datetime
+import json as json_lib
 import logging
 from datetime import timezone
 from typing import Any, Dict, Iterator, List, Optional
@@ -14,6 +15,9 @@ from .text_streaming import text_streaming_engine
 from .npc_reply import validate_npc_reply
 
 logger = logging.getLogger(__name__)
+
+# Context level history limits (single source of truth)
+HISTORY_LIMITS = {'low': 1, 'medium': 3, 'high': 5}
 
 # Oracle interaction history limit
 MAX_ORACLE_HISTORY = 10
@@ -60,9 +64,7 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
     game_context = _build_game_context(game_state)
     
     # Trim history based on context level
-    context_level = getattr(game_state.llm_config, 'context_level', 'medium')
-    history_limits = {'low': 1, 'medium': 3, 'high': 5}
-    history_limit = history_limits.get(context_level, 3)
+    history_limit = HISTORY_LIMITS[game_state.llm_config.context_level]
     trimmed_history = game_state.oracle_llm_interaction_history[-history_limit:] if game_state.oracle_llm_interaction_history else []
     
     # Log interaction timestamp
@@ -94,33 +96,12 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
             convert=validator,
         )
         
-        if reply is None:
-            # Structured call failed after retries
-            error_message = "The Oracle's words are unclear and fade into silence."
+        if reply:
+            # Add narrative to dialogue
             actions_to_execute.append({
                 "action_type": "add_oracle_dialogue",
-                "details": {"text": error_message, "is_llm_response": True}
+                "details": {"text": reply.narrative, "is_llm_response": True}
             })
-            
-            game_state.oracle_llm_interaction_history.append({
-                "player": player_query,
-                "oracle": error_message
-            })
-            
-            _log_oracle_interaction(
-                timestamp=timestamp_utc,
-                player_query=player_query,
-                response=None,
-                is_mock=client.is_mock(),
-                error="Structured call failed after retries",
-            )
-        else:
-            # Add narrative to dialogue
-            if reply.narrative:
-                actions_to_execute.append({
-                    "action_type": "add_oracle_dialogue",
-                    "details": {"text": reply.narrative, "is_llm_response": True}
-                })
             
             # Add any game actions from the structured reply
             # Convert typed actions to game_logic format (action_type + details)
@@ -144,11 +125,27 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
             _log_oracle_interaction(
                 timestamp=timestamp_utc,
                 player_query=player_query,
-                response=reply.model_dump_json(),
+                response=reply.narrative,
                 is_mock=client.is_mock(),
                 error=None,
                 parsed_narrative=reply.narrative,
-                parsed_actions=[{"action_type": action.model_dump()["action_type"], "details": {k: v for k, v in action.model_dump().items() if k != "action_type"}} for action in reply.actions],
+                parsed_actions=[{"action_type": a.action_type, **a.model_dump()} for a in reply.actions] if reply.actions else [],
+            )
+        else:
+            # Fallback response
+            fallback_text = "(The Oracle remains silent, its vision obscured.)"
+            actions_to_execute.append({
+                "action_type": "add_oracle_dialogue",
+                "details": {"text": fallback_text}
+            })
+            _log_oracle_interaction(
+                timestamp=timestamp_utc,
+                player_query=player_query,
+                response=None,
+                is_mock=client.is_mock(),
+                error="structured_call returned None",
+                parsed_narrative=fallback_text,
+                parsed_actions=[],
             )
         
     except llm_client.LLMError as e:
@@ -183,10 +180,6 @@ def handle_oracle_query_non_streaming(event_data: Dict[str, Any], game_state: An
 
 
 def process_enhanced_oracle_streaming(
-    prompt: str,
-    api_key: str,  # Ignored - get from llm_config instead
-    model_name: str,
-    provider_hint: str,
     llm_config,
     player_query: str,
     oracle_name: str,
@@ -196,10 +189,6 @@ def process_enhanced_oracle_streaming(
     """Process enhanced Oracle streaming with the unified client.
     
     Args:
-        prompt: Complete prompt string (for compatibility with old callers)
-        api_key: Ignored - API key comes from llm_config
-        model_name: Model name
-        provider_hint: Provider hint
         llm_config: LLM configuration object
         player_query: The player's question
         oracle_name: Name of the Oracle
@@ -247,6 +236,8 @@ def process_enhanced_oracle_streaming(
                     player_query=player_query,
                     game_context=game_context,
                     history=history,
+                    max_tokens=llm_config.max_tokens,
+                    enable_structured_outputs=llm_config.enable_structured_outputs,
                 ):
                     complete_response += chunk
                     yield chunk
@@ -323,9 +314,7 @@ def _build_game_context(game_state: Any) -> Dict[str, Any]:
     }
     
     # Get context level from config
-    context_level = "medium"  # default
-    if game_state.llm_config:
-        context_level = getattr(game_state.llm_config, 'context_level', 'medium')
+    context_level = game_state.llm_config.context_level if game_state.llm_config else "medium"
     
     # Add mission for medium and high
     if context_level in ('medium', 'high'):
@@ -355,8 +344,6 @@ def _parse_llm_response(response_text: str) -> tuple[str, List[Dict[str, Any]]]:
     Returns:
         Tuple[str, List[Dict[str, Any]]]: (narrative, actions)
     """
-    import json as json_lib
-    
     # First, try to parse as structured JSON
     try:
         parsed_json = json_lib.loads(response_text.strip())

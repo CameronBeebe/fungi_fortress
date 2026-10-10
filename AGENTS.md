@@ -16,11 +16,13 @@ Every LLM call that feeds the game must declare its output type as a Pydantic mo
 
 ## Providers
 
-- **Online:** xAI only. Model is set by `model_name` in `llm_config.ini` (example default `grok-3-mini`; the owner runs `grok-4.3`)
+- **Online:** xAI only. Defaults defined in `LLMConfig` dataclass (`fungi_fortress/config_manager.py`)
 - **Offline:** Built-in mock provider for game calls (no API key required)
 - **Judge:** Jev/TypeSafe is separate as a judge, not a game content provider
 
 **Do not add other providers.** xAI + mock is the decided architecture.
+
+**Product principle:** Well-chosen defaults in code, no hidden user config files. Only `XAI_API_KEY` comes from the environment.
 
 ## No Special Cases
 
@@ -56,6 +58,8 @@ Backend values—stats, exposure numbers, exposure bands, stance values—are de
 - **Fix failing tests:** Find and fix the root cause; never weaken, skip, or delete a test to make it pass. If a test itself is wrong, say so explicitly in the PR.
 - **Testing philosophy:** Test core contracts (the typed LLM path, validators, world rules, and things that broke before). Don't write wasteful tests or tests that pin details likely to change. The project changes fast, so don't over-invest in tests or box the design in.
 - **Run `uv run pytest` before pushing.** All tests must pass.
+- **Greenfield, no outside users:** When something is replaced or deprecated, remove it completely (no backwards-compatibility fallbacks, aliases, or legacy branches) unless there's a stated reason to keep it.
+- **Config values live in one place:** Model names, defaults, and limits are defined once as constants; never repeat them as literals across code, tests, or docs.
 
 ### Security
 
@@ -88,11 +92,11 @@ Key modules (as of Oct 2026):
   - `game_state.py` — World state, player, NPCs, inventory
   - `map_generation.py` — Procedural map and entity spawning
   - `dwarf_mind.py` — Autonomous dwarf task AI (template for systems)
-  - `world_seed.py` — World seed Pydantic models and validation; `parse_world_seed` semantic rules
+  - `world_seed.py` — World seed Pydantic models, validation, and LLM integration; `parse_world_seed` semantic rules
   - `world_judge.py` — Jev/TypeSafe judge for stance, revelation, mission success
   - `llm_client.py` — LLM client with `structured_call` (typed outputs); Oracle not migrated yet
-  - `llm_world.py` — World-seed LLM calls
   - `llm_oracle.py`, `oracle_logic.py` — Oracle dialogue and encounter logic
+  - `llm_interface.py` — Game event handlers for LLM-driven actions
   - `jev_client.py` — Jev/TypeSafe integration
   - `characters.py` — Dwarf, NPC, and character classes
   - `renderer.py` — Curses-based UI rendering
@@ -104,6 +108,7 @@ Key modules (as of Oct 2026):
   - `cli.py` — Entry point (`fungi` command)
   - `seeds/` — Hand-written world/depth seed JSON (data path for handcrafted content)
 - **`tests/`** — Test suite
+  - `tests/test_smoke.py` — End-to-end smoke test of core gameplay paths (Oracle dialogue, world generation) with only the network faked; every PR must keep it passing, and new core paths get a case there
 - **`logs/`** — Runtime logs (git-ignored)
 - **`main.py`** — Legacy entry point (use `uv run fungi` instead)
 - **`README.md`** — Project overview, setup, and features

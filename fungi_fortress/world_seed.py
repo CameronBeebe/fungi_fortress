@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from .characters import NPC, Oracle
 from .constants import STARTING_RESOURCES
-from . import llm_client, llm_world
+from . import llm_client
 from .world_rules import CharacterKind, is_open_tile
 
 logger = logging.getLogger(__name__)

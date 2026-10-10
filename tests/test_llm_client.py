@@ -6,7 +6,6 @@ from unittest.mock import Mock, patch
 from fungi_fortress import llm_client
 from fungi_fortress.llm_client import (
     LLMClient,
-    LLMClientConfig,
     MockLLMProvider,
     AuthenticationError,
     RateLimitError,
@@ -14,6 +13,7 @@ from fungi_fortress.llm_client import (
     ConnectionError as LLMConnectionError,
     BadResponseError,
 )
+from fungi_fortress.config_manager import LLMConfig
 
 
 class TestMockProvider:
@@ -23,7 +23,7 @@ class TestMockProvider:
         """Test mock provider responds to greetings."""
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "Hello Oracle!"}]
-        response = provider.chat(messages)
+        response = provider.chat(messages, max_tokens=100)
         
         assert "Greetings, seeker" in response
         assert "mycelial network" in response
@@ -32,7 +32,7 @@ class TestMockProvider:
         """Test mock provider responds to quest queries."""
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "Tell me about my quest"}]
-        response = provider.chat(messages)
+        response = provider.chat(messages, max_tokens=100)
         
         assert "path" in response.lower()
         assert "forest" in response.lower() or "groves" in response.lower()
@@ -41,7 +41,7 @@ class TestMockProvider:
         """Test mock provider responds to fungi queries."""
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "Where can I find magic fungi?"}]
-        response = provider.chat(messages)
+        response = provider.chat(messages, max_tokens=100)
         
         assert "fungi" in response.lower()
         assert "magic" in response.lower() or "memories" in response.lower()
@@ -50,7 +50,7 @@ class TestMockProvider:
         """Test mock provider streaming."""
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "Help me"}]
-        chunks = list(provider.chat_stream(messages))
+        chunks = list(provider.chat_stream(messages, max_tokens=100))
         
         # Should yield multiple chunks
         assert len(chunks) > 1
@@ -67,8 +67,8 @@ class TestMockProvider:
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "Hello"}]
         
-        response1 = provider.chat(messages)
-        response2 = provider.chat(messages)
+        response1 = provider.chat(messages, max_tokens=100)
+        response2 = provider.chat(messages, max_tokens=100)
         
         assert response1 == response2
     
@@ -76,7 +76,7 @@ class TestMockProvider:
         """Test mock provider default response for unknown queries."""
         provider = MockLLMProvider()
         messages = [{"role": "user", "content": "xyzabc random nonsense"}]
-        response = provider.chat(messages)
+        response = provider.chat(messages, max_tokens=100)
         
         assert "spores whisper" in response.lower() or "obscured" in response.lower()
 
@@ -85,15 +85,15 @@ class TestLLMClient:
     """Tests for the unified LLM client."""
     
     def test_client_with_no_config_uses_mock(self):
-        """Test client without config uses mock provider."""
-        client = LLMClient()
-        
+        """Test client with no API key uses mock provider."""
+        config = LLMConfig()  # No API key
+        client = LLMClient(config)
         assert client.is_mock()
     
     def test_client_with_invalid_key_uses_mock(self):
         """Test client with invalid API key uses mock provider."""
-        config = LLMClientConfig(
-            model="grok-3-mini",
+        config = LLMConfig(
+            model_name="test-model",
             api_key="YOUR_API_KEY_HERE",
         )
         client = LLMClient(config)
@@ -102,8 +102,8 @@ class TestLLMClient:
     
     def test_client_force_mock(self):
         """Test forcing mock provider even with valid config."""
-        config = LLMClientConfig(
-            model="grok-3-mini",
+        config = LLMConfig(
+            model_name="test-model",
             api_key="real-looking-key",
         )
         client = LLMClient(config, use_mock=True)
@@ -112,7 +112,7 @@ class TestLLMClient:
     
     def test_mock_client_chat(self):
         """Test mock client chat method."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         messages = [{"role": "user", "content": "Hello"}]
         
         response = client.chat(messages)
@@ -122,7 +122,7 @@ class TestLLMClient:
     
     def test_mock_client_chat_stream(self):
         """Test mock client streaming."""
-        client = LLMClient(use_mock=True)
+        client = LLMClient(LLMConfig(), use_mock=True)
         messages = [{"role": "user", "content": "Hello"}]
         
         chunks = list(client.chat_stream(messages))
@@ -132,8 +132,8 @@ class TestLLMClient:
     
     def test_client_with_valid_config_not_mock(self):
         """Test client with valid config is not mock."""
-        config = LLMClientConfig(
-            model="grok-3-mini",
+        config = LLMConfig(
+            model_name="test-model",
             api_key="xai-real-key",
         )
         client = LLMClient(config)
@@ -141,19 +141,25 @@ class TestLLMClient:
         # Should not be mock (would try to use real API)
         assert not client.is_mock()
     
-    @patch('fungi_fortress.llm_client.XAIProvider._check_openai')
-    def test_xai_provider_missing_library(self, mock_check):
-        """Test XAI provider with missing OpenAI library."""
-        mock_check.return_value = False
-        
-        config = LLMClientConfig(
-            model="grok-3-mini",
-            api_key="xai-test-key",
+    @patch('fungi_fortress.llm_client.openai.OpenAI')
+    def test_xai_provider_init_with_config(self, mock_openai_class):
+        """Test that XAI provider builds OpenAI client correctly."""
+        config = LLMConfig(
+            model_name="test-model",
+            api_key="test-key",
+            max_retries=3,
+            timeout_seconds=45
         )
+        
         client = LLMClient(config)
         
-        with pytest.raises(LLMConnectionError, match="OpenAI library not installed"):
-            client.chat([{"role": "user", "content": "test"}])
+        # Verify OpenAI client was created with correct parameters
+        mock_openai_class.assert_called_once_with(
+            api_key="test-key",
+            base_url="https://api.x.ai/v1",
+            timeout=45,
+            max_retries=3
+        )
 
 
 class TestErrorMapping:
@@ -172,8 +178,8 @@ class TestErrorMapping:
             body=None
         )
         
-        config = LLMClientConfig(
-            model="grok-3-mini",
+        config = LLMConfig(
+            model_name="test-model",
             api_key="invalid-key",
         )
         client = LLMClient(config)
@@ -194,8 +200,8 @@ class TestErrorMapping:
             body=None
         )
         
-        config = LLMClientConfig(
-            model="grok-3-mini",
+        config = LLMConfig(
+            model_name="test-model",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -214,8 +220,8 @@ class TestErrorMapping:
             request=Mock()
         )
         
-        config = LLMClientConfig(
-            model="grok-3-mini",
+        config = LLMConfig(
+            model_name="test-model",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -234,8 +240,8 @@ class TestErrorMapping:
             request=Mock()
         )
         
-        config = LLMClientConfig(
-            model="grok-3-mini",
+        config = LLMConfig(
+            model_name="test-model",
             api_key="test-key",
         )
         client = LLMClient(config)
@@ -245,33 +251,24 @@ class TestErrorMapping:
 
 
 class TestClientFactory:
-    """Tests for client factory function (XAI + mock only)."""
+    """Tests for creating clients from config."""
     
     def test_create_client_with_no_key(self):
-        """Test factory creates mock client with no API key."""
-        client = llm_client.create_client_from_config(
-            model="grok-3-mini",
-            api_key=None,
-        )
-        
+        """Test creates mock client with no API key."""
+        config = LLMConfig(model_name="test-model")
+        client = LLMClient(config)
         assert client.is_mock()
     
     def test_create_client_with_placeholder_key(self):
-        """Test factory creates mock client with placeholder key."""
-        client = llm_client.create_client_from_config(
-            model="grok-3-mini",
-            api_key="YOUR_API_KEY_HERE",
-        )
-        
+        """Test creates mock client with placeholder key."""
+        config = LLMConfig(model_name="test-model", api_key="YOUR_API_KEY_HERE")
+        client = LLMClient(config)
         assert client.is_mock()
     
     def test_create_client_with_xai_key(self):
-        """Test factory creates XAI client with valid key."""
-        client = llm_client.create_client_from_config(
-            model="grok-3-mini",
-            api_key="xai-test-key",
-        )
-        
+        """Test creates XAI client with valid key."""
+        config = LLMConfig(model_name="test-model", api_key="xai-test-key")
+        client = LLMClient(config)
         assert not client.is_mock()
 
 

@@ -760,16 +760,14 @@ class Renderer:
         title_x = (dialog_w - len(title)) // 2
         dialog_win.addstr(0, title_x, title, curses.A_BOLD)
         
-        # Add offline indicator if using mock provider
-        if self.game_state.llm_config:
-            client = self.game_state.llm_config.create_llm_client()
-            if client.is_mock():
-                offline_text = "[Offline Mode]"
-                offline_x = dialog_w - len(offline_text) - 2
-                try:
-                    dialog_win.addstr(1, offline_x, offline_text, curses.A_DIM)
-                except curses.error:
-                    pass
+        # Add offline indicator if no real API key
+        if self.game_state.llm_config and not self.game_state.llm_config.is_real_api_key_present:
+            offline_text = "[Offline Mode]"
+            offline_x = dialog_w - len(offline_text) - 2
+            try:
+                dialog_win.addstr(1, offline_x, offline_text, curses.A_DIM)
+            except curses.error:
+                pass
 
         content_x = 2
         content_y_start = 2

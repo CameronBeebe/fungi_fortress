@@ -14,25 +14,9 @@ This guide shows you how to set up XAI (Grok) integration for Fungi Fortress.
 export XAI_API_KEY="your-xai-api-key-here"
 ```
 
-### 2. (Optional) Configure model preferences
+All other settings use programmer-controlled defaults in `LLMConfig` (`fungi_fortress/config_manager.py`).
 
-To change the default model or tweak parameters:
-
-```bash
-cp llm_config.ini.example llm_config.ini
-# Edit llm_config.ini to set your preferred model
-```
-
-Available XAI models:
-- `grok-3-mini` (default, recommended)
-- `grok-3-mini-fast`
-- `grok-3`
-- `grok-3-beta`
-- `grok-2-1212`
-- `grok-beta`
-- `grok-vision-beta`
-
-### 3. Run the game
+### 2. Run the game
 
 ```bash
 uv run fungi
@@ -41,13 +25,7 @@ uv run fungi
 
 ## 🔧 Configuration Options
 
-Edit `llm_config.ini` to customize:
-
-- **model_name**: Choose your preferred XAI model (default: `grok-3-mini`)
-- **context_level**: `low`, `medium` (default), `high` - controls game context sent to Oracle
-- **max_tokens**: Response length limit (cost control, default: 1000)
-- **enable_structured_outputs**: Use JSON Schema for reliable action parsing (default: false)
-- **enable_streaming**: Stream responses word-by-word (default: true)
+All configuration defaults are defined in the `LLMConfig` dataclass in `fungi_fortress/config_manager.py`. Only `XAI_API_KEY` is read from the environment. No user config file.
 
 ## 🛡️ Security Benefits
 
