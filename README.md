@@ -1,8 +1,22 @@
 # Fungi Fortress
 
-A terminal-based strategy/simulation game written in Python using the curses library. Manage a dwarf, explore, gather resources, and interact with a world of fungi!
+A generative game harness: a deterministic terminal game engine (Python, curses) where LLMs act only through typed interfaces. Every model call that feeds the game declares a Pydantic output type. World generation goes through schema-validated structured outputs with semantic validators, bounded retries, and a fallback seed. Separately, Jev (TypeSafe System One) decision models act as judges for NPC stance, secret revelation, and mission success, and they are kept off the player-order path.
+
+**Status:** playable offline with a deterministic mock provider (no API key needed). The Jev judge paths are currently tested against a mocked transport only; live runs come next.
+
+```bash
+git clone https://github.com/CameronBeebe/fungi_fortress.git
+cd fungi_fortress
+uv sync
+uv run pytest -q   # 204 passed, 2 skipped (live xAI tests)
+uv run fungi       # needs a terminal of at least 70x45
+```
 
 **Contributing?** See [`AGENTS.md`](AGENTS.md) for architecture and working rules for coding agents.
+
+## Related
+
+- [fungi_chromatic](https://github.com/CameronBeebe/fungi_chromatic): a GB Studio Game Boy Color / ModRetro Chromatic cartridge adapted from fungi_fortress. Its development-time scene pipeline uses xAI (Grok) for visual proposals and Jev for typed judgments; the cartridge itself runs offline and makes no API calls.
 
 ## 🤖 LLM Integration Status
 
@@ -11,7 +25,7 @@ A terminal-based strategy/simulation game written in Python using the curses lib
 - **🎮 Offline Mode**: Built-in mock provider - fully playable with no API key required
 - **⚡ XAI Provider**: Direct integration with XAI (Grok) via `https://api.x.ai/v1`
 - **🛡️ Typed Errors**: Clear error handling with player-friendly messages
-- **📊 Tested**: 227 tests passing, including client and Oracle integration tests
+- **📊 Tested**: 204 passed, 2 skipped (live xAI tests), including client and Oracle integration tests
 - **🔒 Secure**: API keys never logged or exposed (field(repr=False), env-only)
 
 **Quick Setup**: 
@@ -56,8 +70,8 @@ See [`TODO.md`](TODO.md) for the running backlog and [`PLANNING.md`](PLANNING.md
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Clone the repository
-git clone <repository-url>
-cd fungi-fortress
+git clone https://github.com/CameronBeebe/fungi_fortress.git
+cd fungi_fortress
 
 # Install dependencies (creates .venv automatically, uses uv.lock for exact versions)
 uv sync
@@ -70,8 +84,8 @@ uv run fungi
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd fungi-fortress
+git clone https://github.com/CameronBeebe/fungi_fortress.git
+cd fungi_fortress
 
 # Create and activate a virtual environment
 python3 -m venv venv
@@ -243,7 +257,7 @@ The unified LLM client supports both online (xAI/Grok) and offline (mock) modes.
 - **✅ XAI-Only Architecture**: Simplified to XAI (Grok) + mock provider only
 - **✅ Mock Provider**: Fully playable offline with deterministic Oracle responses and `[Offline Mode]` indicator
 - **✅ Typed Error Handling**: Clear exceptions with player-friendly messages
-- **✅ Comprehensive Test Suite**: 227 tests passing
+- **✅ Test Suite**: 204 passed, 2 skipped (live xAI tests)
 - **✅ Typed LLM Outputs**: Oracle dialogue via non-streaming `NpcReply` Pydantic model with semantic validation
 - **✅ Security**: API keys never logged (field(repr=False), removed from action details)
 
@@ -283,11 +297,10 @@ pytest
 # Run only LLM-specific interface tests (uses mocks)
 pytest tests/test_llm_interface.py -v
 
-# Run specific integration tests that may require API keys (check .gitignore for these files)
-# Example for XAI live endpoint tests:
+# Live xAI endpoint tests (currently always skipped; see note below):
 pytest tests/test_integration_xai_direct.py -v
 ```
 
 **Test Organization**:
 - Unit and integration tests (using mocks) are located in the `tests/` directory.
-- Tests designed for live API validation (e.g., `tests/test_integration_xai_direct.py`) are configured in `.gitignore` to prevent accidental key exposure and should be run with caution.
+- Tests designed for live API validation (e.g., `tests/test_integration_xai_direct.py`) are tracked in the repo and read the key only from `XAI_API_KEY`. They currently always skip, because the autouse fixture in `tests/conftest.py` removes `XAI_API_KEY` to keep the suite offline.
