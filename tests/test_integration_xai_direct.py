@@ -15,7 +15,7 @@ def test_xai_direct():
     if not api_key:
         pytest.skip("XAI_API_KEY not found in environment variables. Skipping live test.")
     
-    print(f"Using API key from environment: {api_key[:10]}...")
+    print("XAI_API_KEY set: yes")
     
     # Test messages following XAI example
     messages = [
@@ -84,7 +84,7 @@ def test_with_structured_output():
     if not api_key:
         pytest.skip("XAI_API_KEY not found in environment variables. Skipping live test.")
 
-    print(f"\nUsing API key from environment for structured test: {api_key[:10]}...")
+    print("\nXAI_API_KEY set: yes (structured test)")
 
     messages = [
         {
