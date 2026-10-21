@@ -119,8 +119,8 @@ class GameState:
             llm_config (LLMConfig): Configuration for LLM interactions.
         """
         if llm_config:
-            masked_api_key = "'****'" if llm_config.api_key and llm_config.is_real_api_key_present else f"'{llm_config.api_key}'"
-            logger.info(f"Received llm_config. API Key: {masked_api_key}, Type: {type(llm_config)}")
+            key_set = "yes" if llm_config.is_real_api_key_present else "no"
+            logger.info(f"Received llm_config. API key set: {key_set}, Type: {type(llm_config)}")
         else:
             logger.warning("Received llm_config is None or Falsy.")
 
